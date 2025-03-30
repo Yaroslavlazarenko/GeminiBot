@@ -3,8 +3,9 @@ from google.genai import types
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
 from typing import List
 
-from copy import deepcopy  # Import deepcopy
+from copy import deepcopy
 from config import Config
+
 config = Config()
 
 client = genai.Client(api_key=config.gemini_api_key)
@@ -16,10 +17,7 @@ def read_system_instructions(file_path="system_instructions.txt"):
         with open(file_path, "r", encoding="utf-8") as file:
             return file.read().strip()
     except Exception as e:
-        return ""  # Возвращаем пустую строку в случае ошибки
-
-
-
+        return "" 
 
 async def get_gemini_response(contents: List[types.Content]):
     """
@@ -32,7 +30,7 @@ async def get_gemini_response(contents: List[types.Content]):
     try:
         response = client.models.generate_content(
             model=config.gemini_model,
-            contents=contents, # <--- ALL HISTORY
+            contents=contents,
             config=GenerateContentConfig(
                 tools=[google_search_tool],
                 response_modalities=["text"],
@@ -43,21 +41,18 @@ async def get_gemini_response(contents: List[types.Content]):
             return response.text
         else:
             return None
-    except Exception as e:
+    except Exception:
         return None
 
 async def get_text_response(message_text: str, message_history: List[types.Content]) -> str:
     """Gets a text response from the Gemini model."""
-    # Create the new content
     new_content = types.Content(
         role="user",
         parts=[types.Part.from_text(text=message_text)]
     )
 
-    # Create a DEEP COPY of the message history
-    updated_history = deepcopy(message_history)
+    updated_history = message_history[:]
 
-    # Append the new content to the copied history
     updated_history.append(new_content)
 
     return await get_gemini_response(contents=updated_history)
@@ -69,7 +64,6 @@ async def get_audio_response(audio_file: bytes, message_history: List[types.Cont
     else:
         text = "Transcribe the text completely, repeat only the words in the language that was said. Answer only with the text of the voice."
 
-    # Create the new content (current message)
     new_content = types.Content(
         role="user",
         parts=[
@@ -78,7 +72,7 @@ async def get_audio_response(audio_file: bytes, message_history: List[types.Cont
         ]
     )
 
-    updated_history = message_history[:]  # Создаем поверхностную копию списка
+    updated_history = message_history[:]
     updated_history.append(new_content)
 
 
