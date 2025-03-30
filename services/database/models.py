@@ -1,15 +1,13 @@
-from sqlalchemy import Column, Integer, String, Text, LargeBinary, ForeignKey, DateTime
+from sqlalchemy import Integer, String, Text, LargeBinary, ForeignKey, DateTime
 from sqlalchemy.orm import relationship, Mapped, mapped_column
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime
 from typing import List
 
-# Define the base class using declarative_base
 Base = declarative_base()
 
 class PrettyRepr:
     def __repr__(self: "Base") -> str:
-        # Генерация строкового представления всех столбцов модели
         columns_info = ", ".join(
             [
                 f"{name}={repr(self.__dict__[name])}"
@@ -24,14 +22,12 @@ class User(Base, PrettyRepr):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     username: Mapped[str] = mapped_column(String(256), nullable=False)
-    telegram_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=True)  # Add unique constraint
+    telegram_id: Mapped[int] = mapped_column(Integer, unique=True, nullable=True) 
     first_name: Mapped[str] = mapped_column(String(256), nullable=True)
     last_name: Mapped[str] = mapped_column(String(256), nullable=True)
 
-    # Связь с таблицей сообщений (MessageHistory)
     messages: Mapped[List["MessageHistory"]] = relationship("MessageHistory", back_populates="user")
 
-# MessageHistory model
 class MessageHistory(Base, PrettyRepr):
     __tablename__ = "message_history"
 
@@ -44,5 +40,4 @@ class MessageHistory(Base, PrettyRepr):
     video_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=True)  # Данные видео
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)  # Время отправки сообщения
 
-    # Связь с пользователем (обратное отношение)
     user: Mapped["User"] = relationship("User", back_populates="messages")
