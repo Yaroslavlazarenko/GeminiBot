@@ -5,7 +5,7 @@ from services.database.models import MessageHistory, User
 from typing import Optional, List
 from datetime import datetime
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from google.genai import types
 
 
 class DAO:
@@ -42,12 +42,34 @@ class DAO:
             print(f"Error getting message: {e}")
             return None
 
-    async def get_user_messages(self, user_id: int) -> List[MessageHistory]:
-        """Retrieves all messages for a given user."""
+    async def get_user_messages_as_contents(self, user_id: int) -> List[types.Content]:
+        """Retrieves all messages for a given user and formats them as a list of types.Content."""
         try:
             stmt = select(MessageHistory).where(MessageHistory.user_id == user_id)
             result = await self.session.execute(stmt)
-            return result.scalars().all()
+            messages: List[MessageHistory] = result.scalars().all()
+
+            contents: List[types.Content] = []
+            for message in messages:
+                # Create a Part object based on whether text or audio data is available
+                if message.text:
+                    part = types.Part.from_text(text=message.text)
+                elif message.audio_data:
+                    part = types.Part.from_bytes(data=message.audio_data, mime_type="audio/ogg")
+                else:
+                    part = None  # Handle cases where neither text nor audio is available
+
+                if part:
+                    contents.append(
+                        types.Content(
+                            role=message.role,
+                            parts=[part],  # Wrap the Part object in a list
+                        )
+                    )
+                else:
+                    print(f"Skipping message {message.id} due to missing text and audio data.")
+
+            return contents
         except SQLAlchemyError as e:
             print(f"Error getting user messages: {e}")
             return []
@@ -83,3 +105,16 @@ class DAO:
             print(f"Error creating user: {e}")
             await self.session.rollback() # Rollback in case of error
             return None
+
+    async def clear_history(self, user_id: int):
+        """Clear message history for a specific user."""
+        try:
+            stmt = select(MessageHistory).where(MessageHistory.user_id == user_id)
+            result = await self.session.execute(stmt)
+            messages = result.scalars().all()
+            for message in messages:
+                await self.session.delete(message)
+            await self.session.commit()
+        except SQLAlchemyError as e:
+            print(f"Error clearing history: {e}")
+            await self.session.rollback()

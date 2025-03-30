@@ -1,72 +1,85 @@
 from google import genai
 from google.genai import types
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch
+from typing import List
 
-import io
-import logging
-
+from copy import deepcopy  # Import deepcopy
 from config import Config
 config = Config()
 
 client = genai.Client(api_key=config.gemini_api_key)
 google_search_tool = Tool(google_search=GoogleSearch())
 
+
 def read_system_instructions(file_path="system_instructions.txt"):
-    try:
+    try:    
         with open(file_path, "r", encoding="utf-8") as file:
             return file.read().strip()
     except Exception as e:
-        logging.error(f"Error reading system instructions: {e}")
         return ""  # Возвращаем пустую строку в случае ошибки
 
-async def get_gemini_response(contents):
+
+
+
+async def get_gemini_response(contents: List[types.Content]):
+    """
+    Gets a response from the Gemini model.
+    Args:
+        contents: A list of google_types.Content objects representing the ENTIRE conversation history.
+    """
+    print(contents)
     system_instruction = read_system_instructions()
     try:
         response = client.models.generate_content(
             model=config.gemini_model,
-            contents=contents,
+            contents=contents, # <--- ALL HISTORY
             config=GenerateContentConfig(
                 tools=[google_search_tool],
                 response_modalities=["text"],
                 system_instruction=system_instruction
             )
         )
-
-        if response:
+        if response and response.text:
             return response.text
         else:
             return None
     except Exception as e:
         return None
 
-async def get_text_response(message_text):
-    contents = [
-        types.Content(
-            role="user",
-            parts=[
-                types.Part.from_text(text=message_text),
-            ]
-        ),
-    ]
-    return await get_gemini_response(contents=contents)
+async def get_text_response(message_text: str, message_history: List[types.Content]) -> str:
+    """Gets a text response from the Gemini model."""
+    # Create the new content
+    new_content = types.Content(
+        role="user",
+        parts=[types.Part.from_text(text=message_text)]
+    )
 
+    # Create a DEEP COPY of the message history
+    updated_history = deepcopy(message_history)
 
-async def get_audio_response(audio_file, response=None):
-    audio_bytes = audio_file  # Directly use audio_file as bytes
+    # Append the new content to the copied history
+    updated_history.append(new_content)
 
-    if(response):
+    return await get_gemini_response(contents=updated_history)
+
+async def get_audio_response(audio_file: bytes, message_history: List[types.Content], response: bool = False) -> str:
+    """Gets an audio response from the Gemini model."""
+    if response:
         text = "Ответь на голосовой"
     else:
-        text="Transcribe the text completely, repeat only the words in the language that was said. Answer only with the text of the voice."
+        text = "Transcribe the text completely, repeat only the words in the language that was said. Answer only with the text of the voice."
 
-    contents = [
-        types.Content(
-            role="user",
-            parts=[
-                types.Part.from_text(text=text),
-                types.Part.from_bytes(data=audio_bytes, mime_type="audio/ogg")
-            ]
-        ),
-    ]
+    # Create the new content (current message)
+    new_content = types.Content(
+        role="user",
+        parts=[
+            types.Part.from_text(text=text),
+            types.Part.from_bytes(data=audio_file, mime_type="audio/ogg")
+        ]
+    )
 
-    return await get_gemini_response(contents=contents)
+    updated_history = message_history[:]  # Создаем поверхностную копию списка
+    updated_history.append(new_content)
+
+
+    return await get_gemini_response(contents=updated_history)
