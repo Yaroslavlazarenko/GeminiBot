@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
+from typing import Optional
 
 class Config(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
@@ -7,3 +7,8 @@ class Config(BaseSettings):
     bot_token: str
     gemini_api_key: str
     gemini_model: str
+
+    db_user: str
+    db_password: str
+    db_name: str
+    db_host: str
