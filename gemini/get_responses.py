@@ -25,7 +25,6 @@ async def get_gemini_response(contents: List[types.Content]):
     Args:
         contents: A list of google_types.Content objects representing the ENTIRE conversation history.
     """
-    print(contents)
     system_instruction = read_system_instructions()
     try:
         response = client.models.generate_content(
@@ -46,34 +45,24 @@ async def get_gemini_response(contents: List[types.Content]):
 
 async def get_text_response(message_text: str, message_history: List[types.Content]) -> str:
     """Gets a text response from the Gemini model."""
-    new_content = types.Content(
-        role="user",
-        parts=[types.Part.from_text(text=message_text)]
-    )
-
-    updated_history = message_history[:]
-
-    updated_history.append(new_content)
-
-    return await get_gemini_response(contents=updated_history)
+    
+    return await get_gemini_response(contents=message_history)
 
 async def get_audio_response(audio_file: bytes, message_history: List[types.Content], response: bool = False) -> str:
     """Gets an audio response from the Gemini model."""
     if response:
-        text = "Ответь на голосовой"
+        text = "Следующее сообщение это голосовое сообщение, или же аудиосообщение, ответь на него:"
     else:
-        text = "Transcribe the text completely, repeat only the words in the language that was said. Answer only with the text of the voice."
+        text = "Следующее сообщение это голосовое сообщение, или же аудиосообщение. Transcribe the text completely, repeat only the words in the language that was said. Answer only with the text of the voice."
 
     new_content = types.Content(
         role="user",
         parts=[
             types.Part.from_text(text=text),
-            types.Part.from_bytes(data=audio_file, mime_type="audio/ogg")
         ]
     )
 
-    updated_history = message_history[:]
-    updated_history.append(new_content)
 
+    updated_history = message_history + [new_content]
 
     return await get_gemini_response(contents=updated_history)
