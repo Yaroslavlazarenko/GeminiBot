@@ -6,13 +6,11 @@ from datetime import datetime, timezone
 from sqlalchemy import select, delete, update, and_, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError, NoResultFound # Убрали MultipleResultsFound, т.к. telegram_chat_id уникален
+from sqlalchemy.exc import SQLAlchemyError, NoResultFound
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-# Импортируем модели и Enum из вашего файла models.py
-# Убедитесь, что путь импорта правильный
 from .models import MessageHistory, User, Group, MessageRole
-from google.genai import types # Используется для форматирования вывода
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
@@ -23,11 +21,22 @@ class AsyncDAO:
         self.session = session
 
     # --- User Methods ---
-    # ... (методы get_or_create_user, get_user_by_telegram_id, update_user_settings остаются без изменений) ...
+    # ... (get_or_create_user, get_user_by_telegram_id, update_user_settings remain unchanged) ...
     async def get_or_create_user(self, telegram_id: int, username: str | None = None, first_name: str | None = None, last_name: str | None = None, **kwargs) -> User:
         logger.debug(f"Attempting to get or create/update user for telegram_id={telegram_id}")
-        values_to_insert = {"telegram_id": telegram_id, "username": username, "first_name": first_name, "last_name": last_name, **kwargs}
-        values_to_update = {"username": username, "first_name": first_name, "last_name": last_name} # Обновляем имя при конфликте
+        # Handle None username gracefully for insert/update
+        values_to_insert = {
+            "telegram_id": telegram_id,
+            "username": username if username is not None else str(telegram_id), # Use tg_id if username is None
+            "first_name": first_name,
+            "last_name": last_name,
+            **kwargs
+        }
+        values_to_update = {
+            "username": username if username is not None else str(telegram_id),
+            "first_name": first_name,
+            "last_name": last_name,
+        }
         insert_stmt = pg_insert(User).values(**values_to_insert).on_conflict_do_update(
             index_elements=['telegram_id'], set_=values_to_update
         ).returning(User)
@@ -38,7 +47,7 @@ class AsyncDAO:
             return user
         except SQLAlchemyError as e:
             logger.error(f"Database error during get_or_create_user for telegram_id={telegram_id}: {e}", exc_info=True)
-            await self.session.rollback()
+            await self.session.rollback() # Rollback on error
             raise
 
     async def get_user_by_telegram_id(self, telegram_id: int) -> Optional[User]:
@@ -52,7 +61,8 @@ class AsyncDAO:
             return user
         except SQLAlchemyError as e:
             logger.error(f"Error getting user by telegram_id={telegram_id}: {e}", exc_info=True)
-            raise
+            # Consider whether to raise or return None depending on caller expectation
+            raise # Or return None
 
     async def update_user_settings(self, user_id: int, responds_to_text: bool | None = None, responds_to_voice: bool | None = None, transcribe_voice_only: bool | None = None) -> bool:
         logger.debug(f"Updating settings for user_id={user_id}")
@@ -70,19 +80,28 @@ class AsyncDAO:
                 logger.info(f"Successfully updated settings for user_id={user_id}")
                 return True
             else:
-                logger.warning(f"User with id={user_id} not found for settings update.")
-                return False
+                # This is not necessarily an error, the user might not exist (though unlikely if called after get_or_create)
+                logger.warning(f"User with id={user_id} not found for settings update (or settings already had the target value).")
+                # Check if user exists before returning False definitively
+                user_exists = await self.session.get(User, user_id)
+                return user_exists is not None # Return True if user exists but settings weren't changed
         except SQLAlchemyError as e:
             logger.error(f"Database error updating settings for user_id={user_id}: {e}", exc_info=True)
-            raise
+            # Don't rollback here, let the middleware handle it
+            raise # Re-raise the exception
 
-    # --- Group Methods (Обновленные) ---
 
+    # --- Group Methods ---
+    # ... (get_group_by_internal_id, get_group_by_telegram_id, get_or_create_group remain unchanged) ...
     async def get_group_by_internal_id(self, group_id: int) -> Optional[Group]:
         """Получает группу по ее ВНУТРЕННЕМУ ID базы данных."""
         logger.debug(f"Getting group by internal DB id={group_id}")
         try:
-            group = await self.session.get(Group, group_id) # .get() работает с Primary Key
+            # Use select().where() for consistency and potential future options loading
+            stmt = select(Group).where(Group.id == group_id)
+            result = await self.session.execute(stmt)
+            group = result.scalar_one_or_none()
+            # group = await self.session.get(Group, group_id) # .get() works fine too for PK lookup
             if group:
                 logger.debug(f"Group found by internal id: {group.id=}, {group.telegram_chat_id=}, {group.name=}")
             else:
@@ -90,7 +109,7 @@ class AsyncDAO:
             return group
         except SQLAlchemyError as e:
             logger.error(f"Error getting group by internal id={group_id}: {e}", exc_info=True)
-            raise
+            raise # Or return None
 
     async def get_group_by_telegram_id(self, telegram_chat_id: int) -> Optional[Group]:
         """Получает группу по ее УНИКАЛЬНОМУ telegram_chat_id."""
@@ -104,9 +123,9 @@ class AsyncDAO:
             else:
                  logger.debug(f"Group not found for telegram_chat_id={telegram_chat_id}")
             return group
-        except SQLAlchemyError as e:
+        except SQLAlchemyError as e: # Catch NoResultFound specifically if needed, though scalar_one_or_none handles it
             logger.error(f"Error getting group by telegram_chat_id={telegram_chat_id}: {e}", exc_info=True)
-            raise
+            raise # Or return None
 
     async def get_or_create_group(
         self,
@@ -117,40 +136,71 @@ class AsyncDAO:
         Получает группу по telegram_chat_id или создает ее.
         Если группа существует, обновляет ее имя на переданное `name`.
         Использует INSERT ... ON CONFLICT DO UPDATE для атомарности.
+        Новые группы будут созданы с настройками по умолчанию (responds=True).
+        Существующие группы НЕ будут иметь свои настройки responds изменены здесь.
         """
         logger.debug(f"Attempting to get or create/update group for telegram_chat_id={telegram_chat_id}")
+        values_to_insert = {
+            "telegram_chat_id": telegram_chat_id,
+            "name": name
+            # responds_to_text/voice defaults are handled by the DB schema (server_default)
+        }
         values_to_update = {
             "name": name,
+            # НЕ обновляем responds_to_text/voice здесь, это делается отдельной командой
         }
 
         insert_stmt = pg_insert(Group).values(
-            # Передаем значения как явные keyword arguments
-            telegram_chat_id=telegram_chat_id,
-            name=name
+            **values_to_insert
         ).on_conflict_do_update(
             index_elements=['telegram_chat_id'], # Уникальный индекс
-            set_=values_to_update # Обновляем имя при конфликте
+            set_=values_to_update # Обновляем только имя при конфликте
         ).returning(Group) # Возвращаем всю строку группы
 
         try:
             result = await self.session.execute(insert_stmt)
-            group = result.scalar_one()
+            group = result.scalar_one() # Should always return one row due to INSERT or UPDATE
             logger.info(f"Successfully got or created/updated group: {group.id=} {group.telegram_chat_id=} {group.name=}")
             return group
         except SQLAlchemyError as e:
-            # Логгирование ошибки здесь остается полезным
             logger.error(f"Database error during get_or_create_group for telegram_chat_id={telegram_chat_id}: {e}", exc_info=True)
-            raise # Передаем исключение выше, чтобы middleware его поймал
+            # Let middleware handle rollback
+            raise # Передаем исключение выше
+
+    # --- NEW Group Settings Method ---
+    async def update_group_settings(self, group_id: int, responds_to_text: bool | None = None, responds_to_voice: bool | None = None) -> bool:
+        """
+        Обновляет настройки ответа для конкретной группы (по ее внутреннему ID).
+        """
+        logger.debug(f"Updating settings for group_id={group_id}")
+        values_to_update = {}
+        if responds_to_text is not None: values_to_update["responds_to_text"] = responds_to_text
+        if responds_to_voice is not None: values_to_update["responds_to_voice"] = responds_to_voice
+
+        if not values_to_update:
+            logger.warning(f"No settings provided to update for group_id={group_id}")
+            return False # Nothing to update
+
+        stmt = update(Group).where(Group.id == group_id).values(**values_to_update)
+        try:
+            result = await self.session.execute(stmt)
+            if result.rowcount > 0:
+                logger.info(f"Successfully updated settings for group_id={group_id}")
+                return True
+            else:
+                # Group not found or settings already had the target value
+                logger.warning(f"Group with internal id={group_id} not found for settings update (or settings unchanged).")
+                # Check if group exists
+                group_exists = await self.session.get(Group, group_id)
+                return group_exists is not None # True if group exists but settings didn't change
+        except SQLAlchemyError as e:
+            logger.error(f"Database error updating settings for group_id={group_id}: {e}", exc_info=True)
+            raise # Let middleware handle rollback/commit
 
 
     # --- Message History Methods ---
-    # Методы add_message, clear_history, get_message,
-    # get_user_private_messages_as_contents, get_group_messages_as_contents, _format_message_to_content
-    # остаются ТАКИМИ ЖЕ, как в предыдущем ответе.
-    # Важно: они принимают/используют ВНУТРЕННИЙ group.id, а не telegram_chat_id.
-    # Вы сначала получаете объект Group через get_or_create_group(telegram_chat_id, name),
-    # а затем используете group.id в этих методах.
-
+    # ... (add_message, clear_history, get_message, get_user_private_messages_as_contents,
+    #      get_group_messages_as_contents, _format_message_to_content remain unchanged) ...
     async def add_message(self, user_id: int, role: MessageRole, text: str | None = None, audio_data: bytes | None = None, image_data: bytes | None = None, video_data: bytes | None = None, group_id: int | None = None ) -> MessageHistory:
         # group_id здесь - это ВНУТРЕННИЙ id из таблицы groups
         log_msg = f"Adding message for user_id={user_id}, role={role.value}"
@@ -158,8 +208,9 @@ class AsyncDAO:
         logger.debug(log_msg)
         new_message = MessageHistory(user_id=user_id, group_id=group_id, role=role, text=text, audio_data=audio_data, image_data=image_data, video_data=video_data, timestamp=datetime.now(timezone.utc))
         self.session.add(new_message)
+        # Don't flush here, let commit handle it or flush explicitly if ID is needed immediately
         logger.debug(f"Message for user_id={user_id} added to session.")
-        return new_message
+        return new_message # Return the object, ID might be populated after commit/flush
 
     async def clear_history(self, user_id: int, group_id: int | None = None) -> int:
         # group_id здесь - это ВНУТРЕННИЙ id из таблицы groups
@@ -184,7 +235,11 @@ class AsyncDAO:
     async def get_message(self, message_id: int) -> Optional[MessageHistory]:
         logger.debug(f"Getting message by id={message_id}")
         try:
+            # Prefer session.get for primary key lookups
             message = await self.session.get(MessageHistory, message_id)
+            # stmt = select(MessageHistory).where(MessageHistory.id == message_id)
+            # result = await self.session.execute(stmt)
+            # message = result.scalar_one_or_none()
             if message: logger.debug(f"Message found for id={message_id}")
             else: logger.debug(f"Message not found for id={message_id}")
             return message
@@ -199,8 +254,9 @@ class AsyncDAO:
             stmt = (select(MessageHistory).where(and_(MessageHistory.user_id == user_id, MessageHistory.group_id.is_(None)))
                     .order_by(MessageHistory.timestamp.desc()).limit(limit))
             result = await self.session.execute(stmt)
-            messages: List[MessageHistory] = list(result.scalars().all())
-            messages.reverse()
+            # Use reversed() for potentially better memory usage than creating a new list
+            messages: List[MessageHistory] = list(reversed(result.scalars().all()))
+            # messages.reverse() # This modifies the list in place, also fine
             logger.debug(f"Retrieved {len(messages)} private messages for user_id={user_id} to build contents")
             for message in messages:
                 content = self._format_message_to_content(message, is_group=False)
@@ -208,25 +264,24 @@ class AsyncDAO:
             return contents
         except SQLAlchemyError as e:
             logger.error(f"Error getting private message history for user_id={user_id}: {e}", exc_info=True)
-            return []
+            return [] # Return empty list on error
 
     async def get_group_messages_as_contents(self, group_id: int, limit: int = 50) -> List[types.Content]:
         # group_id здесь - это ВНУТРЕННИЙ id из таблицы groups
         logger.debug(f"Getting last {limit} messages for group_id={group_id}") # Используем внутренний ID
         contents: List[types.Content] = []
         try:
-            # Проверяем, существует ли группа с таким внутренним ID (опционально, но полезно)
-            # group_exists = await self.get_group_by_internal_id(group_id)
+            # Optional check if group exists (can be removed if get_or_create guarantees existence before call)
+            # group_exists = await self.get_group_by_internal_id(group_id) # Already checked in handler usually
             # if not group_exists:
             #     logger.warning(f"Attempted to get messages for non-existent internal group_id={group_id}")
             #     return []
 
             stmt = (select(MessageHistory).where(MessageHistory.group_id == group_id) # Используем внутренний ID
-                    .options(selectinload(MessageHistory.user))
+                    .options(selectinload(MessageHistory.user)) # Eager load user data
                     .order_by(MessageHistory.timestamp.desc()).limit(limit))
             result = await self.session.execute(stmt)
-            messages: List[MessageHistory] = list(result.scalars().all())
-            messages.reverse()
+            messages: List[MessageHistory] = list(reversed(result.scalars().all()))
             logger.debug(f"Retrieved {len(messages)} messages for group_id={group_id} to build contents") # Используем внутренний ID
             for message in messages:
                 content = self._format_message_to_content(message, is_group=True)
@@ -240,22 +295,39 @@ class AsyncDAO:
     def _format_message_to_content(self, message: MessageHistory, is_group: bool = False) -> Optional[types.Content]:
         parts = []
         message_text = message.text
-        if is_group and message.role == MessageRole.USER and message_text:
+        # Add prefix ONLY if it's a group message AND it's from a user
+        if is_group and message.role == MessageRole.USER:
+            # User should have been loaded via selectinload in get_group_messages_as_contents
             if message.user:
-                prefix = f"{message.user.first_name or f'User_{message.user.telegram_id}'}: "
-                message_text = f"{prefix}{message_text}"
+                # Use first_name or fallback to a generic User ID string
+                user_display_name = message.user.first_name or f"User_{message.user.telegram_id}"
+                prefix = f"{user_display_name}: "
+                # Prepend prefix only if there is text
+                if message_text:
+                     message_text = f"{prefix}{message_text}"
+                # else: # If only media, don't add prefix to nothing
+                #     pass
             else:
+                # This case should be less likely with selectinload, but handle defensively
                 logger.warning(f"User data not loaded for message_id={message.id} in group_id={message.group_id}. Cannot add prefix.")
-                message_text = f"Unknown User: {message_text}"
+                if message_text:
+                    message_text = f"Unknown User: {message_text}"
 
+        # Add parts based on content
         if message_text: parts.append(types.Part.from_text(text=message_text))
-        if message.audio_data: parts.append(types.Part.from_bytes(data=message.audio_data, mime_type="audio/ogg")) # TODO: Correct mime type
-        if message.image_data: parts.append(types.Part.from_bytes(data=message.image_data, mime_type="image/jpeg")) # TODO: Correct mime type
-        if message.video_data: parts.append(types.Part.from_bytes(data=message.video_data, mime_type="video/mp4")) # TODO: Correct mime type
+        # TODO: Determine actual MIME types if possible, or use reasonable defaults
+        if message.audio_data: parts.append(types.Part.from_bytes(data=message.audio_data, mime_type="audio/ogg"))
+        if message.image_data: parts.append(types.Part.from_bytes(data=message.image_data, mime_type="image/jpeg"))
+        if message.video_data: parts.append(types.Part.from_bytes(data=message.video_data, mime_type="video/mp4"))
 
         if parts:
+            # Ensure role is a valid string value from the enum
             role_str = message.role.value
-            return types.Content(role=role_str, parts=parts)
+            try:
+                return types.Content(role=role_str, parts=parts)
+            except ValueError as e:
+                 logger.error(f"Invalid role value '{role_str}' for message {message.id}: {e}")
+                 return None # Skip message with invalid role
         else:
             logger.warning(f"Message id={message.id} (user_id={message.user_id}, group_id={message.group_id}) has no content parts, skipping.")
             return None

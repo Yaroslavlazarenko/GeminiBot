@@ -1,7 +1,9 @@
+# services/database/models.py
+
 # --- Imports ---
 from sqlalchemy import (
     Integer, String, Text, LargeBinary, ForeignKey, DateTime, BigInteger, func,
-    Boolean, true, false,
+    Boolean, true, false, # Keep true and false
     Enum as SQLAlchemyEnum
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
@@ -40,7 +42,8 @@ class User(Base, PrettyRepr):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
+    # username: Mapped[str] = mapped_column(String(256), nullable=False, index=True) # Username can be nullable or change
+    username: Mapped[str | None] = mapped_column(String(256), index=True) # Make username nullable
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(256))
     last_name: Mapped[str | None] = mapped_column(String(256))
@@ -52,25 +55,35 @@ class User(Base, PrettyRepr):
     messages: Mapped[List["MessageHistory"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
-        lazy="selectin"
+        lazy="selectin" # Keep selectin if you often access user messages together
     )
 
-# --- Group Model ---
+# --- Group Model (MODIFIED) ---
 class Group(Base, PrettyRepr):
     __tablename__ = "groups"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # Add the missing column:
     telegram_chat_id: Mapped[int] = mapped_column(
-        BigInteger,                 # Use BigInteger for potentially large Telegram IDs
-        unique=True,                # Ensure uniqueness
-        index=True,                 # Index for faster lookups and ON CONFLICT
-        nullable=False              # It's a required identifier
+        BigInteger,
+        unique=True,
+        index=True,
+        nullable=False
     )
     name: Mapped[str] = mapped_column(String(256), nullable=False)
 
+    # --- NEW FIELDS for group-specific settings ---
+    responds_to_text: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
+    responds_to_voice: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
+    # --- End of NEW FIELDS ---
+
+
     messages: Mapped[List["MessageHistory"]] = relationship(
         back_populates="group"
+        # cascade="all, delete-orphan" # Optional: delete messages if group is deleted
     )
 
 # --- MessageHistory Model ---
@@ -83,9 +96,9 @@ class MessageHistory(Base, PrettyRepr):
     role: Mapped[MessageRole] = mapped_column(
         SQLAlchemyEnum(
             MessageRole,
-            name="message_role_enum_check", # Можно изменить имя для ясности (теперь это имя CHECK constraint)
+            name="message_role_enum_check",
             create_constraint=True,
-            native_enum=False  # <--- ДОБАВИТЬ ЭТО
+            native_enum=False # Recommended for cross-database compatibility
         ),
         nullable=False
     )
@@ -101,5 +114,5 @@ class MessageHistory(Base, PrettyRepr):
 
     group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), nullable=True, index=True)
 
-    user: Mapped["User"] = relationship("User", back_populates="messages")
-    group: Mapped["Group | None"] = relationship("Group", back_populates="messages")
+    user: Mapped["User"] = relationship("User", back_populates="messages") # lazy="selectin" if needed
+    group: Mapped["Group | None"] = relationship("Group", back_populates="messages") # lazy="selectin" if needed
