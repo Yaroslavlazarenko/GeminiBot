@@ -6,9 +6,20 @@ from config import Config
 from datetime import datetime
 import pytz
 
+from services.database.models import User
+
 config = Config()
 
-client = genai.Client(api_key=config.gemini_api_key)
+try:
+    # Используйте client = genai.Client() если API ключ установлен через genai.configure()
+    # или переменные окружения
+    client = genai.Client(api_key=config.gemini_api_key)
+    # Получаем асинхронный интерфейс
+    async_client = client.aio
+except Exception as e:
+    # Обработайте ошибку инициализации по вашему усмотрению
+    # Например, можно завершить работу скрипта: exit()
+    async_client = None # Или установите в None, чтобы проверки ниже сработали
 
 do_not_respond_func = FunctionDeclaration(
     name="do_not_respond",
@@ -16,8 +27,19 @@ do_not_respond_func = FunctionDeclaration(
     parameters=None,
 )
 
-#tools = Tool(function_declarations=[do_not_respond_func], google_search=GoogleSearch())
-tools = Tool(google_search=GoogleSearch())
+disable_responses = FunctionDeclaration(
+    name="disable_responses",
+    description="If a user is seriously offended or asked to shut up and not respond anymore",
+    parameters=None,
+)
+
+# Инструмент для функции
+combined_tool = Tool(
+    function_declarations=[do_not_respond_func, disable_responses],
+    google_search=GoogleSearch()  # Добавляем поиск СЮДА
+)
+
+tools_to_pass_in_list = [combined_tool]
 
 def read_system_instructions(file_path="system_instructions.txt"):
     try:    
@@ -38,41 +60,51 @@ def get_current_time_str(timezone_str: str = "Europe/Kiev") -> str:
         return datetime.now().strftime('%Y-%m-%d %H:%M:%S (Unknown Timezone)')
 
 
-async def get_gemini_response(contents: List[types.Content]):
+async def get_gemini_response(contents: List[types.Content], user: User):
     """
     Gets a response from the Gemini model.
     Args:
         contents: A list of google_types.Content objects representing the ENTIRE conversation history.
     """
+    if not async_client:
+         return None
+    
     base_instructions = read_system_instructions()
     current_time = get_current_time_str()
     system_prompt = f"{base_instructions}\n\nТекущее время: {current_time}"
     try:
-        response = client.models.generate_content(
+        response = await async_client.models._generate_content(
             model=config.gemini_model,
             contents=contents,
             config=GenerateContentConfig(
-                tools=[tools],
+                tools=tools_to_pass_in_list,
                 response_modalities=["text"],
                 system_instruction=system_prompt
             )
         )
-        if response.candidates[0].content.parts[0].function_call:
-            function_call = response.candidates[0].content.parts[0].function_call
-
-            if function_call.name == "do_not_respond":
-                return None 
-        elif response and response.text:
-            return response.text
-        else:
-            return None
+        if response and response.candidates:
+            # Usually, we check the first candidate
+            candidate = response.candidates[0]
+            if candidate.content and candidate.content.parts:
+                part = candidate.content.parts[0]
+                if part.function_call:
+                    function_call = part.function_call
+                    if function_call.name == "do_not_respond":
+                        return None  # Function called, no text response needed
+                    if function_call.name == "disable_responses":
+                        user.responds_to_text = not user.responds_to_text
+                        return None
+                # Check for text ONLY if it wasn't a function call (or handle function call first)
+                elif response.text: # response.text is a convenient shortcut
+                    return response.text
+        return None
     except Exception:
         return None
 
-async def get_text_response(message_text: str, message_history: List[types.Content]) -> str:
+async def get_text_response(message_text: str, message_history: List[types.Content], user: User) -> str:
     """Gets a text response from the Gemini model."""
     
-    return await get_gemini_response(contents=message_history)
+    return await get_gemini_response(contents=message_history, user=user)
 
 async def get_audio_response(audio_file: bytes, message_history: List[types.Content], response: bool = False) -> str:
     """Gets an audio response from the Gemini model."""
