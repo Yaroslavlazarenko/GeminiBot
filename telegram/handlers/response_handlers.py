@@ -2,12 +2,12 @@
 
 import logging
 import asyncio
-from typing import cast, Dict, Any # Добавлены Dict, Any
+from typing import cast, Dict, Any, List # Добавлены Dict, Any
 
 from aiogram import F, Router, filters
-from aiogram.types import Message, Chat
-from aiogram.enums import ChatType
-from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError
+from aiogram.types import Message, Chat, ChatMemberAdministrator, ChatMemberOwner
+from aiogram.enums import ChatType, ChatMemberStatus
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
 
 # Обновляем импорты из gemini.get_responses
 from gemini.get_responses import get_text_response, get_audio_response
@@ -18,6 +18,25 @@ from services.database.dao import AsyncDAO
 logger = logging.getLogger(__name__)
 router = Router()
 
+
+async def is_user_group_admin(chat: Chat, user_id: int) -> bool:
+    """Checks if a user is an administrator or owner in a group/supergroup."""
+    if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        return False # Not applicable in private chats
+    try:
+        member = await chat.get_member(user_id)
+        # return member.status in ['administrator', 'creator'] # Old way
+        return member.status in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]
+    except TelegramBadRequest as e:
+        # Common causes: User not in chat, bot doesn't have rights to get member list
+        logger.warning(f"Could not get member status for user {user_id} in chat {chat.id}: {e}")
+        return False
+    except TelegramForbiddenError:
+        logger.warning(f"Bot is forbidden from getting member status in chat {chat.id}. Cannot verify admin.")
+        return False # Can't verify, assume not admin
+    except Exception as e:
+        logger.error(f"Unexpected error checking admin status for user {user_id} in chat {chat.id}: {e}", exc_info=True)
+        return False
 
 # --- Utility functions (без изменений) ---
 async def send_error_message(message: Message, error_text: str) -> None:
@@ -40,31 +59,148 @@ async def log_and_reply(message: Message, log_message: str, reply_text: str, lev
         logger.error(f"Unexpected error sending reply message to chat {message.chat.id}: {e}", exc_info=True)
 
 
+@router.message(filters.Command("togglegrouptext"))
+async def toggle_group_text_handler(message: Message, dao: AsyncDAO, user: User) -> None:
+    """(Admin Only) Toggles bot text responses ON/OFF for this group."""
+    chat = message.chat
+    if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        await message.reply("Ця команда працює тільки в групах.")
+        return
+
+    # Permission Check
+    sender_id = user.telegram_id # Or message.from_user.id if user object might not be fully synced
+    if not await is_user_group_admin(chat, sender_id):
+        logger.warning(f"User {sender_id} (not admin) tried to use /togglegrouptext in chat {chat.id}")
+        await message.reply("Ви повинні бути адміністратором групи, щоб змінювати ці налаштування.")
+        return
+
+    group = await get_group_or_none(dao, chat)
+    if not group:
+        await send_error_message(message, "Помилка: не вдалося знайти дані цієї групи в базі.")
+        return
+
+    new_value = not group.responds_to_text
+    success = await dao.update_group_settings(group_id=group.id, responds_to_text=new_value)
+
+    if success:
+        group.responds_to_text = new_value # Update in-memory object
+        log_message = f"Admin {sender_id} toggled group {chat.id} (DB ID: {group.id}) responds_to_text to {new_value}"
+        status = "*увімкнено*" if new_value else "*вимкнено*"
+        reply_text = f"✅ Відповіді бота на текстові повідомлення у цій групі тепер {status}."
+        await log_and_reply(message, log_message, reply_text)
+    else:
+        logger.error(f"Failed to update responds_to_text for group {group.id} (chat {chat.id}) in DB.")
+        await send_error_message(message, "Не вдалося зберегти налаштування групи.")
+
+
+@router.message(filters.Command("togglegroupvoice"))
+async def toggle_group_voice_handler(message: Message, dao: AsyncDAO, user: User) -> None:
+    """(Admin Only) Toggles bot voice processing ON/OFF for this group."""
+    chat = message.chat
+    if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        await message.reply("Ця команда працює тільки в групах.")
+        return
+
+    # Permission Check
+    sender_id = user.telegram_id
+    if not await is_user_group_admin(chat, sender_id):
+        logger.warning(f"User {sender_id} (not admin) tried to use /togglegroupvoice in chat {chat.id}")
+        await message.reply("Ви повинні бути адміністратором групи, щоб змінювати ці налаштування.")
+        return
+
+    group = await get_group_or_none(dao, chat)
+    if not group:
+        await send_error_message(message, "Помилка: не вдалося знайти дані цієї групи в базі.")
+        return
+
+    new_value = not group.responds_to_voice
+    success = await dao.update_group_settings(group_id=group.id, responds_to_voice=new_value)
+
+    if success:
+        group.responds_to_voice = new_value # Update in-memory object
+        log_message = f"Admin {sender_id} toggled group {chat.id} (DB ID: {group.id}) responds_to_voice to {new_value}"
+        status = "*увімкнено*" if new_value else "*вимкнено*"
+        reply_text = f"✅ Обробка ботом голосових повідомлень у цій групі тепер {status}."
+        await log_and_reply(message, log_message, reply_text)
+    else:
+        logger.error(f"Failed to update responds_to_voice for group {group.id} (chat {chat.id}) in DB.")
+        await send_error_message(message, "Не вдалося зберегти налаштування групи.")
+
+
+
 # --- Command handlers (без изменений, т.к. они не вызывают Gemini напрямую) ---
 @router.message(filters.Command("settings"))
-async def show_settings_handler(message: Message, user: User) -> None:
-    """Показывает текущие настройки пользователя."""
-    if message.chat.type != ChatType.PRIVATE:
-        await message.answer("ℹ️ Ці налаштування є глобальними для вас і впливають на мою поведінку у всіх чатах. Переглядати та змінювати їх найкраще у приватному чаті зі мною.")
+async def show_settings_handler(message: Message, user: User, dao: AsyncDAO) -> None:
+    """
+    Показывает настройки:
+    - Глобальные для пользователя.
+    - Общие для группы (если в группе).
+    - Команды управления группой (только для админов группы).
+    """
+    chat = message.chat
 
-    text_status = f"✅ *Увімкнено*" if user.responds_to_text else f"❌ *Вимкнено*"
-    voice_status = f"✅ *Увімкнено*" if user.responds_to_voice else f"❌ *Вимкнено*"
+    # --- 1. User Global Settings (Always shown) ---
+    user_text_status = f"✅ *Увімкнено*" if user.responds_to_text else f"❌ *Вимкнено*"
+    user_voice_status = f"✅ *Увімкнено*" if user.responds_to_voice else f"❌ *Вимкнено*"
     if user.responds_to_voice:
-        voice_mode = "*📝 Тільки транскрипція*" if user.transcribe_voice_only else "*💬 Відповідь на повідомлення*"
+        user_voice_mode = "*📝 Тільки транскрипція*" if user.transcribe_voice_only else "*💬 Відповідь на повідомлення*"
     else:
-        voice_mode = "_(неактуально)_"
+        user_voice_mode = "_(неактуально)_"
 
-    settings_text = (
-        f"⚙️ **Ваші поточні налаштування (User ID: {user.telegram_id}):**\n\n"
-        f"Відповіді на текстові повідомлення: {text_status}\n"
-        f"Обробка голосових повідомлень: {voice_status}\n"
-        f"   - Режим: {voice_mode}\n\n"
-        "Для зміни налаштувань використовуйте команди:\n"
-        f"- `{'/toggletext'}` - увімк./вимк. відповіді на текст\n"
-        f"- `{'/togglevoice'}` - увімк./вимк. обробку голосу\n"
-        f"- `{'/togglemode'}` - перемкнути режим обробки голосу"
+    user_settings_text = (
+        f"👤 **Ваші глобальні налаштування (User ID: {user.telegram_id}):**\n"
+        f"   - Відповіді на текст: {user_text_status}\n"
+        f"   - Обробка голосу: {user_voice_status}\n"
+        f"   - Режим голосу: {user_voice_mode}\n\n"
+        f"   *Змінити глобальні налаштування можна командами:* `{'/toggletext'}`, `{'/togglevoice'}`, `{'/togglemode'}` (краще в приватному чаті)."
     )
-    await message.answer(settings_text, parse_mode="Markdown")
+
+    # --- 2. Group Settings (If applicable) ---
+    public_group_settings_text = ""
+    admin_group_settings_text = ""
+
+    if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        group = await get_group_or_none(dao, chat)
+        if group:
+            # --- 2a. Public Group Info (Visible to everyone in the group) ---
+            group_text_status = f"✅ *Увімкнено*" if group.responds_to_text else f"❌ *Вимкнено*"
+            group_voice_status = f"✅ *Увімкнено*" if group.responds_to_voice else f"❌ *Вимкнено*"
+            public_group_settings_text = (
+                f"\n\n🏢 **Налаштування для цієї групи ('{group.name}') (Загальні):**\n"
+                f"   - Відповіді бота на текст: {group_text_status}\n"
+                f"   - Обробка ботом голосу: {group_voice_status}"
+            )
+
+            # --- 2b. Admin Group Info (Visible only to admins/owners) ---
+            # Check if the *user who sent the command* is an admin
+            is_admin = await is_user_group_admin(chat, user.telegram_id)
+            if is_admin:
+                admin_group_settings_text = (
+                    f"\n\n🔑 **Налаштування для групи (Адміністраторам):**\n"
+                    f"   *Ви можете змінити налаштування групи командами:*\n"
+                    f"   `{'/togglegrouptext'}` - Увімк./Вимк. відповіді на текст\n"
+                    f"   `{'/togglegroupvoice'}` - Увімк./Вимк. обробку голосу"
+                )
+            # else: user is not an admin, admin_group_settings_text remains empty
+
+        else:
+            # Group exists in Telegram but couldn't be fetched/created in DB
+            public_group_settings_text = "\n\n⚠️ Не вдалося отримати детальні налаштування для цієї групи з бази даних."
+
+    # --- 3. Combine and Send ---
+    full_settings_text = user_settings_text + public_group_settings_text + admin_group_settings_text
+    try:
+        await message.answer(full_settings_text, parse_mode="Markdown")
+    except TelegramBadRequest as e:
+         logger.error(f"Failed to send settings message (Markdown error?): {e}. Text: {full_settings_text}")
+         # Fallback to sending without Markdown
+         try:
+              await message.answer(full_settings_text)
+         except Exception as fallback_e:
+              logger.error(f"Failed to send settings message even without Markdown: {fallback_e}")
+              # Maybe send a generic error message if even fallback fails
+              await message.answer("Не вдалося відобразити налаштування.")
+
 
 @router.message(filters.Command("toggletext"))
 async def toggle_text_response_handler(message: Message, dao: AsyncDAO, user: User) -> None:
@@ -268,34 +404,45 @@ async def handle_gemini_result(
 
 @router.message(F.text)
 async def text_handler(message: Message, dao: AsyncDAO, user: User) -> None:
-    """Обрабатывает текстовые сообщения в личных чатах и группах."""
+    """Обрабатывает текстовые сообщения, проверяя настройки пользователя и группы."""
     chat = message.chat
-    group = await get_group_or_none(dao, chat)
+    group = await get_group_or_none(dao, chat) # Fetches/creates group if needed
     group_db_id = group.id if group else None
 
+    # --- MODIFIED Check: Check user AND group settings ---
     if not user.responds_to_text:
-        logger.debug(f"Ignoring text message from user {user.telegram_id} in chat {chat.id} due to user settings.")
+        logger.debug(f"Ignoring text message from user {user.telegram_id} in chat {chat.id} due to USER settings.")
         return
-    if not message.text:
+    if group and not group.responds_to_text:
+         logger.debug(f"Ignoring text message from user {user.telegram_id} in group chat {chat.id} (DB ID: {group.id}) due to GROUP settings.")
+         return
+    # --- End of MODIFIED Check ---
+
+    if not message.text: # Should not happen with F.text but good practice
         logger.debug(f"Ignoring message without text content from user {user.telegram_id} in chat {chat.id}")
         return
 
-    logger.info(f"Received text message from user {user.telegram_id} in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
+    logger.info(f"Processing text message from user {user.telegram_id} in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
     try:
         await message.bot.send_chat_action(chat_id=chat.id, action="typing")
-    except (TelegramNetworkError, TelegramBadRequest) as e:
-         logger.warning(f"Failed to send chat action to {chat.id}: {e}")
+    except (TelegramNetworkError, TelegramBadRequest, TelegramForbiddenError) as e:
+         logger.warning(f"Failed to send chat action 'typing' to {chat.id}: {e}")
 
     try:
+        # Handle replies (no change needed here)
         text_to_save = message.text
         if (message.reply_to_message
+                and message.reply_to_message.from_user # Ensure reply is to a user message
+                and not message.reply_to_message.from_user.is_bot # Optional: don't format replies to bots?
                 and message.reply_to_message.text
                 and not message.reply_to_message.audio
                 and not message.reply_to_message.voice):
+            original_sender = message.reply_to_message.from_user.first_name or f"User_{message.reply_to_message.from_user.id}"
             original_text = message.reply_to_message.text
             reply_text = message.text
-            text_to_save = f"Пользователь ответил: {reply_text}. В ответ на сообщение: {original_text}"
-            logger.debug(f"Formatted reply text for saving: {text_to_save}")
+            # Make format clearer for the model
+            text_to_save = f"User replied: '{reply_text}'\nTo the message from {original_sender}: '{original_text}'"
+            logger.debug(f"Formatted reply text for saving: {text_to_save[:100]}...")
 
         # 1. Сохраняем сообщение пользователя
         await dao.add_message(
@@ -310,11 +457,17 @@ async def text_handler(message: Message, dao: AsyncDAO, user: User) -> None:
             message_history = await dao.get_user_private_messages_as_contents(user_id=user.id)
         logger.debug(f"Fetched {len(message_history)} messages for context (user {user.telegram_id}, group_id {group_db_id})")
 
+        # Check if history is empty (maybe first message after clear)
+        if not message_history:
+            logger.warning(f"Message history is empty before calling Gemini for user {user.telegram_id}, group_id {group_db_id}. This might happen after /clear.")
+            # Decide if you want to proceed or inform the user
+            # await send_error_message(message, "Історія повідомлень порожня. Не можу створити відповідь без контексту.")
+            # return # Or proceed, Gemini might handle it
+
         # 3. Получаем ответ от AI
-        # get_text_response теперь возвращает словарь
         gemini_result = await get_text_response(message_history=message_history, user=user)
 
-        # 4. Обрабатываем результат Gemini
+        # 4. Обрабатываем результат Gemini (handle_gemini_result handles sending/saving model response)
         await handle_gemini_result(gemini_result, message, dao, user, group_db_id)
 
     except Exception as e:
@@ -322,55 +475,70 @@ async def text_handler(message: Message, dao: AsyncDAO, user: User) -> None:
         await send_error_message(message, "🤯 Ой! Сталася неочікувана помилка під час обробки вашого текстового повідомлення.")
 
 
+# --- MODIFIED Voice Handler ---
 @router.message(F.voice)
 async def voice_handler(message: Message, dao: AsyncDAO, user: User) -> None:
-    """Обрабатывает голосовые сообщения в личных чатах и группах."""
+    """Обрабатывает голосовые сообщения, проверяя настройки пользователя и группы."""
     chat = message.chat
     group = await get_group_or_none(dao, chat)
     group_db_id = group.id if group else None
 
+    # --- MODIFIED Check: Check user AND group settings ---
     if not user.responds_to_voice:
-        logger.debug(f"Ignoring voice message from user {user.telegram_id} in chat {chat.id} due to user settings.")
+        logger.debug(f"Ignoring voice message from user {user.telegram_id} in chat {chat.id} due to USER settings.")
         return
-    if not message.voice:
+    if group and not group.responds_to_voice:
+        logger.debug(f"Ignoring voice message from user {user.telegram_id} in group chat {chat.id} (DB ID: {group.id}) due to GROUP settings.")
+        return
+    # --- End of MODIFIED Check ---
+
+    if not message.voice: # Should not happen with F.voice
         logger.warning(f"Voice message object is missing for user {user.telegram_id} in chat {chat.id}")
         return
 
-    logger.info(f"Received voice message from user {user.telegram_id} in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
+    logger.info(f"Processing voice message from user {user.telegram_id} in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
     try:
-        await message.bot.send_chat_action(chat_id=chat.id, action="typing")
-    except (TelegramNetworkError, TelegramBadRequest) as e:
-         logger.warning(f"Failed to send chat action to {chat.id}: {e}")
+        # Use record_voice for voice, or typing as fallback
+        await message.bot.send_chat_action(chat_id=chat.id, action="record_voice")
+    except (TelegramNetworkError, TelegramBadRequest, TelegramForbiddenError) as e:
+         logger.warning(f"Failed to send chat action 'record_voice' to {chat.id}: {e}. Falling back to 'typing'.")
+         try:
+             await message.bot.send_chat_action(chat_id=chat.id, action="typing")
+         except Exception as inner_e:
+              logger.warning(f"Failed to send fallback chat action 'typing' to {chat.id}: {inner_e}")
+
 
     voice = message.voice
     audio_bytes: bytes | None = None
 
-    # --- Download Voice File ---
+    # --- Download Voice File (no change needed here) ---
     try:
         file = await message.bot.get_file(voice.file_id)
         if not file.file_path:
             logger.error(f"File path is missing for voice file_id={voice.file_id}")
             await send_error_message(message, "Помилка: не вдалося отримати шлях до файлу.")
             return
+        # Consider using BytesIO for memory efficiency with large files if needed
         downloaded_file = await message.bot.download_file(file.file_path)
-        if downloaded_file is None:
-            logger.error(f"Failed to download voice file from path={file.file_path}")
-            await send_error_message(message, "Помилка: не вдалося завантажити голосове повідомлення.")
+        if downloaded_file is None: # Check if download actually returned something
+            logger.error(f"Failed to download voice file from path={file.file_path}, received None.")
+            await send_error_message(message, "Помилка: не вдалося завантажити голосове повідомлення (отримано None).")
             return
         audio_bytes = downloaded_file.read()
         logger.debug(f"Downloaded {len(audio_bytes)} bytes for voice message from user {user.telegram_id} in chat {chat.id}")
-    except (TelegramBadRequest, TelegramNetworkError) as e:
+    except (TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError) as e:
         logger.error(f"Telegram API error downloading voice file: {e}", exc_info=True)
-        await send_error_message(message, f"Помилка мережі або API Telegram: {e}.")
+        await send_error_message(message, f"Помилка мережі або API Telegram під час завантаження: {e}.")
         return
     except Exception as e:
         logger.error(f"Unexpected error downloading voice file: {e}", exc_info=True)
         await send_error_message(message, "Несподівана помилка при завантаженні файлу.")
         return
 
-    if not audio_bytes:
+    if not audio_bytes: # Double check after download block
         logger.error(f"Audio data is empty after download attempt for user {user.telegram_id}")
-        await send_error_message(message, "Не вдалося отримати дані голосового повідомлення.")
+        # Avoid sending another message if one was already sent above
+        # await send_error_message(message, "Не вдалося отримати дані голосового повідомлення.")
         return
 
     # --- Process Voice with AI ---
@@ -388,16 +556,19 @@ async def voice_handler(message: Message, dao: AsyncDAO, user: User) -> None:
             message_history = await dao.get_user_private_messages_as_contents(user_id=user.id)
         logger.debug(f"Fetched {len(message_history)} messages for context (user {user.telegram_id}, group_id {group_db_id})")
 
-        # Определяем режим работы AI
+        if not message_history:
+             logger.warning(f"Message history is empty before calling Gemini for user {user.telegram_id}, group_id {group_db_id} (voice).")
+             # Decide action - maybe just transcribe if history is empty?
+
+        # Определяем режим работы AI (пользовательский режим 'transcribe_only' все еще имеет приоритет)
         generate_full_response = not user.transcribe_voice_only
-        logger.debug(f"Calling AI for voice. Generate response: {generate_full_response} (user {user.telegram_id}, group_id {group_db_id})")
+        logger.debug(f"Calling AI for voice. Generate response based on user setting: {generate_full_response} (user {user.telegram_id}, group_id {group_db_id})")
 
         # 3. Получаем ответ/транскрипцию от AI
-        # get_audio_response теперь возвращает словарь
         gemini_result = await get_audio_response(
-            message_history=message_history, # Передаем историю с аудио Part
+            message_history=message_history, # History now includes the audio Part
             user=user,
-            response=generate_full_response
+            response=generate_full_response # Use user's preference for response/transcription
         )
 
         # 4. Обрабатываем результат Gemini
