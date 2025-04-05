@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 
-from services.database.dao import DAO
+from services.database.dao import AsyncDAO
 from services.database.models import User as DBUser
 
 logger = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ class DAOMiddleware(BaseMiddleware):
         logger.debug(f"Processing {event_type} (ID:{event_id}, Chat:{chat_id}) for {user_identifier}")
 
         async with self.session_factory() as session:
-            dao = DAO(session)
+            dao = AsyncDAO(session)
             data["dao"] = dao
             db_user: Optional[DBUser] = None
 
