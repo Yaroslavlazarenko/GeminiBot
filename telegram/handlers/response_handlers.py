@@ -7,6 +7,7 @@ from gemini.get_responses import get_text_response, get_audio_response
 from services.database.models import User, MessageRole
 from services.database.dao import DAO
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -129,18 +130,18 @@ async def text_handler(message: Message, dao: DAO, user: User) -> None:
             reply_text = message.text
             # Формируем специальный текст для сохранения в БД
             text_to_save = f"Пользователь ответил: {reply_text}. В ответ на сообщение: {original_text}"
-            logger.info(f"Formatted message as reply context for user {user.telegram_id}")
 
-        # Сохраняем (возможно, отформатированный) текст в БД
-        await dao.add_message(user_id=user.id, role=MessageRole.USER, text=text_to_save)
-
-        # Получаем историю сообщений (она будет включать отформатированное сообщение)
-        message_history = await dao.get_user_messages_as_contents(user.id)
+        save_task = dao.add_message(user_id=user.id, role=MessageRole.USER, text=text_to_save)
+        history_task = dao.get_user_messages_as_contents(user.id)
+        # Выполняем параллельно и получаем результаты
+        results = await asyncio.gather(save_task, history_task)
+        # Второй элемент — результат history_task
+        message_history = results[1]
 
         # Важно: Передаем *оригинальный* текст пользователя в get_text_response,
         # чтобы ИИ отвечал на фактический ввод пользователя, а не на форматированную строку.
         # Если нужно, чтобы ИИ знал контекст ответа, можно передать text_to_save, но это менее типично.
-        response_text = await get_text_response(message.text, message_history)
+        response_text = await get_text_response(message.text, message_history, user)
 
         if response_text:
             logger.info(f"Generated text response for user {user.telegram_id}")
@@ -227,7 +228,6 @@ async def voice_handler(message: Message, dao: DAO, user: User) -> None:
                     await message.answer(line, parse_mode="Markdown")
         else:
             logger.warning(f"Failed to get audio response/transcription from Gemini for user {user.telegram_id}")
-            await send_error_message(message, "На жаль, не вдалося обробити голосове повідомлення.")
 
     except Exception as e:
         logger.error(f"Error processing voice message via Gemini for user {user.telegram_id}: {e}", exc_info=True)
