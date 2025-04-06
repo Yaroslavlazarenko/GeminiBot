@@ -212,24 +212,96 @@ class AsyncDAO:
         logger.debug(f"Message for user_id={user_id} added to session.")
         return new_message # Return the object, ID might be populated after commit/flush
 
-    async def clear_history(self, user_id: int, group_id: int | None = None) -> int:
-        # group_id здесь - это ВНУТРЕННИЙ id из таблицы groups
-        log_msg = f"Clearing message history for user_id={user_id}"
-        if group_id is not None:
-            log_msg += f" in group_id={group_id}" # Используем внутренний ID
-            condition = and_(MessageHistory.user_id == user_id, MessageHistory.group_id == group_id)
+    async def clear_history(
+        self,
+        *, # Force keyword arguments for clarity
+        user_id: int | None = None,
+        group_id: int | None = None,
+        clear_group_wide: bool = False,
+        limit: int | None = None
+    ) -> int:
+        """
+        Clears message history based on provided criteria.
+
+        Args:
+            user_id: The internal database ID of the user whose messages to clear.
+                     Required if clear_group_wide is False.
+            group_id: The internal database ID of the group context.
+                      If None and clear_group_wide is False, clears user's private messages.
+                      Required if clear_group_wide is True.
+            clear_group_wide: If True, clears all messages in the specified group_id,
+                              ignoring user_id. Requires group_id.
+            limit: If provided, clears only the most recent 'limit' messages matching
+                   the criteria.
+
+        Returns:
+            The number of messages deleted.
+
+        Raises:
+            ValueError: If arguments are inconsistent (e.g., clear_group_wide without group_id).
+            SQLAlchemyError: If a database error occurs.
+        """
+        if clear_group_wide:
+            if group_id is None:
+                raise ValueError("group_id must be provided when clear_group_wide is True.")
+            log_msg = f"Clearing history group-wide for group_id={group_id}"
+            condition = MessageHistory.group_id == group_id
+            # user_id is ignored when clearing group-wide
         else:
-            log_msg += " (private messages only)"
-            condition = and_(MessageHistory.user_id == user_id, MessageHistory.group_id.is_(None))
+            if user_id is None:
+                raise ValueError("user_id must be provided when clear_group_wide is False.")
+            log_msg = f"Clearing history for user_id={user_id}"
+            if group_id is not None:
+                log_msg += f" in group_id={group_id}"
+                condition = and_(MessageHistory.user_id == user_id, MessageHistory.group_id == group_id)
+            else:
+                log_msg += " (private messages only)"
+                condition = and_(MessageHistory.user_id == user_id, MessageHistory.group_id.is_(None))
+
+        if limit is not None:
+            if not isinstance(limit, int) or limit <= 0:
+                raise ValueError("Limit must be a positive integer.")
+            log_msg += f" (limit {limit})"
+            # To delete with limit, we need to select the IDs first, then delete by ID
+            # ORDER BY timestamp DESC (or id DESC if timestamp is not reliably ordered)
+            select_stmt = (
+                select(MessageHistory.id)
+                .where(condition)
+                .order_by(MessageHistory.timestamp.desc(), MessageHistory.id.desc()) # Order by timestamp then ID
+                .limit(limit)
+            )
+            try:
+                result_ids = await self.session.scalars(select_stmt)
+                ids_to_delete = result_ids.all()
+
+                if not ids_to_delete:
+                    logger.info(f"No messages found matching criteria for deletion: {log_msg}")
+                    return 0
+
+                # Now construct the delete statement based on the selected IDs
+                delete_stmt = delete(MessageHistory).where(MessageHistory.id.in_(ids_to_delete))
+                log_msg += f" - targeting {len(ids_to_delete)} specific message IDs."
+
+            except SQLAlchemyError as e:
+                logger.error(f"Database error selecting IDs for limited deletion: {e} ({log_msg})", exc_info=True)
+                raise
+        else:
+            # Delete all matching messages without limit
+            delete_stmt = delete(MessageHistory).where(condition)
+
         logger.info(log_msg)
-        stmt = delete(MessageHistory).where(condition)
         try:
-            result = await self.session.execute(stmt)
+            result = await self.session.execute(delete_stmt)
+            # Note: result.rowcount might not be perfectly accurate with some DB backends/drivers
+            # when using "IN" clause with many IDs, but it's usually the best available metric.
+            # If using the IDs_to_delete approach, len(ids_to_delete) is the accurate count
+            # *before* the delete operation. result.rowcount is the count *after*.
             deleted_count = result.rowcount
-            logger.info(f"Cleared {deleted_count} messages matching condition.")
-            return deleted_count
+            actual_deleted = len(ids_to_delete) if limit is not None else deleted_count # More accurate count for limited deletes
+            logger.info(f"Cleared {actual_deleted} messages matching condition. (Reported rowcount: {deleted_count})")
+            return actual_deleted # Return the count based on selected IDs if limit was used
         except SQLAlchemyError as e:
-            logger.error(f"Database error clearing history for user_id={user_id} (group_id={group_id}): {e}", exc_info=True)
+            logger.error(f"Database error executing delete statement: {e} ({log_msg})", exc_info=True)
             raise
 
     async def get_message(self, message_id: int) -> Optional[MessageHistory]:
@@ -247,7 +319,7 @@ class AsyncDAO:
             logger.error(f"Error getting message by id={message_id}: {e}", exc_info=True)
             raise
 
-    async def get_user_private_messages_as_contents(self, user_id: int, limit: int = 50) -> List[types.Content]:
+    async def get_user_private_messages_as_contents(self, user_id: int, limit: int = 500) -> List[types.Content]:
         logger.debug(f"Getting last {limit} private messages for user_id={user_id}")
         contents: List[types.Content] = []
         try:
@@ -266,7 +338,7 @@ class AsyncDAO:
             logger.error(f"Error getting private message history for user_id={user_id}: {e}", exc_info=True)
             return [] # Return empty list on error
 
-    async def get_group_messages_as_contents(self, group_id: int, limit: int = 50) -> List[types.Content]:
+    async def get_group_messages_as_contents(self, group_id: int, limit: int = 500) -> List[types.Content]:
         # group_id здесь - это ВНУТРЕННИЙ id из таблицы groups
         logger.debug(f"Getting last {limit} messages for group_id={group_id}") # Используем внутренний ID
         contents: List[types.Content] = []

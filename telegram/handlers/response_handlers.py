@@ -90,7 +90,7 @@ async def toggle_group_text_handler(message: Message, dao: AsyncDAO, user: User)
         await log_and_reply(message, log_message, reply_text)
     else:
         logger.error(f"Failed to update responds_to_text for group {group.id} (chat {chat.id}) in DB.")
-        await send_error_message(message, "Не вдалося зберегти налаштування групи.")
+        await send_error_message(message, "Не вдалося зберегти налаштуванн  я групи.")
 
 
 @router.message(filters.Command("togglegroupvoice"))
@@ -136,6 +136,7 @@ async def show_settings_handler(message: Message, user: User, dao: AsyncDAO) -> 
     - Глобальные для пользователя.
     - Общие для группы (если в группе).
     - Команды управления группой (только для админов группы).
+    - Команду очистки истории.
     """
     chat = message.chat
 
@@ -148,11 +149,14 @@ async def show_settings_handler(message: Message, user: User, dao: AsyncDAO) -> 
         user_voice_mode = "_(неактуально)_"
 
     user_settings_text = (
-        f"👤 **Ваші глобальні налаштування (User ID: {user.telegram_id}):**\n"
+        f"👤 **Ваші глобальні налаштування:**\n"
         f"   - Відповіді на текст: {user_text_status}\n"
         f"   - Обробка голосу: {user_voice_status}\n"
         f"   - Режим голосу: {user_voice_mode}\n\n"
-        f"   *Змінити глобальні налаштування можна командами:* `{'/toggletext'}`, `{'/togglevoice'}`, `{'/togglemode'}` (краще в приватному чаті)."
+        f"   *Змінити глобальні налаштування можна командами:* `{'/toggletext'}`, `{'/togglevoice'}`, `{'/togglemode'}` (краще в приватному чаті).\n\n"
+        f"   🧹 **Очищення історії:**\n" # <-- Добавлено описание clear
+        f"   `{'/clear'}` - Очистити *вашу* історію в цьому чаті\n"
+        f"   `{'/clear <число>'}` - Очистити *ваші* останні N повідомлень"
     )
 
     # --- 2. Group Settings (If applicable) ---
@@ -160,7 +164,8 @@ async def show_settings_handler(message: Message, user: User, dao: AsyncDAO) -> 
     admin_group_settings_text = ""
 
     if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
-        group = await get_group_or_none(dao, chat)
+        # Используем get_group_by_telegram_id, как в clear_handler
+        group = await dao.get_group_by_telegram_id(telegram_chat_id=chat.id)
         if group:
             # --- 2a. Public Group Info (Visible to everyone in the group) ---
             group_text_status = f"✅ *Увімкнено*" if group.responds_to_text else f"❌ *Вимкнено*"
@@ -172,34 +177,34 @@ async def show_settings_handler(message: Message, user: User, dao: AsyncDAO) -> 
             )
 
             # --- 2b. Admin Group Info (Visible only to admins/owners) ---
-            # Check if the *user who sent the command* is an admin
-            is_admin = await is_user_group_admin(chat, user.telegram_id)
+            is_admin = await is_user_group_admin(chat, user.telegram_id) # Передаем Telegram ID
             if is_admin:
                 admin_group_settings_text = (
                     f"\n\n🔑 **Налаштування для групи (Адміністраторам):**\n"
                     f"   *Ви можете змінити налаштування групи командами:*\n"
                     f"   `{'/togglegrouptext'}` - Увімк./Вимк. відповіді на текст\n"
-                    f"   `{'/togglegroupvoice'}` - Увімк./Вимк. обробку голосу"
+                    f"   `{'/togglegroupvoice'}` - Увімк./Вимк. обробку голосу\n"
+                    # <-- Добавлено описание group clear для админов
+                    f"\n   *Очищення історії групи (тільки адміни):*\n"
+                    f"   `{'/clear group'}` - Очистити *всю* історію групи\n"
+                    f"   `{'/clear group <число>'}` - Очистити останні N повідомлень *групи*"
                 )
-            # else: user is not an admin, admin_group_settings_text remains empty
 
         else:
-            # Group exists in Telegram but couldn't be fetched/created in DB
             public_group_settings_text = "\n\n⚠️ Не вдалося отримати детальні налаштування для цієї групи з бази даних."
 
     # --- 3. Combine and Send ---
     full_settings_text = user_settings_text + public_group_settings_text + admin_group_settings_text
     try:
-        await message.answer(full_settings_text, parse_mode="Markdown")
+        # Добавляем disable_web_page_preview=True, чтобы команды не создавали превью
+        await message.answer(full_settings_text, parse_mode="Markdown", disable_web_page_preview=True)
     except TelegramBadRequest as e:
-         logger.error(f"Failed to send settings message (Markdown error?): {e}. Text: {full_settings_text}")
-         # Fallback to sending without Markdown
-         try:
-              await message.answer(full_settings_text)
-         except Exception as fallback_e:
-              logger.error(f"Failed to send settings message even without Markdown: {fallback_e}")
-              # Maybe send a generic error message if even fallback fails
-              await message.answer("Не вдалося відобразити налаштування.")
+        logger.error(f"Failed to send settings message (Markdown error?): {e}. Text: {full_settings_text}")
+        try:
+            await message.answer(full_settings_text, disable_web_page_preview=True)
+        except Exception as fallback_e:
+            logger.error(f"Failed to send settings message even without Markdown: {fallback_e}")
+            await message.answer("Не вдалося відобразити налаштування.")
 
 
 @router.message(filters.Command("toggletext"))
@@ -264,39 +269,122 @@ async def toggle_voice_mode_handler(message: Message, dao: AsyncDAO, user: User)
         await send_error_message(message, "Не вдалося зберегти налаштування.")
 
 @router.message(filters.Command("clear"))
-async def clear_history_handler(message: Message, dao: AsyncDAO, user: User) -> None:
-    """Очищает историю сообщений пользователя (в текущем контексте)."""
+async def clear_history_handler(message: Message, command: filters.CommandObject, dao: AsyncDAO, user: User) -> None:
+    """
+    Очищает историю сообщений согласно аргументам:
+    /clear - Очищает ВАШУ историю в текущем чате (приватном или группе).
+    /clear <number> - Очищает последние <number> ВАШИХ сообщений в текущем чате.
+    /clear group - (Только группы, только админы) Очищает ВСЮ историю группы.
+    /clear group <number> - (Только группы, только админы) Очищает последние <number> сообщений ВСЕЙ группы.
+    """
     chat_type = message.chat.type
-    deleted_count = 0
-    context_msg = ""
+    args = command.args.split() if command.args else []
+    chat_id_for_log = message.chat.id
+    user_id_for_log = user.telegram_id # Use Telegram ID for logging clarity
+
+    limit: int | None = None
+    target_group_wide: bool = False
+    target_description: str = ""
+    group_db_id: int | None = None # Internal DB ID for the group
 
     try:
+        # --- Argument Parsing and Validation ---
         if chat_type == ChatType.PRIVATE:
-            logger.info(f"User {user.telegram_id} requested history clear in private chat.")
-            deleted_count = await dao.clear_history(user_id=user.id, group_id=None)
-            context_msg = "вашу особисту історію повідомлень"
-        elif chat_type in [ChatType.GROUP, ChatType.SUPERGROUP]:
-            chat_id = message.chat.id
-            group = await dao.get_group_by_telegram_id(telegram_chat_id=chat_id)
-            if group:
-                logger.info(f"User {user.telegram_id} requested history clear for themselves in group {chat_id} (DB ID: {group.id}).")
-                deleted_count = await dao.clear_history(user_id=user.id, group_id=group.id)
-                context_msg = f"ваші повідомлення у цьому чаті ('{group.name}')"
+            if len(args) == 0:
+                # /clear (private)
+                target_description = "вашу особисту історію повідомлень"
+            elif len(args) == 1:
+                # /clear <number> (private)
+                try:
+                    limit = int(args[0])
+                    if limit <= 0:
+                        raise ValueError("Limit must be positive.")
+                    target_description = f"останні {limit} ваших особистих повідомлень"
+                except ValueError:
+                    await send_error_message(message, "Невірний формат. Очікується `/clear` або `/clear <число>` у приватних повідомленнях.")
+                    return
             else:
-                logger.warning(f"User {user.telegram_id} tried to clear history in group {chat_id}, but group not found in DB.")
-                await message.answer("Не вдалося знайти цей чат у базі даних для очищення історії.")
+                await send_error_message(message, "Невірний формат. Забагато аргументів для приватного чату.")
                 return
+
+        elif chat_type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+            # Get group from DB first
+            group = await dao.get_group_by_telegram_id(telegram_chat_id=message.chat.id)
+            if not group:
+                logger.warning(f"User {user_id_for_log} tried /clear in group {chat_id_for_log}, but group not found in DB.")
+                await message.answer("⚠️ Не вдалося знайти цей чат у базі даних. Будь ласка, спробуйте відправити звичайне повідомлення боту в цій групі, щоб він її зареєстрував.")
+                return
+            group_db_id = group.id # Store internal group ID
+
+            if len(args) == 0:
+                # /clear (group) -> clear user's messages in this group
+                target_description = f"ваші повідомлення у групі '{group.name}'"
+            elif len(args) == 1:
+                if args[0].lower() == "group":
+                    # /clear group -> clear all messages in this group (admin only)
+                    target_group_wide = True
+                    target_description = f"всі повідомлення у групі '{group.name}'"
+                else:
+                    # /clear <number> (group) -> clear user's last N messages in this group
+                    try:
+                        limit = int(args[0])
+                        if limit <= 0:
+                            raise ValueError("Limit must be positive.")
+                        target_description = f"останні {limit} ваших повідомлень у групі '{group.name}'"
+                    except ValueError:
+                        await send_error_message(message, "Невірний формат. Очікується `/clear`, `/clear <число>`, `/clear group` або `/clear group <число>`.")
+                        return
+            elif len(args) == 2:
+                if args[0].lower() == "group":
+                    # /clear group <number> -> clear last N messages in this group (admin only)
+                    target_group_wide = True
+                    try:
+                        limit = int(args[1])
+                        if limit <= 0:
+                            raise ValueError("Limit must be positive.")
+                        target_description = f"останні {limit} повідомлень у групі '{group.name}'"
+                    except ValueError:
+                        await send_error_message(message, "Невірний формат. Очікується `/clear group <число>` (число повинно бути позитивним).")
+                        return
+                else:
+                    await send_error_message(message, "Невірний формат. Очікується `/clear group <число>`.")
+                    return
+            else:
+                await send_error_message(message, "Невірний формат. Забагато аргументів.")
+                return
+
+            # --- Permission Check (for group-wide clearing) ---
+            if target_group_wide:
+                is_admin = await is_user_group_admin(message.chat, user.telegram_id)
+                if not is_admin:
+                    logger.warning(f"User {user_id_for_log} (not admin) tried group-wide clear in group {chat_id_for_log}")
+                    await message.answer("❌ Цю дію (очищення історії всієї групи) можуть виконувати лише адміністратори групи.")
+                    return
+
         else:
-            logger.warning(f"Unsupported chat type '{chat_type}' for /clear command from user {user.telegram_id}.")
+            logger.warning(f"Unsupported chat type '{chat_type}' for /clear command from user {user_id_for_log}.")
             await message.answer("Ця команда підтримується лише в особистих чатах та групах.")
             return
 
-        await message.answer(f"🗑 Історію очищено (видалено {deleted_count} повідомлень: {context_msg}).")
+        # --- Perform Deletion ---
+        logger.info(f"User {user_id_for_log} requested history clear: chat_type={chat_type}, args={args}, target_group_wide={target_group_wide}, limit={limit}, group_db_id={group_db_id}")
 
+        deleted_count = await dao.clear_history(
+            user_id=user.id if not target_group_wide else None, # Pass user.id only if clearing user-specific
+            group_id=group_db_id, # Pass internal group ID if in group, else None (handled by logic above)
+            clear_group_wide=target_group_wide,
+            limit=limit
+        )
+
+        # --- Send Confirmation ---
+        await message.answer(f"🗑 Історію очищено (видалено {deleted_count} повідомлень: {target_description}).")
+
+    except ValueError as ve: # Catch specific ValueErrors from DAO or parsing
+        logger.warning(f"ValueError during /clear for user {user_id_for_log} in chat {chat_id_for_log}: {ve}")
+        await send_error_message(message, f"Помилка обробки команди: {ve}")
     except Exception as e:
-        logger.error(f"Handler error during history clear for user {user.telegram_id} in chat {message.chat.id}: {e}", exc_info=True)
-        await send_error_message(message, "Сталася помилка під час обробки команди очищення історії.")
-
+        logger.error(f"Handler error during history clear for user {user_id_for_log} in chat {chat_id_for_log}: {e}", exc_info=True)
+        await send_error_message(message, "Сталася неочікувана помилка під час очищення історії.")
 # --- Message handlers ---
 
 async def get_group_or_none(dao: AsyncDAO, chat: Chat) -> Group | None:
@@ -499,7 +587,7 @@ async def voice_handler(message: Message, dao: AsyncDAO, user: User) -> None:
     logger.info(f"Processing voice message from user {user.telegram_id} in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
     try:
         # Use record_voice for voice, or typing as fallback
-        await message.bot.send_chat_action(chat_id=chat.id, action="record_voice")
+        await message.bot.send_chat_action(chat_id=chat.id, action="typing")
     except (TelegramNetworkError, TelegramBadRequest, TelegramForbiddenError) as e:
          logger.warning(f"Failed to send chat action 'record_voice' to {chat.id}: {e}. Falling back to 'typing'.")
          try:
