@@ -1,4 +1,5 @@
 import logging # Добавить импорт логгера
+import re
 from google import genai
 from google.genai import types
 from google.genai.types import Tool, GenerateContentConfig, GoogleSearch, FunctionDeclaration
@@ -36,12 +37,14 @@ disable_responses = FunctionDeclaration(
     parameters=None,
 )
 
-combined_tool = Tool(
-    function_declarations=[do_not_respond_func, disable_responses],
-    google_search=GoogleSearch()
+search_tool = Tool(google_search=GoogleSearch())
+
+# 2. Создаем инструмент для Function Calling
+function_tool = Tool(
+    function_declarations=[do_not_respond_func, disable_responses]
 )
 
-tools_to_pass_in_list = [combined_tool]
+tools_to_pass_in_list = [search_tool]
 
 # --- Утилиты (без изменений) ---
 def read_system_instructions(file_path="system_instructions.txt") -> str:
@@ -63,6 +66,56 @@ def get_current_time_str(timezone_str: str = "Europe/Kiev") -> str:
     except Exception as e:
         logger.error(f"Error getting timezone {timezone_str}: {e}. Falling back to naive datetime.")
         return datetime.now().strftime('%Y-%m-%d %H:%M:%S (Unknown Timezone)')
+
+
+def check_text_for_function_call(text: str):
+    """
+    Checks text content for a 'functions{...}' block containing specific
+    function calls like 'do_not_respond: true' or 'disable_responses: true'.
+
+    Args:
+        text: The text string to check.
+
+    Returns:
+        The name of the first matched function ("do_not_respond" or
+        "disable_responses") if found with status 'true', otherwise None.
+        Priority is given based on the order of checks if multiple are present.
+    """
+    if not text:
+        return None
+
+    # Regex to find the functions block and capture its content (case-insensitive, multiline)
+    block_match = re.search(r"!functions\s*\{\s*(.*?)\s*\}", text, re.IGNORECASE | re.DOTALL)
+
+    if not block_match:
+        return None # No 'functions{...}' block found
+
+    content = block_match.group(1).strip()
+    logger.debug(f"Found 'functions' block in text response. Content: '{content}'")
+
+    # Regex to parse lines like "FunctionName: status" inside the block (case-insensitive)
+    call_matches = re.findall(r"([\w_]+)\s*:\s*(true|false|\w+)", content, re.IGNORECASE)
+
+    if not call_matches and content:
+        logger.warning(f"Found functions block in text, but could not parse calls like 'Name: status' inside.")
+        return None
+
+    # Check for specific functions in order of priority if needed
+    for func_name, status in call_matches:
+        func_name_cleaned = func_name.strip().lower()
+        status_cleaned = status.strip().lower()
+
+        # Check against the DECLARED function names
+        if func_name_cleaned == "do_not_respond" and status_cleaned == "true":
+            logger.info("Detected 'do_not_respond: true' within the text response.")
+            return "do_not_respond" # Return the function name
+
+        if func_name_cleaned == "disable_responses" and status_cleaned == "true":
+            logger.info("Detected 'disable_responses: true' within the text response.")
+            return "disable_responses" # Return the function name
+
+    # If the loop finishes without finding the specific calls
+    return None
 
 # --- Основная функция взаимодействия с API ---
 
@@ -117,42 +170,33 @@ async def get_gemini_response(
                 system_instruction=system_prompt
             )
         )
-        # logger.debug(f"Received Gemini response: {response}") # Логирование полного ответа (может быть большим)
 
-        # Проверяем первый кандидат (самый вероятный)
-        if response.candidates:
-            candidate = response.candidates[0]
+        if not response:
+            logger.warning("Gemini response is empty or None.")
+            return {"type": "no_response"}
+        
+        response_text = response.text
+        if response_text:
+            # Check the text content for our special function directives
+            function_called_in_text = check_text_for_function_call(response_text)
 
-            # 1. Проверяем блокировку из-за безопасности
-            if candidate.finish_reason.name != "STOP" and candidate.finish_reason.name != "TOOL_CODE":
-                 # FINISH_REASON_SAFETY, FINISH_REASON_RECITATION, FINISH_REASON_OTHER, etc.
-                 logger.warning(f"Gemini generation finished with non-STOP reason: {candidate.finish_reason.name}")
-                 # Если есть safety_ratings, логируем их
-                 if candidate.safety_ratings:
-                     logger.warning(f"Safety Ratings: {candidate.safety_ratings}")
-                 # Не возвращаем контент, если он заблокирован или не остановился нормально
-                 # Можно вернуть специфическую ошибку или no_response
-                 return {"type": "no_response", "data": f"Generation stopped: {candidate.finish_reason.name}"}
-
-
-            # 2. Проверяем наличие контента у кандидата
-            if candidate.content and candidate.content.parts:
-                part = candidate.content.parts[0] # Обычно все в первой части
-
-                # 3. Проверяем вызов функции
-                if part.function_call:
-                    function_call = part.function_call
-                    fc_data = {"name": function_call.name, "args": dict(function_call.args)}
-                    logger.info(f"Gemini requested function call: {fc_data['name']}")
-                    # НЕ ВЫПОЛНЯЕМ ДЕЙСТВИЕ ЗДЕСЬ
-                    # Просто возвращаем информацию о вызове
-                    return {"type": "function_call", "data": fc_data}
-
-                # 4. Если не функция, проверяем наличие текста
-                # Используем response.text как удобный способ получить весь текст
-                elif response.text:
-                    logger.info(f"Gemini returned text response (length: {len(response.text)})")
-                    return {"type": "text", "data": response.text.strip()}
+            if function_called_in_text == "do_not_respond":
+                # The text itself contains the instruction not to respond
+                logger.info("Overriding text response based on 'do_not_respond: true' found in text content.")
+                fc_data = {"name": "do_not_respond", "args": {}}
+                return {"type": "function_call", "data": fc_data}
+            elif function_called_in_text == "disable_responses":
+                # The text contains the instruction to disable responses
+                logger.info("Detected 'disable_responses: true' in text content. Returning as function call.")
+                # Return it like a structured function call for upstream handling
+                # Assuming no args needed based on declaration
+                fc_data = {"name": "disable_responses", "args": {}}
+                return {"type": "function_call", "data": fc_data}
+            else:
+                # No special function directive found in text, return the text normally
+                logger.debug("Returning regular text response.")
+                return {"type": "text", "data": response_text}
+        
 
         # Если нет кандидатов или нет подходящего контента/функции
         logger.warning("No suitable content or function call found in Gemini response.")
@@ -194,7 +238,7 @@ async def get_audio_response(
 
     # Передаем оригинальную историю и подсказку для задачи
     return await get_gemini_response(
-        contents=message_history,
+        contents= message_history,
         user=user,
         task_hint=task
     )
