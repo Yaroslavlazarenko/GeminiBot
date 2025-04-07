@@ -20,7 +20,11 @@ async def handle_gemini_result(
     user: User,
     group_db_id: int | None
 ) -> None:
-    """Обрабатывает структурированный ответ от Gemini API."""
+    """
+    Обрабатывает структурированный ответ от Gemini API.
+    В группах первая строка ответа отправляется как reply, последующие - как answer.
+    В личных чатах все строки отправляются как answer.
+    """
     chat = message.chat
     result_type = gemini_result.get("type")
     result_data = gemini_result.get("data")
@@ -28,45 +32,55 @@ async def handle_gemini_result(
     if result_type == "text":
         response_text = result_data
         if response_text:
-            logger.info(f"Gemini returned text for user {user.telegram_id} in chat {chat.id}. Saving and replying.")
+            logger.info(f"Gemini returned text for user {user.telegram_id} in chat {chat.id}. Saving and replying/answering.")
             await message_dao.add_message(
                 user_id=user.id, role=MessageRole.MODEL, text=response_text, group_id=group_db_id
             )
             logger.debug(f"Model response queued for save (user {user.telegram_id}, group_id {group_db_id})")
 
-            reply_method = message.reply if chat.type != ChatType.PRIVATE else message.answer
             response_lines = response_text.split("\\n")
             full_response_sent = ""
+            is_first_line = True
+
             for line in response_lines:
                 line = line.lstrip()
                 if line.strip():
+                    if is_first_line and chat.type != ChatType.PRIVATE:
+                        send_method = message.reply
+                        method_name = "reply"
+                    else:
+                        send_method = message.answer
+                        method_name = "answer"
+
                     try:
-                         await reply_method(line, parse_mode="Markdown")
-                         full_response_sent += line + "\n"
-                         await asyncio.sleep(0.1)
+                        await send_method(line, parse_mode="Markdown")
+                        full_response_sent += line + "\n"
+                        if is_first_line:
+                            is_first_line = False
+                        await asyncio.sleep(0.1)
                     except TelegramBadRequest as e:
-                         logger.warning(f"Failed to send part of response (Markdown) to {chat.id}: {e}. Content: '{line[:50]}...'")
-                         try:
-                             await reply_method(line, parse_mode=None)
-                             full_response_sent += line + "\n"
-                         except Exception as inner_e:
-                             logger.error(f"Failed to send part of response (no Markdown) to {chat.id}: {inner_e}")
-                             break
-                    except (TelegramNetworkError, Exception) as e:
-                         logger.error(f"Error sending part of response to {chat.id}: {e}", exc_info=True)
-                         break
+                        logger.warning(f"Failed to send part of response ({method_name}, Markdown) to {chat.id}: {e}. Content: '{line[:50]}...'")
+                        try:
+                            await send_method(line, parse_mode=None)
+                            full_response_sent += line + "\n"
+                            if is_first_line:
+                                is_first_line = False
+                        except Exception as inner_e:
+                            logger.error(f"Failed to send part of response ({method_name}, no Markdown) to {chat.id}: {inner_e}. Stopping message sending.")
+                            break
+                    except (TelegramNetworkError, TelegramForbiddenError, Exception) as e:
+                        logger.error(f"Error sending part of response ({method_name}) to {chat.id}: {e}", exc_info=True)
+                        break
+
             logger.debug(f"Finished sending response to chat {chat.id}. Approx length {len(full_response_sent)}")
         else:
              logger.warning(f"Gemini result type was 'text' but data was empty for user {user.telegram_id} in chat {chat.id}.")
              await send_error_message(message, "AI повернув порожню відповідь.")
 
-
     elif result_type == "function_call":
         function_name = result_data.get("name")
-
         if function_name == "do_not_respond":
             logger.info(f"Function call '{function_name}' received for user {user.telegram_id} in chat {chat.id}. No reply sent.")
-
         elif function_name == "disable_responses":
             logger.info(f"Function call '{function_name}' received. Disabling text responses for user {user.telegram_id}.")
             success = await user_dao.update_user_settings(user_id=user.id, responds_to_text=False)
