@@ -2,7 +2,7 @@
 
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 import asyncpg
-import logging # Используем logging
+import logging
 
 from .models import Base
 
@@ -25,33 +25,30 @@ class DatabaseManager:
 
     async def create_database(self):
         """Создает базу данных асинхронно, если она не существует."""
-        conn = None # Инициализируем conn
+        conn = None
         try:
-            # Подключаемся к 'postgres' или другой стандартной БД для проверки/создания
             logger.info(f"Attempting to connect to 'postgres' db at {self.host} to check/create database '{self.db_name}'")
             conn = await asyncpg.connect(
                 user=self.user, password=self.password, host=self.host, database="postgres"
             )
-            # Проверяем существование БД перед созданием
             exists = await conn.fetchval(
                 "SELECT 1 FROM pg_database WHERE datname = $1", self.db_name
             )
             if not exists:
                  logger.info(f"Database '{self.db_name}' does not exist. Creating...")
                  try:
-                     await conn.execute(f'CREATE DATABASE "{self.db_name}"') # Используем кавычки на случай спецсимволов
+                     await conn.execute(f'CREATE DATABASE "{self.db_name}"')
                      logger.info(f"Database '{self.db_name}' created successfully.")
                  except asyncpg.PostgresError as e:
                      logger.error(f"Error creating database '{self.db_name}': {e}", exc_info=True)
-                     # Не бросаем исключение, т.к. таблицы все равно могут существовать
             else:
                 logger.info(f"Database '{self.db_name}' already exists.")
 
         except asyncpg.InvalidCatalogNameError:
              logger.warning("Database 'postgres' not found? Cannot check/create database automatically.")
-        except asyncpg.PostgresError as e: # Ловим общие ошибки asyncpg
+        except asyncpg.PostgresError as e:
             logger.error(f"Error connecting to 'postgres' db or checking database '{self.db_name}': {e}", exc_info=True)
-        except Exception as e: # Общий обработчик
+        except Exception as e:
              logger.error(f"Unexpected error during database check/creation: {e}", exc_info=True)
         finally:
             if conn:
@@ -64,14 +61,11 @@ class DatabaseManager:
         logger.info(f"Attempting to create tables defined in Base.metadata for database '{self.db_name}'...")
         try:
             async with self.engine.begin() as conn:
-                # run_sync выполняет DDL команды синхронно внутри асинхронного блока
                 await conn.run_sync(self.base.metadata.create_all)
             logger.info("Tables checked/created successfully.")
         except Exception as e:
-            # Ловим ошибки создания таблиц (например, проблемы с подключением к основной БД)
             logger.critical(f"FATAL: Could not create tables in database '{self.db_name}': {e}", exc_info=True)
-            # Здесь можно решить, стоит ли продолжать работу приложения
-            raise # Перевыбрасываем, т.к. без таблиц работать нельзя
+            raise
 
     def get_session_factory(self) -> async_sessionmaker[AsyncSession]:
         """Возвращает фабрику сессий."""
