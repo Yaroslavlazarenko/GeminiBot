@@ -368,7 +368,7 @@ class AsyncDAO:
         parts = []
         message_text = message.text
         # Add prefix ONLY if it's a group message AND it's from a user
-        if is_group and message.role == MessageRole.USER:
+        if message.role == MessageRole.USER:
             # User should have been loaded via selectinload in get_group_messages_as_contents
             if message.user:
                 # Use first_name or fallback to a generic User ID string
