@@ -1,9 +1,7 @@
 # services/database/models.py
-
-# --- Imports ---
 from sqlalchemy import (
-    Integer, String, Text, LargeBinary, ForeignKey, DateTime, BigInteger, func,
-    Boolean, true, false, # Keep true and false
+    String, Text, LargeBinary, ForeignKey, DateTime, BigInteger, func,
+    Boolean, true, false,
     Enum as SQLAlchemyEnum
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
@@ -12,16 +10,13 @@ from datetime import datetime
 from typing import List
 import enum
 
-# --- Base Definition ---
 class Base(DeclarativeBase, AsyncAttrs):
     pass
 
-# --- Enum for Role ---
 class MessageRole(str, enum.Enum):
     USER = "user"
     MODEL = "model"
 
-# --- Pretty Repr ---
 class PrettyRepr:
     def __repr__(self: "Base") -> str:
         cols = []
@@ -37,13 +32,11 @@ class PrettyRepr:
                 cols.append(f"{attr}=<Error Reading>")
         return f"<{self.__class__.__name__}({', '.join(cols)})>"
 
-# --- User Model ---
 class User(Base, PrettyRepr):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    # username: Mapped[str] = mapped_column(String(256), nullable=False, index=True) # Username can be nullable or change
-    username: Mapped[str | None] = mapped_column(String(256), index=True) # Make username nullable
+    username: Mapped[str | None] = mapped_column(String(256), index=True)
     telegram_id: Mapped[int] = mapped_column(BigInteger, unique=True, index=True, nullable=False)
     first_name: Mapped[str | None] = mapped_column(String(256))
     last_name: Mapped[str | None] = mapped_column(String(256))
@@ -55,10 +48,9 @@ class User(Base, PrettyRepr):
     messages: Mapped[List["MessageHistory"]] = relationship(
         back_populates="user",
         cascade="all, delete-orphan",
-        lazy="selectin" # Keep selectin if you often access user messages together
+        lazy="selectin"
     )
 
-# --- Group Model (MODIFIED) ---
 class Group(Base, PrettyRepr):
     __tablename__ = "groups"
 
@@ -71,22 +63,18 @@ class Group(Base, PrettyRepr):
     )
     name: Mapped[str] = mapped_column(String(256), nullable=False)
 
-    # --- NEW FIELDS for group-specific settings ---
     responds_to_text: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=true(), nullable=False
     )
     responds_to_voice: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=true(), nullable=False
     )
-    # --- End of NEW FIELDS ---
 
 
     messages: Mapped[List["MessageHistory"]] = relationship(
         back_populates="group"
-        # cascade="all, delete-orphan" # Optional: delete messages if group is deleted
     )
 
-# --- MessageHistory Model ---
 class MessageHistory(Base, PrettyRepr):
     __tablename__ = "message_history"
 
@@ -98,7 +86,7 @@ class MessageHistory(Base, PrettyRepr):
             MessageRole,
             name="message_role_enum_check",
             create_constraint=True,
-            native_enum=False # Recommended for cross-database compatibility
+            native_enum=False
         ),
         nullable=False
     )
@@ -114,5 +102,5 @@ class MessageHistory(Base, PrettyRepr):
 
     group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), nullable=True, index=True)
 
-    user: Mapped["User"] = relationship("User", back_populates="messages") # lazy="selectin" if needed
-    group: Mapped["Group | None"] = relationship("Group", back_populates="messages") # lazy="selectin" if needed
+    user: Mapped["User"] = relationship("User", back_populates="messages")
+    group: Mapped["Group | None"] = relationship("Group", back_populates="messages")
