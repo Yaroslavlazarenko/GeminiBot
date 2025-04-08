@@ -108,12 +108,10 @@ Rules for your response:
         ```block code```
         ||hidden text||
         ~~Strikethrough text~~
-       __Текст курсивом__
-       *Italic* or _Italic_
-       **Bold** or __Bold__
+       _Italic_
+       *Bold*
         making a part of the text Italic that is Bold inside Bold is impossible
-       ***Bold italic*** or ___Bold italic___
-       Unordered lists: Use -, *, or + before an item (with a space after the symbol)
+       ___Bold italic___
        href: [title](https://example.com)
        print("Hello") - inline code
        Horizontal line
