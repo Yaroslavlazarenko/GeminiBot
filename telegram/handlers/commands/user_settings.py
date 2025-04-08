@@ -100,7 +100,7 @@ async def toggle_text_response_handler(
     if success:
         user.responds_to_text = new_value
         log_message = f"User {user.telegram_id} toggled responds_to_text to {user.responds_to_text}"
-        status = "*увімкнено*" if user.responds_to_text else "*вимкнено*"
+        status = "<b>увімкнено</b>" if user.responds_to_text else "<b>вимкнено</b>"
         reply_text = f"✅ Відповіді на текстові повідомлення тепер {status}."
         await log_and_reply(message, log_message, reply_text)
     else:
@@ -123,7 +123,7 @@ async def toggle_voice_response_handler(
     if success:
         user.responds_to_voice = new_value
         log_message = f"User {user.telegram_id} toggled responds_to_voice to {user.responds_to_voice}"
-        status = "*увімкнено*" if user.responds_to_voice else "*вимкнено*"
+        status = "<b>увімкнено</b>" if user.responds_to_voice else "<b>вимкнено</b>"
         reply_text = f"✅ Обробка голосових повідомлень тепер {status}."
         await log_and_reply(message, log_message, reply_text)
     else:

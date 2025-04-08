@@ -45,7 +45,7 @@ async def clear_history_handler(
                     if limit <= 0: raise ValueError("Limit must be positive.")
                     target_description = f"останні {limit} ваших особистих повідомлень"
                 except ValueError:
-                    await send_error_message(message, "Невірний формат. Очікується `/clear` або `/clear <число>` у приватних повідомленнях.")
+                    await send_error_message(message, "Невірний формат. Очікується </code>/clear</code> або </code>/clear &lt;число&gt;</code> у приватних повідомленнях.")
                     return
             else:
                 await send_error_message(message, "Невірний формат. Забагато аргументів для приватного чату.")
@@ -71,7 +71,7 @@ async def clear_history_handler(
                         if limit <= 0: raise ValueError("Limit must be positive.")
                         target_description = f"останні {limit} ваших повідомлень у групі '{group.name}'"
                     except ValueError:
-                        await send_error_message(message, "Невірний формат. Очікується `/clear`, `/clear <число>`, `/clear group` або `/clear group <число>`.")
+                        await send_error_message(message, "Невірний формат. Очікується <code>/clear</code>, <code>/clear &lt;число&gt;</code>, <code>/clear group</code> або <code>/clear group &lt;число&gt;</code>.")
                         return
             elif len(args) == 2:
                 if args[0].lower() == "group":
@@ -81,10 +81,10 @@ async def clear_history_handler(
                         if limit <= 0: raise ValueError("Limit must be positive.")
                         target_description = f"останні {limit} повідомлень у групі '{group.name}'"
                     except ValueError:
-                        await send_error_message(message, "Невірний формат. Очікується `/clear group <число>` (число повинно бути позитивним).")
+                        await send_error_message(message, "Невірний формат. Очікується <code>/clear group &lt;число&gt;</code> (число повинно бути позитивним).")
                         return
                 else:
-                    await send_error_message(message, "Невірний формат. Очікується `/clear group <число>`.")
+                    await send_error_message(message, "Невірний формат. Очікується <code>/clear group &lt;число&gt;</code>.")
                     return
             else:
                 await send_error_message(message, "Невірний формат. Забагато аргументів.")

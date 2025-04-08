@@ -39,7 +39,7 @@ async def toggle_group_text_handler(
     if success:
         group.responds_to_text = new_value
         log_message = f"Admin {sender_id} toggled group {chat.id} (DB ID: {group.id}) responds_to_text to {new_value}"
-        status = "*увімкнено*" if new_value else "*вимкнено*"
+        status = "<b>увімкнено</b>" if new_value else "<b>вимкнено</b>"
         reply_text = f"✅ Відповіді бота на текстові повідомлення у цій групі тепер {status}."
         await log_and_reply(message, log_message, reply_text)
     else:
@@ -76,7 +76,7 @@ async def toggle_group_voice_handler(
     if success:
         group.responds_to_voice = new_value
         log_message = f"Admin {sender_id} toggled group {chat.id} (DB ID: {group.id}) responds_to_voice to {new_value}"
-        status = "*увімкнено*" if new_value else "*вимкнено*"
+        status = "<b>увімкнено</b>" if new_value else "<b>вимкнено</b>"
         reply_text = f"✅ Обробка ботом голосових повідомлень у цій групі тепер {status}."
         await log_and_reply(message, log_message, reply_text)
     else:
