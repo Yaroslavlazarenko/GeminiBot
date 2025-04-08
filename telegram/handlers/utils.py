@@ -189,7 +189,7 @@ async def get_group_or_none(group_dao: GroupDAO, chat: Chat) -> Optional[Group]:
     if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
         return None
     try:
-        group = await group_dao.get_or_create_group(chat.id)
+        group = await group_dao.get_or_create_group(chat.id, chat.full_name)
         if not group:
             # It's often normal for a group not to be in the DB yet, so INFO level might be better
             logger.info(f"Group with telegram_chat_id={chat.id} not found in DB.")
