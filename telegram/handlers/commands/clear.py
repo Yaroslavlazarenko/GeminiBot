@@ -45,7 +45,7 @@ async def clear_history_handler(
                     if limit <= 0: raise ValueError("Limit must be positive.")
                     target_description = f"останні {limit} ваших особистих повідомлень"
                 except ValueError:
-                    await send_error_message(message, "Невірний формат. Очікується </code>/clear</code> або </code>/clear &lt;число&gt;</code> у приватних повідомленнях.")
+                    await send_error_message(message, "Невірний формат. Очікується <code>/clear</code> або <code>/clear &lt;число&gt;</code> у приватних повідомленнях.")
                     return
             else:
                 await send_error_message(message, "Невірний формат. Забагато аргументів для приватного чату.")

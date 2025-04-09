@@ -142,7 +142,7 @@ async def toggle_voice_mode_handler(
          await message.answer("ℹ️ Зверніть увагу: ця команда змінює ваші глобальні налаштування для всіх чатів.")
 
     if not user.responds_to_voice:
-        await message.answer(f"Спочатку увімкніть обробку голосових повідомлень командою `{'/togglevoice'}`.", parse_mode="Markdown")
+        await message.answer(f"Спочатку увімкніть обробку голосових повідомлень командою <code>{'/togglevoice'}</code>.", parse_mode="HTML")
         return
 
     new_value = not user.transcribe_voice_only
@@ -151,7 +151,7 @@ async def toggle_voice_mode_handler(
     if success:
         user.transcribe_voice_only = new_value
         log_message = f"User {user.telegram_id} toggled transcribe_voice_only to {user.transcribe_voice_only}"
-        mode = "*тільки транскрибувати*" if user.transcribe_voice_only else "*відповідати на повідомлення*"
+        mode = "<b>тільки транскрибувати</b>" if user.transcribe_voice_only else "<b>відповідати на повідомлення</b>"
         reply_text = f"✅ Режим обробки голосових змінено: бот буде {mode}."
         await log_and_reply(message, log_message, reply_text)
     else:
