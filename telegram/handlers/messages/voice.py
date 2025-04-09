@@ -38,13 +38,9 @@ async def voice_handler(
 
     logger.info(f"Processing voice message from user {user.telegram_id} in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
     try:
-        await message.bot.send_chat_action(chat_id=chat.id, action="record_voice")
-    except (TelegramNetworkError, TelegramBadRequest, TelegramForbiddenError) as e:
-         logger.warning(f"Failed to send chat action 'record_voice' to {chat.id}: {e}. Falling back to 'typing'.")
-         try:
-             await message.bot.send_chat_action(chat_id=chat.id, action="typing")
-         except Exception as inner_e:
-              logger.warning(f"Failed to send fallback chat action 'typing' to {chat.id}: {inner_e}")
+        await message.bot.send_chat_action(chat_id=chat.id, action="typing")
+    except Exception as inner_e:
+        logger.warning(f"Failed to send fallback chat action 'typing' to {chat.id}: {inner_e}")
 
     voice = message.voice
     audio_bytes: bytes | None = None
@@ -76,6 +72,9 @@ async def voice_handler(
         return
 
     try:
+        await message_dao.add_message(
+            user_id=user.id, role=MessageRole.USER, text="Message info: next message is audio message", group_id=group_db_id
+        )
         await message_dao.add_message(
             user_id=user.id, role=MessageRole.USER, audio_data=audio_bytes, group_id=group_db_id
         )
