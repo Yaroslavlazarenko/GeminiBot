@@ -3,8 +3,6 @@ output_tiles
 input_image.png
 TODO
 .env
-.env
-telegram/handlers/commands/__pycache__/clear.cpython-313.pyc
 __pycache__
 ai/__pycache__
 alembic/__pycache__
