@@ -4,3 +4,15 @@ input_image.png
 TODO
 .env
 .env
+telegram/handlers/commands/__pycache__/clear.cpython-313.pyc
+__pycache__
+ai/__pycache__
+alembic/__pycache__
+alembic/versions/__pycache__
+database/__pycache__
+database/dao/__pycache__
+middlewares/__pycache__
+telegram/handlers/__pycache__
+telegram/handlers/commands/__pycache__
+telegram/handlers/messages/__pycache__
+
