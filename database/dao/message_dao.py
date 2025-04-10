@@ -147,7 +147,7 @@ class MessageHistoryDAO:
     def _format_message_to_content(self, message: MessageHistory, is_group: bool = False) -> Optional[types.Content]:
         parts = []
         message_text = message.text
-        if is_group and message.role == MessageRole.USER:
+        if message.role == MessageRole.USER:
             if message.user:
                 user_display_name = message.user.first_name or f"User_{message.user.telegram_id}"
                 prefix = f"{user_display_name}: "

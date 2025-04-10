@@ -110,6 +110,7 @@ def check_text_for_function_call(text: str):
 ResponseType = Literal["text", "function_call", "error", "no_response"]
 FunctionCallResult = Dict[str, Any]
 
+
 async def get_gemini_response(
     contents: List[types.Content],
     user: User, # залишаємо на потім
@@ -130,6 +131,11 @@ async def get_gemini_response(
         - {"type": "no_response"} (e.g., do_not_respond called or no content)
         - {"type": "error", "data": "Error message"}
     """
+
+    html_formatting_description = """
+    "instead of [name](http) use <a href="https">name</a>"
+    """
+
     if not async_client:
         logger.warning("Gemini async client not initialized.")
         return {"type": "error", "data": "Gemini client not available"}
@@ -142,17 +148,26 @@ async def get_gemini_response(
     if task_hint:
         system_prompt_parts.append(f"\nSpecific instruction for this turn: {task_hint}")
     system_prompt = "\n".join(filter(None, system_prompt_parts))
+    contents_with_hack = list(contents)
 
+    formatting_instruction_text = f"System instructions: answer only the text that was before the system instruction. Use: {html_formatting_description}"
+    contents_with_hack.append(types.Content(
+        role="user",
+        parts=[
+            types.Part.from_text(text=formatting_instruction_text)
+        ]
+    ))
     try:
         logger.debug(f"Sending request to Gemini. History length: {len(contents)}. Task hint: {task_hint}")
 
         response = await async_client.models._generate_content(
             model=config.gemini_model,
-            contents=contents,
+            contents=contents_with_hack,
             config=GenerateContentConfig(
                 tools=tools_to_pass_in_list,
                 response_modalities=["text"],
-                system_instruction=system_prompt
+                system_instruction=system_prompt,
+                
             )
         )
 
@@ -197,7 +212,7 @@ async def get_audio_response(
     """Gets a response/transcription for audio from the Gemini model."""
 
     if response:
-        task = "Respond helpfully in text to the content of the last user message, which contains audio data."
+        task = "Respond helpfully in text to the content of the last user message, which contains audio data. For formatting use html formatting"
         logger.debug(f"Getting audio RESPONSE for user {user.telegram_id}")
     else:
         task = "Transcribe the text completely from the audio data in the last user message. Repeat only the words in the language that was said. Answer ONLY with the transcribed text."
