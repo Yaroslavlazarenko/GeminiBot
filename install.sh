@@ -92,25 +92,47 @@ print_message "Installing system dependencies..."
 apt update
 DEBIAN_FRONTEND=noninteractive apt install -y python3 python3-pip python3-venv python3-full postgresql postgresql-contrib git openssh-client
 
+# Stop PostgreSQL service before configuration
+print_message "Stopping PostgreSQL service..."
+systemctl stop postgresql
+
 # Configure PostgreSQL authentication
 print_message "Configuring PostgreSQL authentication..."
-PG_VERSION=$(psql --version | awk '{print $3}' | cut -d. -f1)
+PG_VERSION=$(ls /etc/postgresql/)
 PG_HBA_CONF="/etc/postgresql/$PG_VERSION/main/pg_hba.conf"
+PG_CONF="/etc/postgresql/$PG_VERSION/main/postgresql.conf"
 
-# Backup original pg_hba.conf
+# Backup original configuration files
 cp "$PG_HBA_CONF" "${PG_HBA_CONF}.backup"
+cp "$PG_CONF" "${PG_CONF}.backup"
 
-# Update PostgreSQL authentication method
-sed -i 's/peer/md5/g' "$PG_HBA_CONF"
-sed -i 's/scram-sha-256/md5/g' "$PG_HBA_CONF"
+# Update pg_hba.conf to use md5 authentication
+cat > "$PG_HBA_CONF" << EOL
+local   all             postgres                                md5
+local   all             all                                     md5
+host    all             all             127.0.0.1/32            md5
+host    all             all             ::1/128                 md5
+EOL
 
-# Restart PostgreSQL to apply changes
-systemctl restart postgresql
+# Ensure PostgreSQL is listening on localhost
+sed -i "s/#listen_addresses = 'localhost'/listen_addresses = 'localhost'/" "$PG_CONF"
 
-# Set password for postgres user and create database
+# Set proper permissions
+chown postgres:postgres "$PG_HBA_CONF"
+chmod 640 "$PG_HBA_CONF"
+chown postgres:postgres "$PG_CONF"
+chmod 640 "$PG_CONF"
+
+# Start PostgreSQL with new configuration
+print_message "Starting PostgreSQL service..."
+systemctl start postgresql
+sleep 5  # Give PostgreSQL time to start
+
+# Set password for postgres user using peer authentication (which still works since we're using sudo)
 print_message "Configuring PostgreSQL users and database..."
 sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '$DB_PASSWORD';"
 
+# Create database and users
 if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1; then
     sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;"
 fi
@@ -118,10 +140,21 @@ fi
 if [ "$DB_USER" != "postgres" ]; then
     if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
         sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';"
+    else
+        sudo -u postgres psql -c "ALTER USER $DB_USER WITH PASSWORD '$DB_PASSWORD';"
     fi
 fi
 
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
+
+# Verify PostgreSQL connection
+print_message "Verifying PostgreSQL connection..."
+if PGPASSWORD=$DB_PASSWORD psql -h localhost -U $DB_USER -d $DB_NAME -c '\conninfo'; then
+    print_message "PostgreSQL connection successful!"
+else
+    print_error "Failed to connect to PostgreSQL. Please check your configuration."
+    exit 1
+fi
 
 # Clean up existing installation if present
 print_message "Preparing installation directory..."
