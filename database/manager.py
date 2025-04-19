@@ -16,10 +16,20 @@ class DatabaseManager:
         self.db_name = db_name
         self.async_url = f"postgresql+asyncpg://{user}:{password}@{host}/{db_name}"
         self.base = Base
-        # echo=False рекомендуется для продакшена
-        self.engine = create_async_engine(self.async_url, echo=False)
+        # Настройки пула соединений
+        self.engine = create_async_engine(
+            self.async_url,
+            echo=False,
+            pool_size=20,  # Увеличиваем размер пула
+            max_overflow=30,  # Увеличиваем максимальное количество дополнительных соединений
+            pool_timeout=60,  # Увеличиваем таймаут
+            pool_pre_ping=True,  # Проверка соединения перед использованием
+            pool_recycle=3600,  # Пересоздание соединений каждый час
+        )
         self.async_session_maker = async_sessionmaker(
-            bind=self.engine, expire_on_commit=False, class_=AsyncSession
+            bind=self.engine,
+            expire_on_commit=False,
+            class_=AsyncSession,
         )
         logger.info(f"DatabaseManager initialized for database '{db_name}' at {host}")
 
