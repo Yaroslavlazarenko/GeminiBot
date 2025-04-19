@@ -128,10 +128,10 @@ fi
 # Update dependencies
 print_message "Updating dependencies..."
 sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && pip install --require-virtualenv -r requirements.txt"
-# Run Alembic migrations
-print_message "Applying database migrations..."
-sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && alembic upgrade head"
+
 # Apply database migrations
+print_message "Applying database migrations..."
+sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && cd /opt/geminibot && alembic upgrade head"
 
 # Start the service
 print_message "Starting the bot service..."
