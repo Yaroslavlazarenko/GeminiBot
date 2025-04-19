@@ -140,6 +140,47 @@ sudo systemctl start geminibot
   sudo tail -f /var/log/geminibot/autoupdate.log
   ```
 
+## Автоматическое обновление
+
+### Windows
+Для включения автоматического обновления на Windows:
+
+1. Откройте PowerShell от имени администратора
+2. Перейдите в папку бота
+3. Выполните скрипт настройки автообновления:
+   ```bash
+   powershell -ExecutionPolicy Bypass -File scripts\setup_windows_update.ps1
+   ```
+
+Это создаст задачу в планировщике Windows, которая будет проверять обновления каждый час.
+
+- Проверить статус задачи можно через "Планировщик заданий Windows"
+- Логи обновлений сохраняются в файл `update.log` в папке бота
+
+### Docker
+При использовании Docker, автообновление уже включено через сервис Watchtower. Он:
+- Проверяет наличие обновлений каждый час
+- Автоматически перезапускает контейнеры при обновлении
+- Очищает старые образы
+
+Просмотр логов Watchtower:
+```bash
+docker-compose logs -f watchtower
+```
+
+### Linux
+Бот автоматически проверяет наличие обновлений каждые 5 минут. Вы можете:
+
+- Проверить статус автообновления:
+  ```bash
+  sudo systemctl status geminibot-autoupdate.timer
+  ```
+
+- Посмотреть логи обновлений:
+  ```bash
+  sudo tail -f /var/log/geminibot/autoupdate.log
+  ```
+
 ## Возможности бота
 
 - Отвечает на текстовые сообщения используя Gemini AI
