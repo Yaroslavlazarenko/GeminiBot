@@ -88,8 +88,11 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
     base_instructions = read_system_instructions()
     current_time = get_current_time_str()
 
+    # Add user-specific context to system instructions
     system_prompt_parts = [base_instructions]
     system_prompt_parts.append(f"\nCurrent time: {current_time}")
+    system_prompt_parts.append(f"\nCurrent user ID: {user.telegram_id}")
+    system_prompt_parts.append("\nIMPORTANT: Your responses and reactions should be specific to the current user. If you choose to disable responses or react negatively, it should only affect this specific user. Previous negative interactions with other users should not influence your response to the current user.")
     if task_hint:
         system_prompt_parts.append(f"\nSpecific instruction for this turn: {task_hint}")
     system_prompt = "\n".join(filter(None, system_prompt_parts))
