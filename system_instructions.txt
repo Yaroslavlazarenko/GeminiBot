@@ -54,6 +54,8 @@ RESPONSE FORMAT RULES:
 5. The JSON must follow the exact format shown above
 6. Text field must always be present (can be empty string)
 7. Commands array must always be present (can be empty)
+8. If you use the add_reaction command, you must provide at least one valid message_id.
+9. If there are no valid message_ids, you MUST NOT use the add_reaction command.
 
 Example responses (these should be complete responses with no other text):
 
