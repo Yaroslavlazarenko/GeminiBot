@@ -7,12 +7,19 @@ from typing import List, Dict, Any
 from config import Config
 from datetime import datetime
 import pytz
+import asyncio
+from google.genai.errors import ServerError
 
 from database.models import User
 
 logger = logging.getLogger(__name__)
 
 config = Config()
+
+# Retry configuration
+MAX_RETRIES = 3
+BASE_DELAY = 1  # Base delay in seconds
+MAX_DELAY = 10  # Maximum delay in seconds
 
 try:
     client = genai.Client(api_key=config.gemini_api_key)
@@ -51,7 +58,7 @@ async def get_gemini_response(
     task_hint: str | None = None
 ) -> Dict[str, Any]:
     """
-    Gets a response from the Gemini model.
+    Gets a response from the Gemini model with retry logic for server errors.
 
     Args:
         contents: Conversation history.
@@ -87,107 +94,120 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
         system_prompt_parts.append(f"\nSpecific instruction for this turn: {task_hint}")
     system_prompt = "\n".join(filter(None, system_prompt_parts))
 
-    try:
-        logger.debug(f"Sending request to Gemini. History length: {len(contents)}. Task hint: {task_hint}")
-
-        response = await async_client.models._generate_content(
-            model=config.gemini_model,
-            contents=contents,
-            config=GenerateContentConfig(
-                tools=tools_to_pass_in_list,
-                response_modalities=["text"],
-                system_instruction=system_prompt,
-            )
-        )
-
-        print(f"Gemini response: {response.text}")
-
-        if not response or not response.text:
-            logger.warning("Gemini response is empty or None.")
-            return {"type": "error", "data": "Empty response from Gemini"}
-
+    retries = 0
+    while retries < MAX_RETRIES:
         try:
-            # Очищаем ответ от возможных дубликатов JSON
-            raw_text = response.text.strip()
-            
-            # Убираем маркеры кода и форматирования
-            clean_text = re.sub(r'```(?:json)?\n?', '', raw_text)
-            clean_text = clean_text.strip()
-            
-            def extract_json_object(text):
-                # Ищем первую открывающую скобку
-                start = text.find('{')
-                if start == -1:
+            logger.debug(f"Sending request to Gemini (attempt {retries + 1}/{MAX_RETRIES}). History length: {len(contents)}. Task hint: {task_hint}")
+
+            response = await async_client.models._generate_content(
+                model=config.gemini_model,
+                contents=contents,
+                config=GenerateContentConfig(
+                    tools=tools_to_pass_in_list,
+                    response_modalities=["text"],
+                    system_instruction=system_prompt,
+                )
+            )
+
+            if not response or not response.text:
+                logger.warning("Gemini response is empty or None.")
+                return {"type": "error", "data": "Empty response from Gemini"}
+
+            try:
+                # Clean the response and process JSON as before
+                raw_text = response.text.strip()
+                clean_text = re.sub(r'```(?:json)?\n?', '', raw_text)
+                clean_text = clean_text.strip()
+                
+                def extract_json_object(text):
+                    # Ищем первую открывающую скобку
+                    start = text.find('{')
+                    if start == -1:
+                        return None
+                    
+                    # Отслеживаем вложенность скобок
+                    count = 0
+                    for i in range(start, len(text)):
+                        if text[i] == '{':
+                            count += 1
+                        elif text[i] == '}':
+                            count -= 1
+                            if count == 0:
+                                # Нашли соответствующую закрывающую скобку
+                                return text[start:i + 1]
                     return None
+
+                # Извлекаем первый полный JSON объект
+                json_text = extract_json_object(clean_text)
+                if json_text:
+                    clean_text = json_text
+
+                # Парсим JSON ответ от модели
+                import json
+                response_json = json.loads(clean_text)
                 
-                # Отслеживаем вложенность скобок
-                count = 0
-                for i in range(start, len(text)):
-                    if text[i] == '{':
-                        count += 1
-                    elif text[i] == '}':
-                        count -= 1
-                        if count == 0:
-                            # Нашли соответствующую закрывающую скобку
-                            return text[start:i + 1]
-                return None
-
-            # Извлекаем первый полный JSON объект
-            json_text = extract_json_object(clean_text)
-            if json_text:
-                clean_text = json_text
-
-            # Парсим JSON ответ от модели
-            import json
-            response_json = json.loads(clean_text)
-            
-            # Проверяем структуру
-            if not isinstance(response_json, dict):
-                raise ValueError("Response JSON must be an object")
-            
-            text = response_json.get("text", "").strip()
-            commands = response_json.get("commands", [])
-
-            # Validate commands structure
-            for command in commands:
-                if not isinstance(command, dict):
-                    continue
-                if "name" not in command or "args" not in command:
-                    continue
+                # Проверяем структуру
+                if not isinstance(response_json, dict):
+                    raise ValueError("Response JSON must be an object")
                 
-                # Special validation for add_reaction command
-                if command["name"] == "add_reaction":
-                    args = command["args"]
-                    if not isinstance(args, dict):
-                        continue
-                    if "emoji" not in args or not args["emoji"]:
-                        continue
-                    if "message_ids" not in args or not isinstance(args["message_ids"], list):
-                        command["args"]["message_ids"] = []
+                text = response_json.get("text", "").strip()
+                commands = response_json.get("commands", [])
 
-            # Даже если нет текста, могут быть команды
-            return {
-                "type": "json_response",
-                "data": {
-                    "text": text,
-                    "commands": commands
+                # Validate commands structure
+                for command in commands:
+                    if not isinstance(command, dict):
+                        continue
+                    if "name" not in command or "args" not in command:
+                        continue
+                    
+                    # Special validation for add_reaction command
+                    if command["name"] == "add_reaction":
+                        args = command["args"]
+                        if not isinstance(args, dict):
+                            continue
+                        if "emoji" not in args or not args["emoji"]:
+                            continue
+                        if "message_ids" not in args or not isinstance(args["message_ids"], list):
+                            command["args"]["message_ids"] = []
+
+                # Даже если нет текста, могут быть команды
+                return {
+                    "type": "json_response",
+                    "data": {
+                        "text": text,
+                        "commands": commands
+                    }
                 }
-            }
+                
+            except json.JSONDecodeError as e:
+                logger.warning(f"Failed to parse response as JSON: {e}. Response: {raw_text[:200]}...")
+                return {
+                    "type": "json_response",
+                    "data": {
+                        "text": raw_text.strip(),
+                        "commands": []
+                    }
+                }
+
+        except ServerError as e:
+            if e.status_code == 500 and retries < MAX_RETRIES - 1:
+                delay = min(BASE_DELAY * (2 ** retries), MAX_DELAY)  # Exponential backoff
+                logger.warning(f"Gemini API 500 error (attempt {retries + 1}/{MAX_RETRIES}), retrying in {delay}s: {e}")
+                await asyncio.sleep(delay)
+                retries += 1
+                continue
+            logger.error(f"Gemini API server error after {retries + 1} attempts: {e}")
+            return {"type": "error", "data": f"Gemini API Server Error: {e}"}
             
-        except json.JSONDecodeError as e:
-            # Если не удалось распарсить как JSON, возвращаем как обычный текст
-            logger.warning(f"Failed to parse response as JSON: {e}. Response: {raw_text[:200]}...")
-            return {
-                "type": "json_response",
-                "data": {
-                    "text": raw_text.strip(),
-                    "commands": []
-                }
-            }
+        except Exception as e:
+            logger.error(f"Error during Gemini API call: {e}", exc_info=True)
+            return {"type": "error", "data": f"Gemini API Error: {e}"}
+        
+        break  # If we get here, the request was successful
 
-    except Exception as e:
-        logger.error(f"Error during Gemini API call: {e}", exc_info=True)
-        return {"type": "error", "data": f"Gemini API Error: {e}"}
+    # If we exhausted all retries
+    if retries == MAX_RETRIES:
+        return {"type": "error", "data": "Maximum retry attempts reached for Gemini API"}
 
 async def get_text_response(
     message_history: List[types.Content],
