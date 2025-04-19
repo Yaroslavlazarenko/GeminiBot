@@ -215,3 +215,16 @@ async def get_audio_response(
         user=user,
         task_hint=task
     )
+
+async def get_video_response(
+    message_history: List[types.Content],
+    user: User,
+    response: bool = True
+) -> Dict[str, Any]:
+    """
+    Processes video notes and returns Gemini's response.
+    When response=True, generates a full response to the video.
+    When response=False, only transcribes/describes the video.
+    """
+    task_hint = None if response else "Describe what you see in the video note. Don't respond to it, just describe what you see."
+    return await get_gemini_response(message_history, user, task_hint)
