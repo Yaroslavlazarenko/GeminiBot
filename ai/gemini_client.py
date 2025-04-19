@@ -148,6 +148,23 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
             text = response_json.get("text", "").strip()
             commands = response_json.get("commands", [])
 
+            # Validate commands structure
+            for command in commands:
+                if not isinstance(command, dict):
+                    continue
+                if "name" not in command or "args" not in command:
+                    continue
+                
+                # Special validation for add_reaction command
+                if command["name"] == "add_reaction":
+                    args = command["args"]
+                    if not isinstance(args, dict):
+                        continue
+                    if "emoji" not in args or not args["emoji"]:
+                        continue
+                    if "message_ids" not in args or not isinstance(args["message_ids"], list):
+                        command["args"]["message_ids"] = []
+
             # Даже если нет текста, могут быть команды
             return {
                 "type": "json_response",

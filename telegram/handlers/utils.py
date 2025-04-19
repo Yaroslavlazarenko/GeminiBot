@@ -111,12 +111,22 @@ async def handle_gemini_result(
                         await send_error_message(message, "Не вдалося вимкнути відповіді. Спробуйте пізніше.")
             elif command_name == "add_reaction":
                 emoji = command_args.get("emoji")
-                if emoji:
-                    try:
-                        await message.react([{"type": "emoji", "emoji": emoji}])
-                        logger.info(f"Added reaction {emoji} to message from user {user.telegram_id} in chat {chat.id}")
-                    except Exception as e:
-                        logger.error(f"Failed to add reaction {emoji} to message in chat {chat.id}: {e}")
+                message_ids = command_args.get("message_ids", [])
+                
+                if emoji and message_ids:
+                    chat = message.chat
+                    reaction = [{"type": "emoji", "emoji": emoji}]
+                    
+                    for msg_id in message_ids:
+                        try:
+                            await message.bot.set_message_reaction(
+                                chat_id=chat.id,
+                                message_id=msg_id,
+                                reaction=reaction
+                            )
+                            logger.info(f"Added reaction {emoji} to message {msg_id} from user {user.telegram_id} in chat {chat.id}")
+                        except Exception as e:
+                            logger.error(f"Failed to add reaction {emoji} to message {msg_id} in chat {chat.id}: {e}")
             # reply_to_message обрабатывается выше, при отправке сообщения
 
     elif result_type == "error":
