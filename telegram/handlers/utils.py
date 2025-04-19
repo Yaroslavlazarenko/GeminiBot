@@ -24,41 +24,40 @@ async def handle_gemini_result(
 ) -> None:
     """
     Обрабатывает структурированный ответ от Gemini API.
-    Разбивает длинные строки на части по ~4000 символов.
-    В группах первая строка (или первая часть первой строки) ответа отправляется как reply,
-    последующие - как answer.
-    В личных чатах все строки (и их части) отправляются как answer.
+    Поддерживает обработку команд найденных в тексте ответа.
     """
     chat = message.chat
     result_type = gemini_result.get("type")
     result_data = gemini_result.get("data")
 
-    if result_type == "text":
-        response_text = result_data
-        if response_text:
-            logger.info(f"Gemini returned text for user {user.telegram_id} in chat {chat.id}. Saving and replying/answering.")
+    if result_type == "json_response":
+        # Сначала отправляем текст, если он есть
+        if "text" in result_data and result_data["text"].strip():
+            response_text = result_data["text"].strip()
+            
+            # Сохраняем ответ в базу
+            logger.info(f"Gemini returned text for user {user.telegram_id} in chat {chat.id}.")
             await message_dao.add_message(
                 user_id=user.id, role=MessageRole.MODEL, text=response_text, group_id=group_db_id
             )
             logger.debug(f"Model response queued for save (user {user.telegram_id}, group_id {group_db_id})")
 
+            # Разбиваем на части по маркеру \n
             response_lines = response_text.split("\\n")
             full_response_sent = ""
-            is_first_message_part_sent = False # Tracks if *any* part has been sent yet
+            is_first_message_part_sent = False
 
             for line in response_lines:
                 line = line.lstrip()
                 if not line.strip():
-                    continue # Skip empty lines after stripping
+                    continue
 
-                # Split the line into chunks if it's too long
                 line_chunks = [line[i:i+TELEGRAM_MAX_MESSAGE_LENGTH] for i in range(0, len(line), TELEGRAM_MAX_MESSAGE_LENGTH)]
 
                 for chunk in line_chunks:
-                    if not chunk.strip(): # Should not happen with lstrip before, but safety check
+                    if not chunk.strip():
                         continue
 
-                    # Determine send method: reply only for the very first part in non-private chats
                     if not is_first_message_part_sent and chat.type != ChatType.PRIVATE:
                         send_method = message.reply
                         method_name = "reply"
@@ -68,69 +67,64 @@ async def handle_gemini_result(
 
                     try:
                         await send_method(chunk, parse_mode="HTML")
-                        full_response_sent += chunk # Append the successfully sent chunk
+                        full_response_sent += chunk
                         if not is_first_message_part_sent:
-                            is_first_message_part_sent = True # Mark that we've sent the first part
-                        await asyncio.sleep(0.1) # Small delay between messages
+                            is_first_message_part_sent = True
+                        await asyncio.sleep(0.1)
                     except TelegramBadRequest as e:
                         logger.warning(f"Failed to send chunk ({method_name}, HTML) to {chat.id}: {e}. Content: '{chunk[:50]}...'. Retrying without HTML.")
                         try:
-                            # Retry without HTML using the same method logic
                             if not is_first_message_part_sent and chat.type != ChatType.PRIVATE:
                                 send_method_fallback = message.reply
                             else:
                                 send_method_fallback = message.answer
 
                             await send_method_fallback(chunk, parse_mode=None)
-                            full_response_sent += chunk # Append the successfully sent chunk
+                            full_response_sent += chunk
                             if not is_first_message_part_sent:
-                                is_first_message_part_sent = True # Mark that we've sent the first part
+                                is_first_message_part_sent = True
+                            await asyncio.sleep(0.1)
                         except Exception as inner_e:
-                            logger.error(f"Failed to send chunk ({method_name}, no HTML) to {chat.id}: {inner_e}. Stopping message sending for this response.", exc_info=True)
-                            # Stop sending further parts of this response if even plain text fails
-                            return # Exit the handler function entirely
-                    except (TelegramNetworkError, TelegramForbiddenError) as e:
-                         logger.error(f"Network/Forbidden error sending chunk ({method_name}) to {chat.id}: {e}. Stopping message sending.", exc_info=True)
-                         # Stop sending further parts if connection/permission issue
-                         return # Exit the handler function entirely
+                            logger.error(f"Failed to send chunk ({method_name}, no HTML) to {chat.id}: {inner_e}. Stopping message sending for this response.")
+                            return
                     except Exception as e:
-                        logger.error(f"Unexpected error sending chunk ({method_name}) to {chat.id}: {e}", exc_info=True)
-                        # Optionally stop sending, or continue with next chunk/line
-                        # For now, let's stop to prevent potential spam on errors
-                        return # Exit the handler function entirely
-
+                        logger.error(f"Unexpected error sending chunk ({method_name}) to {chat.id}: {e}")
+                        return
             logger.debug(f"Finished sending response to chat {chat.id}. Approx length {len(full_response_sent)}")
-        else:
-             logger.warning(f"Gemini result type was 'text' but data was empty for user {user.telegram_id} in chat {chat.id}.")
-             await send_error_message(message, "AI повернув порожню відповідь.")
 
-    elif result_type == "function_call":
-        function_name = result_data.get("name")
-        if function_name == "do_not_respond":
-            logger.info(f"Function call '{function_name}' received for user {user.telegram_id} in chat {chat.id}. No reply sent.")
-        elif function_name == "disable_responses":
-            logger.info(f"Function call '{function_name}' received. Disabling text responses for user {user.telegram_id}.")
-            success = await user_dao.update_user_settings(user_id=user.id, responds_to_text=False)
-            if success:
-                user.responds_to_text = False # Update local user object state if needed elsewhere
-                await message.answer("⛔️ Я більше не буду відповідати на ваші текстові повідомлення за вашим запитом.")
-            else:
-                logger.error(f"Failed to disable responses for user {user.telegram_id} via DAO.")
-                await send_error_message(message, "Не вдалося вимкнути відповіді. Спробуйте пізніше.")
-        else:
-             logger.warning(f"Received unknown function call '{function_name}' from Gemini.")
+        # После отправки текста обрабатываем команды
+        for command in result_data.get("commands", []):
+            command_name = command.get("name")
+            command_args = command.get("args", {})
+            
+            if command_name == "do_not_respond":
+                logger.info(f"Found do_not_respond command for user {user.telegram_id}")
+                return
+            elif command_name == "disable_responses":
+                logger.info(f"Found disable_responses command for user {user.telegram_id}")
+                success = await user_dao.update_user_settings(user_id=user.id, responds_to_text=False)
+                if success:
+                    user.responds_to_text = False
+                    # Не отправляем дополнительное сообщение, если уже был текст в ответе
+                    if not result_data.get("text", "").strip():
+                        await message.answer("⛔️ Я більше не буду відповідати на ваші текстові повідомлення за вашим запитом.")
+                else:
+                    logger.error(f"Failed to disable responses for user {user.telegram_id}")
+                    if not result_data.get("text", "").strip():
+                        await send_error_message(message, "Не вдалося вимкнути відповіді. Спробуйте пізніше.")
+            elif command_name == "add_reaction":
+                emoji = command_args.get("emoji")
+                if emoji:
+                    try:
+                        await message.react([{"type": "emoji", "emoji": emoji}])
+                        logger.info(f"Added reaction {emoji} to message from user {user.telegram_id} in chat {chat.id}")
+                    except Exception as e:
+                        logger.error(f"Failed to add reaction {emoji} to message in chat {chat.id}: {e}")
 
-    elif result_type == "no_response":
-        reason = result_data if isinstance(result_data, str) else "Reason not specified"
-        logger.info(f"Gemini returned no response for user {user.telegram_id} in chat {chat.id}. Reason: {reason}")
     elif result_type == "error":
         error_msg = result_data if isinstance(result_data, str) else "Unknown Gemini error"
         logger.error(f"Gemini API error for user {user.telegram_id} in chat {chat.id}: {error_msg}")
         await send_error_message(message, "Помилка під час звернення до AI. Спробуйте пізніше.")
-    else:
-        logger.error(f"Received unknown result type from Gemini: {result_type}. Data: {result_data}")
-        await send_error_message(message, "Отримано незрозумілий результат від AI.")
-
 
 async def is_user_group_admin(chat: Chat, user_id: int) -> bool:
     """Checks if a user is an administrator or owner in a group/supergroup."""
