@@ -22,13 +22,15 @@ print_warning() {
 # Function to check SSH connection to GitHub
 check_github_ssh() {
     print_message "Checking SSH connection to GitHub..."
-    if ! ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+    # Try as the actual user, not as root
+    if ! sudo -u $ACTUAL_USER ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
         print_error "SSH connection to GitHub failed!"
         print_error "Please make sure:"
         print_error "1. You have an SSH key: ls -la ~/.ssh"
-        print_error "2. Your SSH key is added to ssh-agent: ssh-add -l"
-        print_error "3. Your SSH key is added to your GitHub account"
-        print_error "4. You can test connection with: ssh -T git@github.com"
+        print_error "2. Start ssh-agent: eval \$(ssh-agent -s)"
+        print_error "3. Add your key: ssh-add ~/.ssh/id_ed25519"
+        print_error "4. Your SSH key is added to your GitHub account"
+        print_error "5. You can test connection with: ssh -T git@github.com"
         exit 1
     fi
 }
@@ -44,6 +46,12 @@ ACTUAL_USER=$SUDO_USER
 if [ -z "$ACTUAL_USER" ]; then
     print_error "Could not determine the actual user"
     exit 1
+fi
+
+# Start ssh-agent and add key for the actual user if needed
+print_message "Setting up SSH agent..."
+if ! sudo -u $ACTUAL_USER ssh-add -l >/dev/null 2>&1; then
+    sudo -u $ACTUAL_USER bash -c 'eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519'
 fi
 
 # Check SSH connection before proceeding
@@ -100,14 +108,14 @@ print_message "Creating bot directory..."
 mkdir -p $BOT_DIR
 chown $ACTUAL_USER:$ACTUAL_USER $BOT_DIR
 
-# Clone or update repository
+# Clone or update repository using the actual user's SSH context
 print_message "Cloning/updating repository..."
 if [ -d "$BOT_DIR/.git" ]; then
     cd $BOT_DIR
-    sudo -u $ACTUAL_USER git pull
+    sudo -u $ACTUAL_USER bash -c "SSH_AUTH_SOCK=$SSH_AUTH_SOCK git pull"
 else
-    # Use sudo -u $ACTUAL_USER to run git clone as the actual user
-    sudo -u $ACTUAL_USER git clone $GITHUB_REPO $BOT_DIR
+    # Use the actual user's SSH context for git clone
+    sudo -u $ACTUAL_USER bash -c "SSH_AUTH_SOCK=$SSH_AUTH_SOCK git clone $GITHUB_REPO $BOT_DIR"
 fi
 
 # Copy appsettings.json to bot directory
