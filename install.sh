@@ -92,15 +92,35 @@ print_message "Installing system dependencies..."
 apt update
 DEBIAN_FRONTEND=noninteractive apt install -y python3 python3-pip python3-venv python3-full postgresql postgresql-contrib git openssh-client
 
-# Create and configure PostgreSQL database
-print_message "Configuring PostgreSQL..."
+# Configure PostgreSQL authentication
+print_message "Configuring PostgreSQL authentication..."
+PG_VERSION=$(psql --version | awk '{print $3}' | cut -d. -f1)
+PG_HBA_CONF="/etc/postgresql/$PG_VERSION/main/pg_hba.conf"
+
+# Backup original pg_hba.conf
+cp "$PG_HBA_CONF" "${PG_HBA_CONF}.backup"
+
+# Update PostgreSQL authentication method
+sed -i 's/peer/md5/g' "$PG_HBA_CONF"
+sed -i 's/scram-sha-256/md5/g' "$PG_HBA_CONF"
+
+# Restart PostgreSQL to apply changes
+systemctl restart postgresql
+
+# Set password for postgres user and create database
+print_message "Configuring PostgreSQL users and database..."
+sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '$DB_PASSWORD';"
+
 if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1; then
     sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;"
 fi
 
-if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
-    sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';"
+if [ "$DB_USER" != "postgres" ]; then
+    if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
+        sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';"
+    fi
 fi
+
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
 
 # Clean up existing installation if present
