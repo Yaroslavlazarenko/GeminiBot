@@ -47,7 +47,7 @@ if [ "$LOCAL" = "$REMOTE" ]; then
 elif [ "$LOCAL" = "$BASE" ]; then
     log_message "Found updates, applying..."
     # Run update script
-    /opt/geminibot/update.sh >> "$LOG_FILE" 2>&1
+    "$BOT_DIR/scripts/update.sh" >> "$LOG_FILE" 2>&1
     if [ $? -eq 0 ]; then
         log_message "Update completed successfully"
     else

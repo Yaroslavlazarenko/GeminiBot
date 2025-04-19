@@ -7,7 +7,7 @@ Type=oneshot
 User=ubuntu
 WorkingDirectory=/opt/geminibot
 Environment=PATH=/opt/geminibot/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/opt/geminibot/check_updates.sh
+ExecStart=/opt/geminibot/scripts/check_updates.sh
 
 [Install]
 WantedBy=multi-user.target

@@ -245,16 +245,16 @@ mkdir -p /var/log/geminibot
 chown $ACTUAL_USER:$ACTUAL_USER /var/log/geminibot
 
 # Copy and set permissions for update scripts
-cp "$BOT_DIR/check_updates.sh" "$BOT_DIR/check_updates.sh"
-cp "$BOT_DIR/update.sh" "$BOT_DIR/update.sh"
+cp "$BOT_DIR/scripts/check_updates.sh" "$BOT_DIR/check_updates.sh"
+cp "$BOT_DIR/scripts/update.sh" "$BOT_DIR/update.sh"
 chmod +x "$BOT_DIR/check_updates.sh"
 chmod +x "$BOT_DIR/update.sh"
 chown $ACTUAL_USER:$ACTUAL_USER "$BOT_DIR/check_updates.sh"
 chown $ACTUAL_USER:$ACTUAL_USER "$BOT_DIR/update.sh"
 
 # Install auto-update service and timer
-cp "$BOT_DIR/geminibot-autoupdate.service" /etc/systemd/system/
-cp "$BOT_DIR/geminibot-autoupdate.timer" /etc/systemd/system/
+cp "$BOT_DIR/scripts/systemd/geminibot-autoupdate.service" /etc/systemd/system/
+cp "$BOT_DIR/scripts/systemd/geminibot-autoupdate.timer" /etc/systemd/system/
 chmod 644 /etc/systemd/system/geminibot-autoupdate.service
 chmod 644 /etc/systemd/system/geminibot-autoupdate.timer
 

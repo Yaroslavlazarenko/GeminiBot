@@ -54,12 +54,13 @@ fi
 # Configuration
 BOT_DIR="/opt/geminibot"
 SERVICE_NAME="geminibot"
+SCRIPTS_DIR="$BOT_DIR/scripts"
 BACKUP_DIR="$BOT_DIR/backups"
 MAX_BACKUPS=3
 
 # Check if bot directory exists
 if [ ! -d "$BOT_DIR" ]; then
-    print_error "Bot directory $BOT_DIR not found! Please run install.sh first."
+    print_error "Bot directory $BOT_DIR not found! Please run scripts/install.sh first."
     exit 1
 fi
 
@@ -107,6 +108,22 @@ if [ "$(sudo -u $ACTUAL_USER git rev-parse HEAD)" = "$(sudo -u $ACTUAL_USER git 
     print_warning "No updates available. Already at the latest version."
 else
     sudo -u $ACTUAL_USER bash -c "SSH_AUTH_SOCK=$SSH_AUTH_SOCK git reset --hard origin/main"
+fi
+
+# Before copying service files, ensure they exist
+if [ ! -f "$SCRIPTS_DIR/systemd/geminibot-autoupdate.service" ] || [ ! -f "$SCRIPTS_DIR/systemd/geminibot-autoupdate.timer" ]; then
+    print_error "Systemd service files not found in $SCRIPTS_DIR/systemd/"
+    exit 1
+fi
+
+# After pulling updates, update service files if needed
+if [ -f "$SCRIPTS_DIR/systemd/geminibot-autoupdate.service" ]; then
+    print_message "Updating systemd service files..."
+    cp "$SCRIPTS_DIR/systemd/geminibot-autoupdate.service" /etc/systemd/system/
+    cp "$SCRIPTS_DIR/systemd/geminibot-autoupdate.timer" /etc/systemd/system/
+    chmod 644 /etc/systemd/system/geminibot-autoupdate.service
+    chmod 644 /etc/systemd/system/geminibot-autoupdate.timer
+    systemctl daemon-reload
 fi
 
 # Update dependencies

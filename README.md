@@ -94,8 +94,8 @@ docker-compose logs -f
 
 3. Сделайте скрипт установки исполняемым и запустите его:
    ```bash
-   chmod +x install.sh
-   sudo ./install.sh
+   chmod +x scripts/install.sh
+   sudo scripts/install.sh
    ```
 
 Скрипт автоматически:
@@ -103,7 +103,7 @@ docker-compose logs -f
 - Настроит PostgreSQL
 - Создаст и настроит виртуальное окружение Python
 - Применит миграции базы данных
-- Создаст и запустит systemd сервис
+- Создаст и запустит systemd сервисы
 - Настроит автоматическое обновление
 
 #### Управление ботом на Linux
