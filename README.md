@@ -1,194 +1,160 @@
-# GeminiBot
+# 🤖 GeminiBot
 
-Telegram бот на основе Gemini AI, который может отвечать на сообщения, обрабатывать голосовые сообщения и работать в групповых чатах.
+![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-blue)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-## Требования
+Мощный Telegram бот на основе Gemini AI с поддержкой голосовых сообщений, групповых чатов и автоматического обновления.
 
-- Telegram Bot Token (получите у [@BotFather](https://t.me/BotFather))
-- Gemini API Key (получите в [Google AI Studio](https://makersuite.google.com/app/apikey))
+## ✨ Возможности
 
-## Способы установки
+- 🗣️ Отвечает на текстовые и голосовые сообщения
+- 👥 Поддерживает личные и групповые чаты
+- ⚙️ Настраиваемые параметры для групп и пользователей
+- 🔄 Автоматическое обновление (Windows/Linux/Docker)
+- 🔒 Безопасное хранение настроек
+- 📊 Поддержка PostgreSQL для хранения данных
 
-### 1. Установка с Docker (рекомендуется)
+## 📋 Предварительные требования
 
-Самый простой способ запустить бота - использовать Docker.
+1. **Токены доступа:**
+   - Telegram Bot Token ([получить у @BotFather](https://t.me/BotFather))
+   - Gemini API Key ([получить в Google AI Studio](https://makersuite.google.com/app/apikey))
 
-1. Установите Docker и Docker Compose:
-   - [Docker для Windows](https://docs.docker.com/desktop/install/windows-install/)
+2. **Для запуска требуется одно из:**
+   - Docker и Docker Compose
+   - Python 3.11+ и PostgreSQL
+   - Или просто следуйте инструкции для вашей системы
+
+## 🚀 Установка
+
+### 1️⃣ Docker (рекомендуется)
+
+1. **Установите Docker:**
+   - [Docker Desktop для Windows](https://docs.docker.com/desktop/install/windows-install/)
    - [Docker для Linux](https://docs.docker.com/engine/install/)
    - [Docker Compose](https://docs.docker.com/compose/install/)
 
-2. Клонируйте репозиторий:
+2. **Запустите бота:**
    ```bash
+   # Клонируйте репозиторий
    git clone https://github.com/Yaroslavlazarenko/GeminiBot.git
    cd GeminiBot
-   ```
 
-3. Отредактируйте `appsettings.json`, указав ваши значения для:
-   - Telegram Bot Token
-   - Gemini API Key
-   - Пароль базы данных
+   # Создайте файл .env с вашими данными
+   echo "BOT_TOKEN=your_token" > .env
+   echo "GEMINI_API_KEY=your_key" >> .env
 
-4. Запустите бота:
-   ```bash
+   # Запустите бота
    docker-compose up -d
    ```
 
-Бот запустится в фоновом режиме. Логи можно посмотреть командой:
-```bash
-docker-compose logs -f
-```
+### 2️⃣ Windows
 
-### 2. Установка на Windows
-
-1. Установите Python 3.11 или выше:
-   - Скачайте с [Python.org](https://www.python.org/downloads/)
-   - Или используйте winget:
-     ```bash
-     winget install Python.Python.3.13
+1. **Простая установка (рекомендуется):**
+   - Скачайте и распакуйте бота
+   - Откройте PowerShell от администратора в папке бота
+   - Выполните:
+     ```powershell
+     powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1
      ```
 
-2. Установите PostgreSQL:
-   - Скачайте с [официального сайта](https://www.postgresql.org/download/windows/)
-   - Или используйте winget:
-     ```bash
-     winget install PostgreSQL.PostgreSQL
-     ```
+2. **Всё остальное установщик сделает автоматически:**
+   - ⚙️ Установит Python, PostgreSQL и Git
+   - 📝 Создаст конфигурационный файл
+   - 🔄 Настроит автообновление
+   - 🚀 Создаст ярлык для запуска
 
-3. Клонируйте репозиторий:
-   ```bash
-   git clone https://github.com/Yaroslavlazarenko/GeminiBot.git
-   cd GeminiBot
-   ```
+### 3️⃣ Linux (Ubuntu/Debian)
 
-4. Создайте виртуальное окружение и установите зависимости:
-   ```bash
-   python -m venv venv
-   venv\Scripts\activate
-   pip install -r requirements.txt
-   ```
-
-5. Отредактируйте в `appsettings.json`:
-   - В database.host: localhost
-   - Укажите ваши значения для Telegram Bot Token и Gemini API Key
-
-6. Примените миграции базы данных:
-   ```bash
-   alembic upgrade head
-   ```
-
-7. Запустите бота:
-   ```bash
-   python main.py
-   ```
-
-### 3. Установка на Linux (Ubuntu/Debian)
-
-1. Клонируйте репозиторий:
+1. **Автоматическая установка:**
    ```bash
    git clone git@github.com:Yaroslavlazarenko/GeminiBot.git
    cd GeminiBot
-   ```
-
-2. Отредактируйте `appsettings.json`, указав ваши значения для токенов и настроек базы данных.
-
-3. Сделайте скрипт установки исполняемым и запустите его:
-   ```bash
    chmod +x scripts/install.sh
    sudo scripts/install.sh
    ```
 
-Скрипт автоматически:
-- Установит все необходимые зависимости
-- Настроит PostgreSQL
-- Создаст и настроит виртуальное окружение Python
-- Применит миграции базы данных
-- Создаст и запустит systemd сервисы
-- Настроит автоматическое обновление
+2. **Установщик настроит всё необходимое:**
+   - 📦 Установит зависимости
+   - 🔄 Создаст systemd сервисы
+   - 🕒 Настроит автообновление
 
-#### Управление ботом на Linux
+## ⚙️ Управление
 
-Основные команды:
+### Docker
 ```bash
-# Просмотр статуса
+# Просмотр логов
+docker-compose logs -f
+
+# Перезапуск
+docker-compose restart
+
+# Обновление
+docker-compose pull && docker-compose up -d
+```
+
+### Windows
+- 🚀 Запуск: Используйте ярлык на рабочем столе
+- 📊 Логи: Смотрите файл `bot.log`
+- 🔄 Обновления: Автоматические (каждый час)
+
+### Linux
+```bash
+# Статус бота
 sudo systemctl status geminibot
 
 # Просмотр логов
 journalctl -u geminibot -f
 
-# Перезапуск бота
-sudo systemctl restart geminibot
-
-# Остановка бота
-sudo systemctl stop geminibot
-
-# Запуск бота
-sudo systemctl start geminibot
+# Управление сервисом
+sudo systemctl start|stop|restart geminibot
 ```
 
-#### Автоматическое обновление на Linux
+## 🔄 Автообновление
 
-Бот автоматически проверяет наличие обновлений каждые 5 минут. Вы можете:
-
-- Проверить статус автообновления:
-  ```bash
-  sudo systemctl status geminibot-autoupdate.timer
-  ```
-
-- Посмотреть логи обновлений:
-  ```bash
-  sudo tail -f /var/log/geminibot/autoupdate.log
-  ```
-
-## Автоматическое обновление
-
-### Windows
-Для включения автоматического обновления на Windows:
-
-1. Откройте PowerShell от имени администратора
-2. Перейдите в папку бота
-3. Выполните скрипт настройки автообновления:
-   ```bash
-   powershell -ExecutionPolicy Bypass -File scripts\setup_windows_update.ps1
-   ```
-
-Это создаст задачу в планировщике Windows, которая будет проверять обновления каждый час.
-
-- Проверить статус задачи можно через "Планировщик заданий Windows"
-- Логи обновлений сохраняются в файл `update.log` в папке бота
+Бот поддерживает автоматическое обновление на всех платформах:
 
 ### Docker
-При использовании Docker, автообновление уже включено через сервис Watchtower. Он:
-- Проверяет наличие обновлений каждый час
-- Автоматически перезапускает контейнеры при обновлении
-- Очищает старые образы
+- ✅ Включено по умолчанию через Watchtower
+- 🕒 Проверка обновлений каждый час
+- 📊 Логи: `docker-compose logs -f watchtower`
 
-Просмотр логов Watchtower:
-```bash
-docker-compose logs -f watchtower
-```
+### Windows
+- ✅ Настраивается автоматически при установке
+- 🕒 Проверка обновлений каждый час
+- 📊 Логи в файле `update.log`
 
 ### Linux
-Бот автоматически проверяет наличие обновлений каждые 5 минут. Вы можете:
+- ✅ Настраивается через systemd timer
+- 🕒 Проверка каждые 5 минут
+- 📊 Логи: `/var/log/geminibot/autoupdate.log`
 
-- Проверить статус автообновления:
-  ```bash
-  sudo systemctl status geminibot-autoupdate.timer
-  ```
+## 📝 Конфигурация
 
-- Посмотреть логи обновлений:
-  ```bash
-  sudo tail -f /var/log/geminibot/autoupdate.log
-  ```
+Все настройки хранятся в `appsettings.json`:
 
-## Возможности бота
+```json
+{
+  "telegram_bot_token": "your_token",
+  "gemini_api_key": "your_key",
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "database": "gemini_bot",
+    "user": "postgres",
+    "password": "your_password"
+  }
+}
+```
 
-- Отвечает на текстовые сообщения используя Gemini AI
-- Обрабатывает голосовые сообщения (преобразует в текст и отвечает)
-- Работает в личных чатах и группах
-- Поддерживает настройки для групп и пользователей
-- Имеет систему автоматического обновления (для Linux)
+## 🤝 Поддержка
 
-## Поддержка
+При возникновении проблем:
+1. Проверьте логи вашей платформы
+2. Создайте issue в репозитории на GitHub
+3. Убедитесь, что используете последнюю версию
 
-При возникновении проблем, создайте issue в репозитории проекта на GitHub.
+## 📜 Лицензия
+
+Распространяется под MIT лицензией. См. `LICENSE` для деталей.
