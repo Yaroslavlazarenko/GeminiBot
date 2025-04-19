@@ -32,9 +32,11 @@ add_reaction = FunctionDeclaration(
     description="Add a reaction emoji to one or more messages. Available reactions: 👍, 👎, ❤, 🔥, 🥰, 👏, 😁, 🤔, 🤯, 😱, 🤬, 😢, 🎉, 🤩, 🤮, 💩, 🙏, 👌, 🕊, 🤡, 🥱, 🥴, 😍, 🐳, ❤‍🔥, 🌚, 🌭, 💯, 🤣, ⚡, 🍌, 🏆, 💔, 🤨, 😐, 🍓, 🍾, 💋, 🖕, 😈, 😴, 😭, 🤓, 👻, 👨‍💻, 👀, 🎃, 🙈",
     parameters={
         "emoji": "The emoji reaction to add to the messages",
-        "message_ids": [Telegram message ID1, Telegram message ID2,...]
+        "message_ids": [Telegram message ID1, Telegram message ID2]
     }
 )
+
+message_ids must be at least one value, maximum 10
 
 reply_to_message = FunctionDeclaration(
     name="reply_to_message",
