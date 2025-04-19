@@ -147,17 +147,23 @@ class MessageHistoryDAO:
     def _format_message_to_content(self, message: MessageHistory, is_group: bool = False) -> Optional[types.Content]:
         parts = []
         message_text = message.text
+        # Format timestamp
+        timestamp_str = message.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+        
         if message.role == MessageRole.USER:
             if message.user:
                 user_display_name = message.user.first_name or f"User_{message.user.telegram_id}"
-                prefix = f"{user_display_name}: "
+                prefix = f"[{timestamp_str}] {user_display_name}: "
                 if message_text:
                      message_text = f"{prefix}{message_text}"
-                # else: pass # Don't add prefix if only media
             else:
                 logger.warning(f"User data not loaded for message_id={message.id} in group_id={message.group_id}. Cannot add prefix.")
                 if message_text:
-                    message_text = f"Unknown User: {message_text}"
+                    message_text = f"[{timestamp_str}] Unknown User: {message_text}"
+        else:
+            # Add timestamp for model responses too
+            if message_text:
+                message_text = f"[{timestamp_str}] {message_text} "
 
         # Add parts based on content
         if message_text: parts.append(types.Part.from_text(text=message_text))
