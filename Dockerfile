@@ -2,8 +2,7 @@ FROM registry.access.redhat.com/ubi9/python-311:latest
 
 # Set environment variables
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PATH="/opt/app-root/src/.local/bin:$PATH"
+    PYTHONUNBUFFERED=1
 
 # Switch to root for system package installation
 USER 0
@@ -20,7 +19,7 @@ USER 1001
 
 # Install Python dependencies
 COPY --chown=1001:1001 requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY --chown=1001:1001 . .
