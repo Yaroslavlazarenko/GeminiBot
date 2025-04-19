@@ -19,11 +19,33 @@ class MessageHistoryDAO:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def add_message(self, user_id: int, role: MessageRole, text: str | None = None, audio_data: bytes | None = None, image_data: bytes | None = None, video_data: bytes | None = None, group_id: int | None = None ) -> MessageHistory:
+    async def add_message(
+        self, 
+        user_id: int, 
+        role: MessageRole, 
+        text: str | None = None, 
+        audio_data: bytes | None = None, 
+        image_data: bytes | None = None, 
+        video_data: bytes | None = None, 
+        group_id: int | None = None,
+        telegram_message_id: int | None = None
+    ) -> MessageHistory:
         log_msg = f"Adding message for user_id={user_id}, role={role.value}"
         if group_id: log_msg += f", group_id={group_id}"
+        if telegram_message_id: log_msg += f", telegram_message_id={telegram_message_id}"
         logger.debug(log_msg)
-        new_message = MessageHistory(user_id=user_id, group_id=group_id, role=role, text=text, audio_data=audio_data, image_data=image_data, video_data=video_data, timestamp=datetime.now(timezone.utc))
+        
+        new_message = MessageHistory(
+            user_id=user_id,
+            group_id=group_id,
+            role=role,
+            text=text,
+            audio_data=audio_data,
+            image_data=image_data,
+            video_data=video_data,
+            telegram_message_id=telegram_message_id,
+            timestamp=datetime.now(timezone.utc)
+        )
         self.session.add(new_message)
         # Don't flush or commit here, let the session manager handle it.
         # await self.session.flush([new_message]) # Flush only if you NEED the ID immediately

@@ -31,66 +31,47 @@ async def handle_gemini_result(
     result_data = gemini_result.get("data")
 
     if result_type == "json_response":
-        # Сначала отправляем текст, если он есть
+        # Отправляем текст, если он есть
         if "text" in result_data and result_data["text"].strip():
             response_text = result_data["text"].strip()
-            
-            # Сохраняем ответ в базу
             logger.info(f"Gemini returned text for user {user.telegram_id} in chat {chat.id}.")
-            await message_dao.add_message(
-                user_id=user.id, role=MessageRole.MODEL, text=response_text, group_id=group_db_id
-            )
-            logger.debug(f"Model response queued for save (user {user.telegram_id}, group_id {group_db_id})")
 
-            # Разбиваем на части по маркеру \n
-            response_lines = response_text.split("\\n")
-            full_response_sent = ""
-            is_first_message_part_sent = False
+            # Определяем метод отправки в зависимости от типа чата
+            if chat.type != ChatType.PRIVATE:
+                send_method = message.reply
+                method_name = "reply"
+            else:
+                send_method = message.answer
+                method_name = "answer"
 
-            for line in response_lines:
-                line = line.lstrip()
-                if not line.strip():
-                    continue
+            try:
+                sent_message = await send_method(response_text, parse_mode="HTML")
+                await message_dao.add_message(
+                    user_id=user.id, 
+                    role=MessageRole.MODEL, 
+                    text=response_text, 
+                    group_id=group_db_id,
+                    telegram_message_id=sent_message.message_id
+                )
+            except TelegramBadRequest as e:
+                logger.warning(f"Failed to send message ({method_name}, HTML) to {chat.id}: {e}. Content: '{response_text[:50]}...'. Retrying without HTML.")
+                try:
+                    sent_message = await send_method(response_text, parse_mode=None)
+                    await message_dao.add_message(
+                        user_id=user.id, 
+                        role=MessageRole.MODEL, 
+                        text=response_text, 
+                        group_id=group_db_id,
+                        telegram_message_id=sent_message.message_id
+                    )
+                except Exception as inner_e:
+                    logger.error(f"Failed to send message ({method_name}, no HTML) to {chat.id}: {inner_e}.")
+                    return
+            except Exception as e:
+                logger.error(f"Unexpected error sending message ({method_name}) to {chat.id}: {e}")
+                return
 
-                line_chunks = [line[i:i+TELEGRAM_MAX_MESSAGE_LENGTH] for i in range(0, len(line), TELEGRAM_MAX_MESSAGE_LENGTH)]
-
-                for chunk in line_chunks:
-                    if not chunk.strip():
-                        continue
-
-                    if not is_first_message_part_sent and chat.type != ChatType.PRIVATE:
-                        send_method = message.reply
-                        method_name = "reply"
-                    else:
-                        send_method = message.answer
-                        method_name = "answer"
-
-                    try:
-                        await send_method(chunk, parse_mode="HTML")
-                        full_response_sent += chunk
-                        if not is_first_message_part_sent:
-                            is_first_message_part_sent = True
-                        await asyncio.sleep(0.1)
-                    except TelegramBadRequest as e:
-                        logger.warning(f"Failed to send chunk ({method_name}, HTML) to {chat.id}: {e}. Content: '{chunk[:50]}...'. Retrying without HTML.")
-                        try:
-                            if not is_first_message_part_sent and chat.type != ChatType.PRIVATE:
-                                send_method_fallback = message.reply
-                            else:
-                                send_method_fallback = message.answer
-
-                            await send_method_fallback(chunk, parse_mode=None)
-                            full_response_sent += chunk
-                            if not is_first_message_part_sent:
-                                is_first_message_part_sent = True
-                            await asyncio.sleep(0.1)
-                        except Exception as inner_e:
-                            logger.error(f"Failed to send chunk ({method_name}, no HTML) to {chat.id}: {inner_e}. Stopping message sending for this response.")
-                            return
-                    except Exception as e:
-                        logger.error(f"Unexpected error sending chunk ({method_name}) to {chat.id}: {e}")
-                        return
-            logger.debug(f"Finished sending response to chat {chat.id}. Approx length {len(full_response_sent)}")
+            logger.debug(f"Finished sending response to chat {chat.id}. Length: {len(response_text)}")
 
         # После отправки текста обрабатываем команды
         for command in result_data.get("commands", []):

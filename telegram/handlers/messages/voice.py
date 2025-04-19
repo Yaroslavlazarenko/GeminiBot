@@ -73,10 +73,12 @@ async def voice_handler(
 
     try:
         await message_dao.add_message(
-            user_id=user.id, role=MessageRole.USER, text="Message info: next message is audio message", group_id=group_db_id
+            user_id=user.id, role=MessageRole.USER, text="Message info: next message is audio message", group_id=group_db_id,
+            telegram_message_id=message.message_id
         )
         await message_dao.add_message(
-            user_id=user.id, role=MessageRole.USER, audio_data=audio_bytes, group_id=group_db_id
+            user_id=user.id, role=MessageRole.USER, audio_data=audio_bytes, group_id=group_db_id,
+            telegram_message_id=message.message_id
         )
         logger.debug(f"User voice message queued for save (user {user.telegram_id}, group_id {group_db_id})")
 

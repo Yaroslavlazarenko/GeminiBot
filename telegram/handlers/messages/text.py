@@ -58,7 +58,11 @@ async def text_handler(
             logger.debug(f"Formatted reply text for saving: {text_to_save[:100]}...")
 
         await message_dao.add_message(
-            user_id=user.id, role=MessageRole.USER, text=text_to_save, group_id=group_db_id
+            user_id=user.id,
+            role=MessageRole.USER,
+            text=text_to_save,
+            group_id=group_db_id,
+            telegram_message_id=message.message_id
         )
         logger.debug(f"User message queued for save (user {user.telegram_id}, group_id {group_db_id})")
 
