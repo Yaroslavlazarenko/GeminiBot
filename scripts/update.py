@@ -8,6 +8,7 @@ from datetime import datetime
 import tarfile
 import json
 from pathlib import Path
+from alembic import command, config
 
 # Setup logging
 logging.basicConfig(
@@ -102,6 +103,16 @@ def update_system():
         logging.error(f"Failed to update dependencies: {output}")
         return False
     
+    
+    def run_upgrade():
+        """Runs database migrations using Alembic."""
+        try:
+            alembic_cfg = config.Config("alembic.ini")
+            command.upgrade(alembic_cfg, "head")
+            logging.info("Database upgrade completed successfully.")
+        except Exception as e:
+            logging.error(f"Failed to upgrade database: {e}")
+
     # Apply database migrations
     if os.path.exists('alembic.ini'):
         success, output = run_command(['alembic', 'upgrade', 'head'])
