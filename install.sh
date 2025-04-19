@@ -90,7 +90,7 @@ fi
 
 print_message "Installing system dependencies..."
 apt update
-apt install -y python3 python3-pip python3-venv postgresql postgresql-contrib git openssh-client
+DEBIAN_FRONTEND=noninteractive apt install -y python3 python3-pip python3-venv python3-full postgresql postgresql-contrib git openssh-client
 
 # Create and configure PostgreSQL database
 print_message "Configuring PostgreSQL..."
@@ -103,20 +103,20 @@ if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'
 fi
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
 
+# Clean up existing installation if present
+print_message "Preparing installation directory..."
+if [ -d "$BOT_DIR" ]; then
+    systemctl stop $SERVICE_NAME || true
+    rm -rf "$BOT_DIR"
+fi
+
 # Create bot directory and set permissions
-print_message "Creating bot directory..."
 mkdir -p $BOT_DIR
 chown $ACTUAL_USER:$ACTUAL_USER $BOT_DIR
 
-# Clone or update repository using the actual user's SSH context
-print_message "Cloning/updating repository..."
-if [ -d "$BOT_DIR/.git" ]; then
-    cd $BOT_DIR
-    sudo -u $ACTUAL_USER bash -c "SSH_AUTH_SOCK=$SSH_AUTH_SOCK git pull"
-else
-    # Use the actual user's SSH context for git clone
-    sudo -u $ACTUAL_USER bash -c "SSH_AUTH_SOCK=$SSH_AUTH_SOCK git clone $GITHUB_REPO $BOT_DIR"
-fi
+# Clone repository using the actual user's SSH context
+print_message "Cloning repository..."
+sudo -u $ACTUAL_USER bash -c "SSH_AUTH_SOCK=$SSH_AUTH_SOCK git clone $GITHUB_REPO $BOT_DIR"
 
 # Copy appsettings.json to bot directory
 print_message "Copying configuration..."
@@ -127,7 +127,7 @@ chown $ACTUAL_USER:$ACTUAL_USER $BOT_DIR/appsettings.json
 print_message "Setting up Python virtual environment..."
 cd $BOT_DIR
 sudo -u $ACTUAL_USER python3 -m venv venv
-sudo -u $ACTUAL_USER /bin/bash -c "source venv/bin/activate && pip install -r requirements.txt"
+sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && pip install --require-virtualenv -r requirements.txt"
 
 # Create .env file
 print_message "Creating environment file..."
@@ -156,7 +156,7 @@ Type=simple
 User=$ACTUAL_USER
 WorkingDirectory=$BOT_DIR
 Environment=PATH=$BOT_DIR/venv/bin
-ExecStart=$BOT_DIR/venv/bin/python main.py
+ExecStart=$BOT_DIR/venv/bin/python $BOT_DIR/main.py
 Restart=always
 RestartSec=10
 
@@ -169,7 +169,7 @@ chmod 644 /etc/systemd/system/$SERVICE_NAME.service
 # Run database migrations
 print_message "Running database migrations..."
 cd $BOT_DIR
-sudo -u $ACTUAL_USER /bin/bash -c "source venv/bin/activate && alembic upgrade head"
+sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && alembic upgrade head"
 
 # Start and enable service
 print_message "Starting service..."
@@ -180,6 +180,6 @@ systemctl start $SERVICE_NAME
 print_message "Installation complete! Service status:"
 systemctl status $SERVICE_NAME
 
-print_message "You can check logs with: journalctl -u $SERVICE_NAME -f"
+print_message "You can check logs with: journalctl -u geminibot -f"
 print_warning "If you need to stop the bot: sudo systemctl stop $SERVICE_NAME"
 print_warning "If you need to restart the bot: sudo systemctl restart $SERVICE_NAME"
