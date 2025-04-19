@@ -92,12 +92,14 @@ print_message "Installing system dependencies..."
 apt update
 DEBIAN_FRONTEND=noninteractive apt install -y python3 python3-pip python3-venv python3-full postgresql postgresql-contrib git openssh-client
 
-# Stop PostgreSQL service before configuration
+# Configure PostgreSQL
+print_message "Configuring PostgreSQL..."
+
+# Stop PostgreSQL service
 print_message "Stopping PostgreSQL service..."
 systemctl stop postgresql
 
-# Configure PostgreSQL authentication
-print_message "Configuring PostgreSQL authentication..."
+# Get PostgreSQL version and config paths
 PG_VERSION=$(ls /etc/postgresql/)
 PG_HBA_CONF="/etc/postgresql/$PG_VERSION/main/pg_hba.conf"
 PG_CONF="/etc/postgresql/$PG_VERSION/main/postgresql.conf"
@@ -106,10 +108,10 @@ PG_CONF="/etc/postgresql/$PG_VERSION/main/postgresql.conf"
 cp "$PG_HBA_CONF" "${PG_HBA_CONF}.backup"
 cp "$PG_CONF" "${PG_CONF}.backup"
 
-# Update pg_hba.conf to use md5 authentication
+# First, configure pg_hba.conf to use peer authentication temporarily
 cat > "$PG_HBA_CONF" << EOL
-local   all             postgres                                md5
-local   all             all                                     md5
+local   all             postgres                                peer
+local   all             all                                     peer
 host    all             all             127.0.0.1/32            md5
 host    all             all             ::1/128                 md5
 EOL
@@ -123,29 +125,32 @@ chmod 640 "$PG_HBA_CONF"
 chown postgres:postgres "$PG_CONF"
 chmod 640 "$PG_CONF"
 
-# Start PostgreSQL with new configuration
+# Start PostgreSQL with peer authentication
 print_message "Starting PostgreSQL service..."
 systemctl start postgresql
 sleep 5  # Give PostgreSQL time to start
 
-# Set password for postgres user using peer authentication (which still works since we're using sudo)
+# Now we can use peer authentication to set up everything
 print_message "Configuring PostgreSQL users and database..."
+
+# Create database and set up users using peer authentication
 sudo -u postgres psql -c "ALTER USER postgres WITH PASSWORD '$DB_PASSWORD';"
-
-# Create database and users
-if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1; then
-    sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;"
-fi
-
-if [ "$DB_USER" != "postgres" ]; then
-    if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
-        sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';"
-    else
-        sudo -u postgres psql -c "ALTER USER $DB_USER WITH PASSWORD '$DB_PASSWORD';"
-    fi
-fi
-
+sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;" 2>/dev/null || true
+sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';" 2>/dev/null || true
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
+
+# Now switch pg_hba.conf to use md5 authentication
+cat > "$PG_HBA_CONF" << EOL
+local   all             postgres                                md5
+local   all             all                                     md5
+host    all             all             127.0.0.1/32            md5
+host    all             all             ::1/128                 md5
+EOL
+
+# Restart PostgreSQL to apply new authentication method
+print_message "Restarting PostgreSQL with new authentication..."
+systemctl restart postgresql
+sleep 5  # Give PostgreSQL time to restart
 
 # Verify PostgreSQL connection
 print_message "Verifying PostgreSQL connection..."
@@ -222,7 +227,11 @@ chmod 644 /etc/systemd/system/$SERVICE_NAME.service
 # Run database migrations
 print_message "Running database migrations..."
 cd $BOT_DIR
-sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && alembic upgrade head"
+cp appsettings.json alembic/
+cd alembic
+sudo -u $ACTUAL_USER bash -c "source ../venv/bin/activate && alembic upgrade head"
+rm appsettings.json  # Clean up
+cd ..
 
 # Start and enable service
 print_message "Starting service..."
