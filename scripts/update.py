@@ -2,14 +2,11 @@ import os
 import sys
 import subprocess
 import logging
-import shutil
-import platform
 from datetime import datetime
 import tarfile
-import json
 from pathlib import Path
-from alembic import command, config
-
+from alembic import command
+from alembic.config import Config
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
@@ -72,53 +69,19 @@ def update_system():
         logging.error("Backup creation failed")
         return False
     
-    # Check for git updates
-    success, output = run_command(['git', 'fetch', 'origin'])
-    if not success:
-        logging.error(f"Failed to fetch updates: {output}")
-        return False
-    
-    # Check if we're behind remote
-    success, local_commit = run_command(['git', 'rev-parse', 'HEAD'])
-    success, remote_commit = run_command(['git', 'rev-parse', '@{u}'])
-    
-    if not success or local_commit.strip() == remote_commit.strip():
-        logging.info("Already up to date")
-        return True
-    
-    # Pull updates
-    success, output = run_command(['git', 'pull', 'origin', 'main'])
-    if not success:
-        logging.error(f"Failed to pull updates: {output}")
-        return False
-    
-    # Update dependencies
-    if platform.system() == 'Windows':
-        pip_cmd = [sys.executable, '-m', 'pip', 'install', '-r', 'requirements.txt']
-    else:
-        pip_cmd = ['pip3', 'install', '-r', 'requirements.txt']
-    
-    success, output = run_command(pip_cmd)
-    if not success:
-        logging.error(f"Failed to update dependencies: {output}")
-        return False
-    
     
     def run_upgrade():
         """Runs database migrations using Alembic."""
         try:
-            alembic_cfg = config.Config("alembic.ini")
+            alembic_cfg = Config("alembic.ini")
             command.upgrade(alembic_cfg, "head")
             logging.info("Database upgrade completed successfully.")
         except Exception as e:
             logging.error(f"Failed to upgrade database: {e}")
 
-    # Apply database migrations
+    
     if os.path.exists('alembic.ini'):
-        success, output = run_command(['alembic', 'upgrade', 'head'])
-        if not success:
-            logging.error(f"Failed to apply migrations: {output}")
-            return False
+        run_upgrade()
     
     logging.info("Update completed successfully")
     return True
