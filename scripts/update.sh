@@ -205,43 +205,68 @@ fi
 # Update dependencies
 print_message "Updating dependencies..."
 # Run pip install as the actual user inside the virtual environment
-sudo -u "$ACTUAL_USER" bash -c "
+# Use 'set -e' in the subshell to catch pip errors
+if ! sudo -u "$ACTUAL_USER" bash -c "
+    set -e # Exit on error within this subshell
     source \"$BOT_DIR/venv/bin/activate\"
+    echo \"Running pip install -r requirements.txt...\" # Add inner message
     pip install --require-virtualenv -r requirements.txt
-" || { print_error "Dependency update failed!"; exit 1; }
-print_message "Dependencies updated."
+"; then
+    print_error "Dependency update failed! Exiting."
+    exit 1 # Exit the main script on dependency failure
+fi
+print_message "Dependencies updated successfully."
 
 # Apply database migrations
 print_message "Applying database migrations..."
-# Stay in the bot directory for alembic execution
+# Navigate to the bot directory first, then check alembic files
 cd "$BOT_DIR" || { print_error "Failed to change directory to $BOT_DIR"; exit 1; }
+
+# Ensure alembic directory and ini exist after git pull
+if [ ! -d "$BOT_DIR/alembic" ] || [ ! -f "$BOT_DIR/alembic.ini" ]; then
+    print_error "Alembic directory or alembic.ini not found in $BOT_DIR after update. Cannot apply migrations."
+    exit 1
+fi
+
 
 # Ensure .env is accessible for alembic's env.py
 # env.py is usually run from the alembic directory, so copy .env there temporarily.
 ENV_FILE="$BOT_DIR/.env"
-ALEMBIC_ENV_COPY="$BOT_DIR/alembic/.env"
+ALEMBIC_DIR="$BOT_DIR/alembic"
+ALEMBIC_ENV_COPY="$ALEMBIC_DIR/.env"
 
 if [ -f "$ENV_FILE" ]; then
-    print_message "Copying .env to alembic/ for migration..."
-    cp "$ENV_FILE" "$ALEMBIC_ENV_COPY" || print_warning "Failed to copy .env to alembic/."
+    print_message "Copying .env to $ALEMBIC_DIR/ for migration..."
+    # Make copy failure fatal if the source file exists
+    if ! cp "$ENV_FILE" "$ALEMBIC_ENV_COPY"; then
+        print_error "Failed to copy $ENV_FILE to $ALEMBIC_ENV_COPY! Cannot apply migrations."
+        exit 1
+    fi
 else
-    print_warning ".env file not found at $ENV_FILE. Migrations might fail if env.py relies on it."
+    # This case should be caught earlier by the script's initial .env check, but double-check
+    print_error ".env file not found at $ENV_FILE! Migrations require database configuration."
+    exit 1
 fi
 
 # Run the migration command as the actual user inside the virtual environment
 # Use a subshell for the activation and command
+# Capture output for better debugging if needed, but for simplicity, let it flow
+print_message "Executing alembic upgrade head as user '$ACTUAL_USER' from '$BOT_DIR'..."
 if sudo -u "$ACTUAL_USER" bash -c "
     set -e # Exit on error within the subshell
     source \"$BOT_DIR/venv/bin/activate\"
-    print_message 'Running alembic upgrade head...' # Message from within subshell
+    # Run alembic from BOT_DIR, assuming alembic.ini is there
+    echo \"Running alembic upgrade head from $BOT_DIR...\" # Debug message
+    cd \"$BOT_DIR\" # Ensure we are in BOT_DIR, just in case bash -c starts elsewhere
     alembic upgrade head
 "; then
     print_message "Database migrations applied successfully."
 else
-    print_error "Database migration failed!"
+    # The set -e and if condition should catch alembic non-zero exit
+    print_error "Database migration failed! Check the output above for details."
     # Clean up the copied .env even on failure
     if [ -f "$ALEMBIC_ENV_COPY" ]; then
-        print_message "Cleaning up copied .env file from alembic/..."
+        print_message "Cleaning up copied .env file from $ALEMBIC_DIR/..."
         rm -f "$ALEMBIC_ENV_COPY"
     fi
     exit 1 # Exit the main script
@@ -249,7 +274,7 @@ fi
 
 # Clean up the copied .env file
 if [ -f "$ALEMBIC_ENV_COPY" ]; then
-    print_message "Cleaning up copied .env file from alembic/..."
+    print_message "Cleaning up copied .env file from $ALEMBIC_DIR/..."
     rm -f "$ALEMBIC_ENV_COPY"
 fi
 
