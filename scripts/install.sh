@@ -247,14 +247,34 @@ chown $ACTUAL_USER:$ACTUAL_USER /var/log/geminibot
 # Copy and set permissions for update scripts
 cp "$BOT_DIR/scripts/check_updates.sh" "$BOT_DIR/check_updates.sh"
 cp "$BOT_DIR/scripts/update.sh" "$BOT_DIR/update.sh"
-chmod +x "$BOT_DIR/check_updates.sh"
-chmod +x "$BOT_DIR/update.sh"
+chmod 755 "$BOT_DIR/check_updates.sh"  # Изменено с +x на 755
+chmod 755 "$BOT_DIR/update.sh"         # Изменено с +x на 755
 chown $ACTUAL_USER:$ACTUAL_USER "$BOT_DIR/check_updates.sh"
 chown $ACTUAL_USER:$ACTUAL_USER "$BOT_DIR/update.sh"
 
 # Install auto-update service and timer
 cp "$BOT_DIR/scripts/systemd/geminibot-autoupdate.service" /etc/systemd/system/
 cp "$BOT_DIR/scripts/systemd/geminibot-autoupdate.timer" /etc/systemd/system/
+
+# Создаем и настраиваем сервис автообновления с правильными правами
+cat > /etc/systemd/system/geminibot-autoupdate.service << EOL
+[Unit]
+Description=GeminiBot Auto Update Service
+After=network.target
+
+[Service]
+Type=oneshot
+User=$ACTUAL_USER
+Group=$ACTUAL_USER
+WorkingDirectory=$BOT_DIR
+ExecStart=$BOT_DIR/check_updates.sh
+Environment=HOME=/home/$ACTUAL_USER
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+[Install]
+WantedBy=multi-user.target
+EOL
+
 chmod 644 /etc/systemd/system/geminibot-autoupdate.service
 chmod 644 /etc/systemd/system/geminibot-autoupdate.timer
 
