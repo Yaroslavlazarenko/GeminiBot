@@ -64,9 +64,9 @@ if [ ! -d "$BOT_DIR" ]; then
     exit 1
 fi
 
-# Check if appsettings.json exists
-if [ ! -f "$BOT_DIR/appsettings.json" ]; then
-    print_error "appsettings.json not found in $BOT_DIR!"
+# Check if .env exists
+if [ ! -f "$BOT_DIR/.env" ]; then
+    print_error ".env file not found in $BOT_DIR!"
     exit 1
 fi
 
@@ -87,7 +87,6 @@ print_message "Creating backup of critical files..."
 BACKUP_FILE="$BACKUP_DIR/backup_$(date +%Y%m%d_%H%M%S).tar.gz"
 tar -czf "$BACKUP_FILE" -C "$BOT_DIR" \
     .env \
-    appsettings.json \
     alembic.ini \
     config.py \
     2>/dev/null || print_warning "Some files were not found for backup"
@@ -133,10 +132,10 @@ sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && pip install --require-
 # Apply database migrations
 print_message "Applying database migrations..."
 cd $BOT_DIR
-cp appsettings.json alembic/
+cp .env alembic/
 cd alembic
 sudo -u $ACTUAL_USER bash -c "source ../venv/bin/activate && alembic upgrade head"
-rm appsettings.json  # Clean up
+rm .env  # Clean up
 cd ..
 
 # Start the service

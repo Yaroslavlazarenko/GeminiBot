@@ -45,7 +45,7 @@ def create_backup():
     timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
     backup_file = backup_dir / f'backup_{timestamp}.tar.gz'
     
-    critical_files = ['appsettings.json', 'alembic.ini', 'config.py']
+    critical_files = ['.env', 'alembic.ini', 'config.py']
     
     with tarfile.open(backup_file, 'w:gz') as tar:
         for file in critical_files:

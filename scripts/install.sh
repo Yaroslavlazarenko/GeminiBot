@@ -68,23 +68,19 @@ BOT_DIR="/opt/geminibot"
 SERVICE_NAME="geminibot"
 GITHUB_REPO="git@github.com:Yaroslavlazarenko/GeminiBot.git"
 
-# Check if appsettings.json exists
-if [ ! -f "appsettings.json" ]; then
-    print_error "appsettings.json not found! Please create it first."
+# Check if .env exists
+if [ ! -f ".env" ]; then
+    print_error ".env file not found! Please create it first."
     exit 1
 fi
 
-# Read configuration from appsettings.json
-DB_NAME=$(jq -r '.database.name' appsettings.json)
-DB_USER=$(jq -r '.database.user' appsettings.json)
-DB_PASSWORD=$(jq -r '.database.password' appsettings.json)
-BOT_TOKEN=$(jq -r '.bot.token' appsettings.json)
-GEMINI_API_KEY=$(jq -r '.gemini.api_key' appsettings.json)
+# Read configuration from .env
+source .env
 
 # Validate configuration
-if [[ "$DB_NAME" == "null" || "$DB_USER" == "null" || "$DB_PASSWORD" == "null" || 
-      "$BOT_TOKEN" == "null" || "$GEMINI_API_KEY" == "null" ]]; then
-    print_error "Invalid configuration in appsettings.json!"
+if [[ -z "$DB_NAME" || -z "$DB_USER" || -z "$DB_PASSWORD" || 
+      -z "$BOT_TOKEN" || -z "$GEMINI_API_KEY" ]]; then
+    print_error "Invalid configuration in .env!"
     exit 1
 fi
 
@@ -176,31 +172,16 @@ chown $ACTUAL_USER:$ACTUAL_USER $BOT_DIR
 print_message "Cloning repository..."
 sudo -u $ACTUAL_USER bash -c "SSH_AUTH_SOCK=$SSH_AUTH_SOCK git clone $GITHUB_REPO $BOT_DIR"
 
-# Copy appsettings.json to bot directory
+# Copy .env to bot directory
 print_message "Copying configuration..."
-cp appsettings.json $BOT_DIR/
-chown $ACTUAL_USER:$ACTUAL_USER $BOT_DIR/appsettings.json
+cp .env $BOT_DIR/
+chown $ACTUAL_USER:$ACTUAL_USER $BOT_DIR/.env
 
 # Setup virtual environment
 print_message "Setting up Python virtual environment..."
 cd $BOT_DIR
 sudo -u $ACTUAL_USER python3 -m venv venv
 sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && pip install --require-virtualenv -r requirements.txt"
-
-# Create .env file
-print_message "Creating environment file..."
-cat > $BOT_DIR/.env << EOL
-bot_token=$BOT_TOKEN
-gemini_api_key=$GEMINI_API_KEY
-gemini_model=$(jq -r '.gemini.model' appsettings.json)
-db_user=$DB_USER
-db_password=$DB_PASSWORD
-db_name=$DB_NAME
-db_host=$(jq -r '.database.host' appsettings.json)
-EOL
-
-chown $ACTUAL_USER:$ACTUAL_USER $BOT_DIR/.env
-chmod 600 $BOT_DIR/.env
 
 # Create systemd service
 print_message "Creating systemd service..."
@@ -227,10 +208,10 @@ chmod 644 /etc/systemd/system/$SERVICE_NAME.service
 # Run database migrations
 print_message "Running database migrations..."
 cd $BOT_DIR
-cp appsettings.json alembic/
+cp .env alembic/
 cd alembic
 sudo -u $ACTUAL_USER bash -c "source ../venv/bin/activate && alembic upgrade head"
-rm appsettings.json  # Clean up
+rm .env  # Clean up
 cd ..
 
 # Start and enable service

@@ -72,20 +72,29 @@ sudo systemctl restart geminibot    # Перезапуск
 journalctl -u geminibot -f         # Логи
 ```
 
-## Конфигурация (appsettings.json)
-```json
-{
-  "telegram_bot_token": "YOUR_BOT_TOKEN",
-  "gemini_api_key": "YOUR_GEMINI_KEY",
-  "database": {
-    "host": "localhost",
-    "port": 5432,
-    "database": "gemini_bot",
-    "user": "postgres",
-    "password": "your_password"
-  }
-}
+## Конфигурация (.env)
+
+Создайте файл `.env` в корневой директории проекта со следующим содержимым:
+
+```env
+BOT_TOKEN=your_telegram_bot_token
+GEMINI_API_KEY=your_gemini_api_key
+GEMINI_MODEL=gemini-2.5-flash-preview-04-17
+
+DB_USER=postgres
+DB_PASSWORD=your_database_password
+DB_NAME=gemini_bot
+DB_HOST=localhost
 ```
+
+Где:
+- `BOT_TOKEN` - токен вашего Telegram бота от @BotFather
+- `GEMINI_API_KEY` - ваш API ключ от Google Gemini
+- `GEMINI_MODEL` - модель Gemini для использования
+- `DB_USER` - пользователь PostgreSQL
+- `DB_PASSWORD` - пароль для PostgreSQL
+- `DB_NAME` - имя базы данных
+- `DB_HOST` - хост базы данных
 
 ## Лицензия
 

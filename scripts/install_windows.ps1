@@ -75,27 +75,25 @@ if (-not (Test-Command git)) {
     }
 }
 
-# Create and configure appsettings.json if it doesn't exist
-if (-not (Test-Path "appsettings.json")) {
-    Write-ColorOutput Cyan "Creating appsettings.json..."
+# Create and configure .env if it doesn't exist
+if (-not (Test-Path ".env")) {
+    Write-ColorOutput Cyan "Creating .env file..."
     Write-Output "Please enter the following information:"
     $botToken = Read-Host "Enter your Telegram Bot Token (from @BotFather)"
     $geminiKey = Read-Host "Enter your Gemini API Key"
+    $geminiModel = "gemini-2.5-flash-preview-04-17"
     $dbPassword = Read-Host "Enter a password for the PostgreSQL database"
 
-    $settings = @{
-        "telegram_bot_token" = $botToken
-        "gemini_api_key" = $geminiKey
-        "database" = @{
-            "host" = "localhost"
-            "port" = 5432
-            "database" = "gemini_bot"
-            "user" = "postgres"
-            "password" = $dbPassword
-        }
-    }
+    @"
+BOT_TOKEN=$botToken
+GEMINI_API_KEY=$geminiKey
+GEMINI_MODEL=$geminiModel
 
-    $settings | ConvertTo-Json -Depth 10 | Set-Content "appsettings.json"
+DB_USER=postgres
+DB_PASSWORD=$dbPassword
+DB_NAME=gemini_bot
+DB_HOST=localhost
+"@ | Set-Content ".env"
 }
 
 # Set up virtual environment and install requirements
@@ -110,9 +108,11 @@ pip install -r requirements.txt
 
 # Initialize PostgreSQL database
 Write-ColorOutput Cyan "Configuring PostgreSQL..."
-$settings = Get-Content "appsettings.json" | ConvertFrom-Json
-$dbPass = $settings.database.password
-$dbName = $settings.database.database
+
+# Read settings from .env
+$envContent = Get-Content ".env" -Raw
+$dbPass = ([regex]::Match($envContent, 'DB_PASSWORD=(.+)$', [System.Text.RegularExpressions.RegexOptions]::Multiline)).Groups[1].Value
+$dbName = ([regex]::Match($envContent, 'DB_NAME=(.+)$', [System.Text.RegularExpressions.RegexOptions]::Multiline)).Groups[1].Value
 
 # Create database if it doesn't exist
 $env:PGPASSWORD = $dbPass
