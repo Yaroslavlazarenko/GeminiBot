@@ -19,6 +19,20 @@ print_warning() {
     echo -e "${YELLOW}[!] $1${NC}"
 }
 
+# Function to check SSH connection to GitHub
+check_github_ssh() {
+    print_message "Checking SSH connection to GitHub..."
+    if ! ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+        print_error "SSH connection to GitHub failed!"
+        print_error "Please make sure:"
+        print_error "1. You have an SSH key: ls -la ~/.ssh"
+        print_error "2. Your SSH key is added to ssh-agent: ssh-add -l"
+        print_error "3. Your SSH key is added to your GitHub account"
+        print_error "4. You can test connection with: ssh -T git@github.com"
+        exit 1
+    fi
+}
+
 # Check if script is run as root
 if [ "$EUID" -ne 0 ]; then
     print_error "Please run this script as root (with sudo)"
@@ -32,6 +46,9 @@ if [ -z "$ACTUAL_USER" ]; then
     exit 1
 fi
 
+# Check SSH connection before proceeding
+check_github_ssh
+
 # Check if jq is installed, if not - install it
 if ! command -v jq &> /dev/null; then
     print_message "Installing jq..."
@@ -41,7 +58,7 @@ fi
 # Configuration
 BOT_DIR="/opt/geminibot"
 SERVICE_NAME="geminibot"
-GITHUB_REPO="https://github.com/Yaroslavlazarenko/GeminiBot.git"
+GITHUB_REPO="git@github.com:Yaroslavlazarenko/GeminiBot.git"
 
 # Check if appsettings.json exists
 if [ ! -f "appsettings.json" ]; then
@@ -58,21 +75,24 @@ GEMINI_API_KEY=$(jq -r '.gemini.api_key' appsettings.json)
 
 # Validate configuration
 if [[ "$DB_NAME" == "null" || "$DB_USER" == "null" || "$DB_PASSWORD" == "null" || 
-      "$BOT_TOKEN" == "null" || "$GEMINI_API_KEY" == "null" || 
-      "$DB_PASSWORD" == "your_password_here" || "$BOT_TOKEN" == "your_telegram_bot_token_here" || 
-      "$GEMINI_API_KEY" == "your_gemini_api_key_here" ]]; then
-    print_error "Please update appsettings.json with your actual configuration values!"
+      "$BOT_TOKEN" == "null" || "$GEMINI_API_KEY" == "null" ]]; then
+    print_error "Invalid configuration in appsettings.json!"
     exit 1
 fi
 
 print_message "Installing system dependencies..."
 apt update
-apt install -y python3 python3-pip python3-venv postgresql postgresql-contrib git
+apt install -y python3 python3-pip python3-venv postgresql postgresql-contrib git openssh-client
 
 # Create and configure PostgreSQL database
 print_message "Configuring PostgreSQL..."
-sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;"
-sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';"
+if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1; then
+    sudo -u postgres psql -c "CREATE DATABASE $DB_NAME;"
+fi
+
+if ! sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1; then
+    sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASSWORD';"
+fi
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
 
 # Create bot directory and set permissions
@@ -86,10 +106,12 @@ if [ -d "$BOT_DIR/.git" ]; then
     cd $BOT_DIR
     sudo -u $ACTUAL_USER git pull
 else
+    # Use sudo -u $ACTUAL_USER to run git clone as the actual user
     sudo -u $ACTUAL_USER git clone $GITHUB_REPO $BOT_DIR
 fi
 
 # Copy appsettings.json to bot directory
+print_message "Copying configuration..."
 cp appsettings.json $BOT_DIR/
 chown $ACTUAL_USER:$ACTUAL_USER $BOT_DIR/appsettings.json
 
