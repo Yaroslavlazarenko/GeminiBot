@@ -239,9 +239,33 @@ systemctl daemon-reload
 systemctl enable $SERVICE_NAME
 systemctl start $SERVICE_NAME
 
+# Create log directory for auto-updates
+print_message "Setting up auto-update system..."
+mkdir -p /var/log/geminibot
+chown $ACTUAL_USER:$ACTUAL_USER /var/log/geminibot
+
+# Make check_updates.sh executable
+cp "$BOT_DIR/check_updates.sh" "$BOT_DIR/check_updates.sh"
+chmod +x "$BOT_DIR/check_updates.sh"
+
+# Install auto-update service and timer
+cp "$BOT_DIR/geminibot-autoupdate.service" /etc/systemd/system/
+cp "$BOT_DIR/geminibot-autoupdate.timer" /etc/systemd/system/
+chmod 644 /etc/systemd/system/geminibot-autoupdate.service
+chmod 644 /etc/systemd/system/geminibot-autoupdate.timer
+
+# Reload systemd and enable auto-update
+systemctl daemon-reload
+systemctl enable geminibot-autoupdate.timer
+systemctl start geminibot-autoupdate.timer
+
+print_message "Auto-update system configured and started"
+print_message "You can check auto-update status with: systemctl status geminibot-autoupdate.timer"
+print_message "Auto-update logs are available at: /var/log/geminibot/autoupdate.log"
+
 print_message "Installation complete! Service status:"
 systemctl status $SERVICE_NAME
 
-print_message "You can check logs with: journalctl -u geminibot -f"
+print_message "You can check logs with: journalctl -u $SERVICE_NAME -f"
 print_warning "If you need to stop the bot: sudo systemctl stop $SERVICE_NAME"
 print_warning "If you need to restart the bot: sudo systemctl restart $SERVICE_NAME"

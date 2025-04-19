@@ -52,3 +52,36 @@ Telegram бот, использующий Gemini AI для генерации о
    ```bash
    python main.py
    ```
+
+## Автоматическое обновление
+
+Для настройки автоматического обновления бота выполните следующие команды на сервере:
+
+1. Сделайте скрипт проверки обновлений исполняемым:
+```bash
+chmod +x /opt/geminibot/check_updates.sh
+```
+
+2. Скопируйте сервисные файлы:
+```bash
+sudo cp /opt/geminibot/geminibot-autoupdate.service /etc/systemd/system/
+sudo cp /opt/geminibot/geminibot-autoupdate.timer /etc/systemd/system/
+```
+
+3. Включите и запустите сервис автообновления:
+```bash
+sudo systemctl enable geminibot-autoupdate.timer
+sudo systemctl start geminibot-autoupdate.timer
+```
+
+Теперь бот будет автоматически проверять наличие обновлений каждые 5 минут и применять их при наличии.
+
+Проверить статус автообновления:
+```bash
+sudo systemctl status geminibot-autoupdate.timer
+```
+
+Просмотреть логи обновлений:
+```bash
+sudo tail -f /var/log/geminibot/autoupdate.log
+```

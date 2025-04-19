@@ -1,0 +1,13 @@
+[Unit]
+Description=GeminiBot Auto Update Service
+After=network.target postgresql.service
+
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/geminibot
+Environment=PATH=/opt/geminibot/venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+ExecStart=/opt/geminibot/check_updates.sh
+
+[Install]
+WantedBy=multi-user.target
