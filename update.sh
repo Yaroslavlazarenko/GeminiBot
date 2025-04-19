@@ -25,18 +25,56 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
+# Get actual user (not root)
+ACTUAL_USER=$SUDO_USER
+if [ -z "$ACTUAL_USER" ]; then
+    print_error "Could not determine the actual user"
+    exit 1
+fi
+
+# Start ssh-agent and add key for the actual user if needed
+print_message "Setting up SSH agent..."
+if ! sudo -u $ACTUAL_USER ssh-add -l >/dev/null 2>&1; then
+    sudo -u $ACTUAL_USER bash -c 'eval "$(ssh-agent -s)" && ssh-add ~/.ssh/id_ed25519'
+fi
+
+# Check SSH connection before proceeding
+print_message "Checking SSH connection to GitHub..."
+if ! sudo -u $ACTUAL_USER ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+    print_error "SSH connection to GitHub failed!"
+    print_error "Please make sure:"
+    print_error "1. You have an SSH key: ls -la ~/.ssh"
+    print_error "2. Start ssh-agent: eval \$(ssh-agent -s)"
+    print_error "3. Add your key: ssh-add ~/.ssh/id_ed25519"
+    print_error "4. Your SSH key is added to your GitHub account"
+    print_error "5. You can test connection with: ssh -T git@github.com"
+    exit 1
+fi
+
 # Configuration
 BOT_DIR="/opt/geminibot"
 SERVICE_NAME="geminibot"
 BACKUP_DIR="$BOT_DIR/backups"
 MAX_BACKUPS=3
 
+# Check if bot directory exists
+if [ ! -d "$BOT_DIR" ]; then
+    print_error "Bot directory $BOT_DIR not found! Please run install.sh first."
+    exit 1
+fi
+
+# Check if appsettings.json exists
+if [ ! -f "$BOT_DIR/appsettings.json" ]; then
+    print_error "appsettings.json not found in $BOT_DIR!"
+    exit 1
+fi
+
 # Create backup directory if it doesn't exist
 mkdir -p "$BACKUP_DIR"
 
 # Function to clean old backups
 clean_old_backups() {
-    # List all backup files sorted by date (oldest first) and remove all but the last MAX_BACKUPS
+    print_message "Cleaning old backups..."
     ls -t "$BACKUP_DIR" | tail -n +$((MAX_BACKUPS + 1)) | while read -r backup; do
         rm -f "$BACKUP_DIR/$backup"
         print_warning "Removed old backup: $backup"
@@ -48,6 +86,7 @@ print_message "Creating backup of critical files..."
 BACKUP_FILE="$BACKUP_DIR/backup_$(date +%Y%m%d_%H%M%S).tar.gz"
 tar -czf "$BACKUP_FILE" -C "$BOT_DIR" \
     .env \
+    appsettings.json \
     alembic.ini \
     config.py \
     2>/dev/null || print_warning "Some files were not found for backup"
@@ -62,16 +101,26 @@ systemctl stop $SERVICE_NAME
 # Pull latest changes
 print_message "Pulling latest changes from git..."
 cd $BOT_DIR
-sudo -u $SUDO_USER git stash  # Stash any local changes
-sudo -u $SUDO_USER git pull
+sudo -u $ACTUAL_USER bash -c "SSH_AUTH_SOCK=$SSH_AUTH_SOCK git fetch origin"
+# Check if there are any changes
+if [ "$(sudo -u $ACTUAL_USER git rev-parse HEAD)" = "$(sudo -u $ACTUAL_USER git rev-parse @{u})" ]; then
+    print_warning "No updates available. Already at the latest version."
+else
+    sudo -u $ACTUAL_USER bash -c "SSH_AUTH_SOCK=$SSH_AUTH_SOCK git reset --hard origin/main"
+fi
 
 # Update dependencies
 print_message "Updating dependencies..."
-sudo -u $SUDO_USER /bin/bash -c "source venv/bin/activate && pip install -r requirements.txt"
+sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && pip install --require-virtualenv -r requirements.txt"
 
 # Apply database migrations
 print_message "Applying database migrations..."
-sudo -u $SUDO_USER /bin/bash -c "source venv/bin/activate && alembic upgrade head"
+cd $BOT_DIR
+cp appsettings.json alembic/
+cd alembic
+sudo -u $ACTUAL_USER bash -c "source ../venv/bin/activate && alembic upgrade head"
+rm appsettings.json  # Clean up
+cd ..
 
 # Start the service
 print_message "Starting the bot service..."
