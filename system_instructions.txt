@@ -35,6 +35,14 @@ add_reaction = FunctionDeclaration(
     }
 )
 
+reply_to_message = FunctionDeclaration(
+    name="reply_to_message",
+    description="Reply to a specific message by its Telegram message ID. Use this when you want to reference or respond to a particular message from the chat history.",
+    parameters={
+        "message_id": "The Telegram message ID to reply to"
+    }
+)
+
 RESPONSE FORMAT RULES:
 1. Your entire response must be a single, valid JSON object
 2. No text before or after the JSON

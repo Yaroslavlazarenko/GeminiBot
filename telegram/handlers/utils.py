@@ -35,17 +35,26 @@ async def handle_gemini_result(
         if "text" in result_data and result_data["text"].strip():
             response_text = result_data["text"].strip()
             logger.info(f"Gemini returned text for user {user.telegram_id} in chat {chat.id}.")
+            
+            # Look for reply_to_message command first
+            reply_to_id = None
+            for command in result_data.get("commands", []):
+                if command.get("name") == "reply_to_message":
+                    reply_to_id = command.get("args", {}).get("message_id")
+                    break
 
-            # Определяем метод отправки в зависимости от типа чата
-            if chat.type != ChatType.PRIVATE:
-                send_method = message.reply
-                method_name = "reply"
-            else:
-                send_method = message.answer
-                method_name = "answer"
+            # Определяем метод отправки
+            send_method = message.answer if chat.type == ChatType.PRIVATE else message.reply
+            method_name = "answer" if chat.type == ChatType.PRIVATE else "reply"
+            method_kwargs = {"text": response_text, "parse_mode": "HTML"}
+            
+            # If we need to reply to a specific message, add reply_to_message_id
+            if reply_to_id:
+                method_kwargs["reply_to_message_id"] = reply_to_id
+                method_name = "reply_to_specific"
 
             try:
-                sent_message = await send_method(response_text, parse_mode="HTML")
+                sent_message = await send_method(**method_kwargs)
                 await message_dao.add_message(
                     user_id=user.id, 
                     role=MessageRole.MODEL, 
@@ -54,9 +63,16 @@ async def handle_gemini_result(
                     telegram_message_id=sent_message.message_id
                 )
             except TelegramBadRequest as e:
-                logger.warning(f"Failed to send message ({method_name}, HTML) to {chat.id}: {e}. Content: '{response_text[:50]}...'. Retrying without HTML.")
+                # If sending with HTML fails or message not found, try without HTML
+                logger.warning(f"Failed to send message ({method_name}) to {chat.id}: {e}. Content: '{response_text[:50]}...'. Retrying without HTML.")
                 try:
-                    sent_message = await send_method(response_text, parse_mode=None)
+                    method_kwargs["parse_mode"] = None
+                    # If message not found error, remove reply_to
+                    if "message to reply not found" in str(e).lower():
+                        if "reply_to_message_id" in method_kwargs:
+                            del method_kwargs["reply_to_message_id"]
+                            logger.warning(f"Message {reply_to_id} not found in chat {chat.id}, falling back to default reply")
+                    sent_message = await send_method(**method_kwargs)
                     await message_dao.add_message(
                         user_id=user.id, 
                         role=MessageRole.MODEL, 
@@ -73,7 +89,7 @@ async def handle_gemini_result(
 
             logger.debug(f"Finished sending response to chat {chat.id}. Length: {len(response_text)}")
 
-        # После отправки текста обрабатываем команды
+        # После отправки текста обрабатываем остальные команды
         for command in result_data.get("commands", []):
             command_name = command.get("name")
             command_args = command.get("args", {})
@@ -101,6 +117,7 @@ async def handle_gemini_result(
                         logger.info(f"Added reaction {emoji} to message from user {user.telegram_id} in chat {chat.id}")
                     except Exception as e:
                         logger.error(f"Failed to add reaction {emoji} to message in chat {chat.id}: {e}")
+            # reply_to_message обрабатывается выше, при отправке сообщения
 
     elif result_type == "error":
         error_msg = result_data if isinstance(result_data, str) else "Unknown Gemini error"

@@ -177,18 +177,27 @@ class MessageHistoryDAO:
                 user_display_name = message.user.first_name or f"User_{message.user.telegram_id}"
                 prefix = f"[{timestamp_str}] {user_display_name}: "
                 if message_text:
+                     # Add telegram_message_id in a format that won't be visible to users but parseable by AI
                      message_text = f"{prefix}{message_text}"
+                     if message.telegram_message_id:
+                         message_text += f"\n[MSG_ID:{message.telegram_message_id}]"
             else:
                 logger.warning(f"User data not loaded for message_id={message.id} in group_id={message.group_id}. Cannot add prefix.")
                 if message_text:
                     message_text = f"[{timestamp_str}] Unknown User: {message_text}"
+                    if message.telegram_message_id:
+                        message_text += f"\n[MSG_ID:{message.telegram_message_id}]"
         else:
             # Add timestamp for model responses too
             if message_text:
-                message_text = f"[{timestamp_str}] {message_text} "
+                message_text = f"[{timestamp_str}] {message_text}"
+                if message.telegram_message_id:
+                    message_text += f"\n[MSG_ID:{message.telegram_message_id}]"
 
         # Add parts based on content
-        if message_text: parts.append(types.Part.from_text(text=message_text))
+        if message_text: 
+            parts.append(types.Part.from_text(text=message_text))
+
         if message.audio_data: parts.append(types.Part.from_bytes(data=message.audio_data, mime_type="audio/ogg"))
         if message.image_data: parts.append(types.Part.from_bytes(data=message.image_data, mime_type="image/jpeg"))
         if message.video_data: parts.append(types.Part.from_bytes(data=message.video_data, mime_type="video/mp4"))
