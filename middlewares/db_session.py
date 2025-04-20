@@ -39,6 +39,7 @@ class DAOMiddleware(BaseMiddleware):
             data["user_dao"] = user_dao
             data["group_dao"] = group_dao
             data["message_dao"] = message_dao
+            data["session_factory"] = self.session_factory
 
             db_user: Optional[DBUser] = None
 

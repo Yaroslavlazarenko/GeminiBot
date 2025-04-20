@@ -136,6 +136,7 @@ class MessageHistoryDAO:
         contents: List[types.Content] = []
         try:
             stmt = (select(MessageHistory).where(and_(MessageHistory.user_id == user_id, MessageHistory.group_id.is_(None)))
+                    .options(selectinload(MessageHistory.user))  # Add this line
                     .order_by(MessageHistory.timestamp.desc()).limit(limit))
             result = await self.session.execute(stmt)
             messages: List[MessageHistory] = list(reversed(result.scalars().all()))
