@@ -14,6 +14,51 @@ logger = logging.getLogger(__name__)
 # Define Telegram's approximate message length limit
 TELEGRAM_MAX_MESSAGE_LENGTH = 4000 # Use a safe limit slightly below 4096
 
+def escape_quotes(text: str) -> str:
+    """
+    Escapes double quotes in text while preserving HTML tags.
+    """
+    if not text:
+        return text
+        
+    # Split the text into parts that are inside HTML tags and parts that are not
+    parts = []
+    current_pos = 0
+    while current_pos < len(text):
+        # Find the next HTML tag
+        tag_start = text.find('<', current_pos)
+        if tag_start == -1:
+            # No more tags, process the rest of the text
+            parts.append(('text', text[current_pos:]))
+            break
+            
+        # Process text before the tag
+        if tag_start > current_pos:
+            parts.append(('text', text[current_pos:tag_start]))
+            
+        # Find the end of the tag
+        tag_end = text.find('>', tag_start)
+        if tag_end == -1:
+            # Malformed HTML, process the rest as text
+            parts.append(('text', text[tag_start:]))
+            break
+            
+        # Add the tag
+        parts.append(('tag', text[tag_start:tag_end + 1]))
+        current_pos = tag_end + 1
+    
+    # Process the parts
+    result = []
+    for part_type, content in parts:
+        if part_type == 'text':
+            # Escape quotes in text parts
+            result.append(content.replace('"', '\\"'))
+        else:
+            # Keep HTML tags as is
+            result.append(content)
+    
+    return ''.join(result)
+
 async def handle_gemini_result(
     gemini_result: Dict[str, Any],
     message: Message,
@@ -33,7 +78,7 @@ async def handle_gemini_result(
     if result_type == "json_response":
         # Отправляем текст, если он есть
         if "text" in result_data and result_data["text"].strip():
-            response_text = result_data["text"].strip()
+            response_text = escape_quotes(result_data["text"].strip())
             logger.info(f"Gemini returned text for user {user.telegram_id} in chat {chat.id}.")
             
             # Look for reply_to_message command first
