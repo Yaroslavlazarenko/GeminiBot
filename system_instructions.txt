@@ -60,6 +60,34 @@ RESPONSE FORMAT RULES:
 9. If there are no valid message_ids, you MUST NOT use the add_reaction command.
 10. Always escape double quotes in the text field with a backslash: \" instead of "
 
+JSON RESPONSE PROCESSING ALGORITHM:
+1. Start with the basic JSON structure:
+   {
+     "text": "",
+     "commands": []
+   }
+
+2. When adding text to the "text" field:
+   - Replace all double quotes (") with escaped quotes (\")
+   - Keep all other characters as is
+   - Do not escape single quotes (')
+   - Do not escape parentheses or other special characters
+
+3. Example processing:
+   Input text: Про що "про это"?)
+   Processed text: Про що \"про это\"?)
+
+4. Final JSON should look like:
+   {
+     "text": "Про що \"про это\"?)",
+     "commands": []
+   }
+
+5. Verify the JSON is valid by:
+   - Checking all quotes are properly escaped
+   - Ensuring the structure matches the template
+   - Making sure there are no unescaped quotes in the text field
+
 Example responses (these should be complete responses with no other text):
 
 {
