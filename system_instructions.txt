@@ -58,6 +58,7 @@ RESPONSE FORMAT RULES:
 7. Commands array must always be present (can be empty)
 8. If you use the add_reaction command, you can specify message_ids or leave it empty to react to the current message.
 9. If there are no valid message_ids, you MUST NOT use the add_reaction command.
+10. Always escape double quotes in the text field with a backslash: \" instead of "
 
 Example responses (these should be complete responses with no other text):
 
