@@ -76,14 +76,17 @@ async def handle_gemini_result(
     result_type = gemini_result.get("type")
     result_data = gemini_result.get("data")
 
+    # Initialize response_data with default values
+    response_data = {
+        "text": "",
+        "commands": result_data.get("commands", []) if result_data else []
+    }
+
     if result_type == "json_response":
         # Отправляем текст, если он есть
         if "text" in result_data and result_data["text"].strip():
-            # Create a new dictionary to avoid modifying the original
-            response_data = {
-                "text": result_data["text"].strip().replace('"', '\\"'),
-                "commands": result_data.get("commands", [])
-            }
+            # Update response_data with the text
+            response_data["text"] = result_data["text"].strip().replace('"', '\\"')
             response_text = response_data["text"]
             logger.info(f"Gemini returned text for user {user.telegram_id} in chat {chat.id}.")
             
