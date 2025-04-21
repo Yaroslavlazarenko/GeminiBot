@@ -113,20 +113,28 @@ async def handle_gemini_result(
                 emoji = command_args.get("emoji")
                 message_ids = command_args.get("message_ids", [])
                 
-                if emoji and message_ids:
-                    chat = message.chat
-                    reaction = [{"type": "emoji", "emoji": emoji}]
-                    
-                    for msg_id in message_ids:
-                        try:
-                            await message.bot.set_message_reaction(
-                                chat_id=chat.id,
-                                message_id=msg_id,
-                                reaction=reaction
-                            )
-                            logger.info(f"Added reaction {emoji} to message {msg_id} from user {user.telegram_id} in chat {chat.id}")
-                        except Exception as e:
-                            logger.error(f"Failed to add reaction {emoji} to message {msg_id} in chat {chat.id}: {e}")
+                if not emoji:
+                    logger.warning(f"Missing emoji in add_reaction command for user {user.telegram_id}")
+                    return
+                
+                chat = message.chat
+                reaction = [{"type": "emoji", "emoji": emoji}]
+                
+                # Если message_ids не указан, используем ID текущего сообщения
+                if not message_ids:
+                    message_ids = [message.message_id]
+                    logger.info(f"Using current message ID {message.message_id} for reaction from user {user.telegram_id} in chat {chat.id}")
+                
+                for msg_id in message_ids:
+                    try:
+                        await message.bot.set_message_reaction(
+                            chat_id=chat.id,
+                            message_id=msg_id,
+                            reaction=reaction
+                        )
+                        logger.info(f"Added reaction {emoji} to message {msg_id} from user {user.telegram_id} in chat {chat.id}")
+                    except Exception as e:
+                        logger.error(f"Failed to add reaction {emoji} to message {msg_id} in chat {chat.id}: {e}")
             # reply_to_message обрабатывается выше, при отправке сообщения
 
     elif result_type == "error":
