@@ -79,15 +79,17 @@ async def handle_gemini_result(
     if result_type == "json_response":
         # Отправляем текст, если он есть
         if "text" in result_data and result_data["text"].strip():
-            # Only escape quotes in the text content, not in the JSON structure
-            response_text = result_data["text"].strip()
-            escaped_text = escape_quotes(response_text)
-            result_data["text"] = escaped_text
+            # Create a new dictionary to avoid modifying the original
+            response_data = {
+                "text": result_data["text"].strip().replace('"', '\\"'),
+                "commands": result_data.get("commands", [])
+            }
+            response_text = response_data["text"]
             logger.info(f"Gemini returned text for user {user.telegram_id} in chat {chat.id}.")
             
             # Look for reply_to_message command first
             reply_to_id = None
-            for command in result_data.get("commands", []):
+            for command in response_data.get("commands", []):
                 if command.get("name") == "reply_to_message":
                     reply_to_id = command.get("args", {}).get("message_id")
                     break
@@ -139,7 +141,7 @@ async def handle_gemini_result(
             logger.debug(f"Finished sending response to chat {chat.id}. Length: {len(response_text)}")
 
         # После отправки текста обрабатываем остальные команды
-        for command in result_data.get("commands", []):
+        for command in response_data.get("commands", []):
             command_name = command.get("name")
             command_args = command.get("args", {})
             
@@ -152,11 +154,11 @@ async def handle_gemini_result(
                 if success:
                     user.responds_to_text = False
                     # Не отправляем дополнительное сообщение, если уже был текст в ответе
-                    if not result_data.get("text", "").strip():
+                    if not response_data.get("text", "").strip():
                         await message.answer("⛔️ Я більше не буду відповідати на ваші текстові повідомлення за вашим запитом.")
                 else:
                     logger.error(f"Failed to disable responses for user {user.telegram_id}")
-                    if not result_data.get("text", "").strip():
+                    if not response_data.get("text", "").strip():
                         await send_error_message(message, "Не вдалося вимкнути відповіді. Спробуйте пізніше.")
             elif command_name == "add_reaction":
                 emoji = command_args.get("emoji")
