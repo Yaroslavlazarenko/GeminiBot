@@ -17,6 +17,7 @@ TELEGRAM_MAX_MESSAGE_LENGTH = 4000 # Use a safe limit slightly below 4096
 def escape_quotes(text: str) -> str:
     """
     Escapes double quotes in text while preserving HTML tags.
+    Only escapes quotes within the text content, not in the JSON structure.
     """
     if not text:
         return text
@@ -78,7 +79,10 @@ async def handle_gemini_result(
     if result_type == "json_response":
         # Отправляем текст, если он есть
         if "text" in result_data and result_data["text"].strip():
-            response_text = escape_quotes(result_data["text"].strip())
+            # Only escape quotes in the text content, not in the JSON structure
+            response_text = result_data["text"].strip()
+            escaped_text = escape_quotes(response_text)
+            result_data["text"] = escaped_text
             logger.info(f"Gemini returned text for user {user.telegram_id} in chat {chat.id}.")
             
             # Look for reply_to_message command first
