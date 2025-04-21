@@ -76,6 +76,11 @@ Example responses (these should be complete responses with no other text):
   ]
 }
 
+{
+  "text": "Ти питав \"Мия\") Я запитала, щось хотів сказати?)",
+  "commands": []
+}
+
 HTML formatting for text field:
 <b>bold</b>
 <i>italic</i>
