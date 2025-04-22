@@ -26,6 +26,17 @@ async def video_note_handler(
     group = await get_group_or_none(group_dao, chat)
     group_db_id = group.id if group else None
 
+    # Validate user data
+    if not user:
+        logger.error(f"User object is None for message {message.message_id}")
+        await send_error_message(message, "Помилка: не вдалося отримати дані користувача.")
+        return
+
+    if not user.telegram_id:
+        logger.error(f"User {user.id} has no telegram_id")
+        await send_error_message(message, "Помилка: не вдалося ідентифікувати користувача.")
+        return
+
     if not user.responds_to_voice:  # Using the same setting as voice messages
         logger.debug(f"Ignoring video note from user {user.telegram_id} in chat {chat.id} due to USER settings.")
         return
@@ -73,12 +84,21 @@ async def video_note_handler(
         return
 
     try:
+        # Add message info first
         await message_dao.add_message(
-            user_id=user.id, role=MessageRole.USER, text="Message info: next message is video note", group_id=group_db_id,
+            user_id=user.id, 
+            role=MessageRole.USER, 
+            text="Message info: next message is video note", 
+            group_id=group_db_id,
             telegram_message_id=message.message_id
         )
+        
+        # Add video data
         await message_dao.add_message(
-            user_id=user.id, role=MessageRole.USER, video_data=video_data, group_id=group_db_id,
+            user_id=user.id, 
+            role=MessageRole.USER, 
+            video_data=video_data, 
+            group_id=group_db_id,
             telegram_message_id=message.message_id
         )
         logger.debug(f"User video note message queued for save (user {user.telegram_id}, group_id {group_db_id})")

@@ -177,50 +177,56 @@ class MessageHistoryDAO:
         return contents
 
     def _format_message_to_content(self, message: MessageHistory, is_group: bool = False) -> Optional[types.Content]:
+        """Форматирует сообщение из БД в формат, понятный Gemini API."""
+        if not message:
+            logger.warning("Attempted to format None message")
+            return None
+
         parts = []
-        message_text = message.text
-        # Format timestamp
-        timestamp_str = message.timestamp.strftime("%Y-%m-%d %H:%M:%S")
         
-        if message.role == MessageRole.USER:
-            if message.user:
-                user_display_name = message.user.first_name or f"User_{message.user.telegram_id}"
-                prefix = f"[{timestamp_str}] {user_display_name}: "
-                if message_text:
-                     # Add telegram_message_id in a format that won't be visible to users but parseable by AI
-                     message_text = f"{prefix}{message_text}"
-                     if message.telegram_message_id:
-                         message_text += f"\n[MSG_ID:{message.telegram_message_id}]"
-            else:
-                logger.warning(f"User data not loaded for message_id={message.id} in group_id={message.group_id}. Cannot add prefix.")
-                if message_text:
-                    message_text = f"[{timestamp_str}] Unknown User: {message_text}"
-                    if message.telegram_message_id:
-                        message_text += f"\n[MSG_ID:{message.telegram_message_id}]"
-        else:
-            # Add timestamp for model responses too
-            if message_text:
-                message_text = f"[{timestamp_str}] {message_text}"
-                if message.telegram_message_id:
-                    message_text += f"\n[MSG_ID:{message.telegram_message_id}]"
-
-        # Add parts based on content
-        if message_text: 
-            parts.append(types.Part.from_text(text=message_text))
-
-        if message.audio_data: parts.append(types.Part.from_bytes(data=message.audio_data, mime_type="audio/ogg"))
-        if message.image_data:
-            # Telegram always converts images to JPEG
-            parts.append(types.Part.from_bytes(data=message.image_data, mime_type="image/jpeg"))
-        if message.video_data: parts.append(types.Part.from_bytes(data=message.video_data, mime_type="video/mp4"))
-
-        if parts:
-            role_str = message.role.value
+        # Add text if present
+        if message.text:
             try:
-                return types.Content(role=role_str, parts=parts)
-            except ValueError as e:
-                 logger.error(f"Invalid role value '{role_str}' for message {message.id}: {e}")
-                 return None
-        else:
+                parts.append(types.Part.from_text(message.text))
+            except Exception as e:
+                logger.error(f"Error creating text part for message {message.id}: {e}")
+                return None
+
+        # Add audio if present
+        if message.audio_data:
+            try:
+                parts.append(types.Part.from_bytes(data=message.audio_data, mime_type="audio/ogg"))
+            except Exception as e:
+                logger.error(f"Error creating audio part for message {message.id}: {e}")
+                return None
+
+        # Add image if present
+        if message.image_data:
+            try:
+                # Telegram always converts images to JPEG
+                parts.append(types.Part.from_bytes(data=message.image_data, mime_type="image/jpeg"))
+            except Exception as e:
+                logger.error(f"Error creating image part for message {message.id}: {e}")
+                return None
+
+        # Add video if present
+        if message.video_data:
+            try:
+                parts.append(types.Part.from_bytes(data=message.video_data, mime_type="video/mp4"))
+            except Exception as e:
+                logger.error(f"Error creating video part for message {message.id}: {e}")
+                return None
+
+        if not parts:
             logger.warning(f"Message id={message.id} (user_id={message.user_id}, group_id={message.group_id}) has no content parts, skipping.")
+            return None
+
+        try:
+            role_str = message.role.value
+            return types.Content(role=role_str, parts=parts)
+        except ValueError as e:
+            logger.error(f"Invalid role value '{role_str}' for message {message.id}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error creating Content for message {message.id}: {e}")
             return None
