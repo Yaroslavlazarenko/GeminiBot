@@ -1,8 +1,8 @@
-"""add_file_extension
+"""add file_extension column
 
 Revision ID: add_file_extension
 Revises: 5bb3801918cd
-Create Date: 2024-04-20 00:00:00.000000
+Create Date: 2024-04-22 13:15:00.000000
 
 """
 from typing import Sequence, Union
