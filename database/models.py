@@ -43,6 +43,7 @@ class User(Base, PrettyRepr):
 
     responds_to_text: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
     responds_to_voice: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
+    responds_to_photo: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
     transcribe_voice_only: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
 
     messages: Mapped[List["MessageHistory"]] = relationship(
@@ -69,7 +70,9 @@ class Group(Base, PrettyRepr):
     responds_to_voice: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=true(), nullable=False
     )
-
+    responds_to_photo: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
 
     messages: Mapped[List["MessageHistory"]] = relationship(
         back_populates="group"

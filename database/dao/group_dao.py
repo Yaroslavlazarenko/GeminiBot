@@ -64,16 +64,15 @@ class GroupDAO:
             logger.error(f"Database error during get_or_create_group for telegram_chat_id={telegram_chat_id}: {e}", exc_info=True)
             raise
 
-    async def update_group_settings(self, group_id: int, responds_to_text: bool | None = None, responds_to_voice: bool | None = None) -> bool:
+    async def update_group_settings(self, group_id: int, responds_to_text: bool | None = None, responds_to_voice: bool | None = None, responds_to_photo: bool | None = None) -> bool:
         logger.debug(f"Updating settings for group_id={group_id}")
         values_to_update = {}
         if responds_to_text is not None: values_to_update["responds_to_text"] = responds_to_text
         if responds_to_voice is not None: values_to_update["responds_to_voice"] = responds_to_voice
-
+        if responds_to_photo is not None: values_to_update["responds_to_photo"] = responds_to_photo
         if not values_to_update:
             logger.warning(f"No settings provided to update for group_id={group_id}")
             return False
-
         stmt = update(Group).where(Group.id == group_id).values(**values_to_update)
         try:
             result = await self.session.execute(stmt)
@@ -81,7 +80,7 @@ class GroupDAO:
                 logger.info(f"Successfully updated settings for group_id={group_id}")
                 return True
             else:
-                logger.warning(f"Group with internal id={group_id} not found for settings update or settings unchanged.")
+                logger.warning(f"Group with id={group_id} not found for settings update or settings unchanged.")
                 group_exists = await self.session.get(Group, group_id)
                 return group_exists is not None
         except SQLAlchemyError as e:

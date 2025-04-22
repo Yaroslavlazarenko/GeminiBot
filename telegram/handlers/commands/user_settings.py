@@ -28,6 +28,7 @@ async def show_settings_handler(
 
     user_text_status = f"✅ *Увімкнено*" if user.responds_to_text else f"❌ *Вимкнено*"
     user_voice_status = f"✅ *Увімкнено*" if user.responds_to_voice else f"❌ *Вимкнено*"
+    user_photo_status = f"✅ *Увімкнено*" if user.responds_to_photo else f"❌ *Вимкнено*"
     if user.responds_to_voice:
         user_voice_mode = "*📝 Тільки транскрипція*" if user.transcribe_voice_only else "*💬 Відповідь на повідомлення*"
     else:
@@ -37,8 +38,9 @@ async def show_settings_handler(
         f"👤 **Ваші глобальні налаштування:**\n"
         f"   - Відповіді на текст: {user_text_status}\n"
         f"   - Обробка голосу: {user_voice_status}\n"
+        f"   - Обробка фото: {user_photo_status}\n"
         f"   - Режим голосу: {user_voice_mode}\n\n"
-        f"   *Змінити глобальні налаштування можна командами:* `{'/toggletext'}`, `{'/togglevoice'}`, `{'/togglemode'}` (краще в приватному чаті).\n\n"
+        f"   *Змінити глобальні налаштування можна командами:* `{'/toggletext'}`, `{'/togglevoice'}`, `{'/togglemode'}`, `{'/togglephoto'}` (краще в приватному чаті).\n\n"
         f"   🧹 **Очищення історії:**\n"
         f"   `{'/clear'}` - Очистити *вашу* історію в цьому чаті\n"
         f"   `{'/clear <число>'}` - Очистити *ваші* останні N повідомлень"
@@ -65,6 +67,7 @@ async def show_settings_handler(
                     f"   *Ви можете змінити налаштування групи командами:*\n"
                     f"   `{'/togglegrouptext'}` - Увімк./Вимк. відповіді на текст\n"
                     f"   `{'/togglegroupvoice'}` - Увімк./Вимк. обробку голосу\n"
+                    f"   `{'/togglegroupphoto'}` - Увімк./Вимк. обробку фото\n"
                     f"\n   *Очищення історії групи (тільки адміни):*\n"
                     f"   `{'/clear group'}` - Очистити *всю* історію групи\n"
                     f"   `{'/clear group <число>'}` - Очистити останні N повідомлень *групи*"
@@ -156,4 +159,27 @@ async def toggle_voice_mode_handler(
         await log_and_reply(message, log_message, reply_text)
     else:
         logger.error(f"Failed to update transcribe_voice_only for user {user.telegram_id} in DB.")
+        await send_error_message(message, "Не вдалося зберегти налаштування.")
+
+@router.message(filters.Command("togglephoto"))
+async def toggle_photo_response_handler(
+    message: Message,
+    user_dao: UserDAO,
+    user: User
+) -> None:
+    """Toggles user photo response setting."""
+    if message.chat.type != ChatType.PRIVATE:
+         await message.answer("ℹ️ Зверніть увагу: ця команда змінює ваші глобальні налаштування для всіх чатів.")
+
+    new_value = not user.responds_to_photo
+    success = await user_dao.update_user_settings(user_id=user.id, responds_to_photo=new_value)
+
+    if success:
+        user.responds_to_photo = new_value
+        log_message = f"User {user.telegram_id} toggled responds_to_photo to {user.responds_to_photo}"
+        status = "<b>увімкнено</b>" if user.responds_to_photo else "<b>вимкнено</b>"
+        reply_text = f"✅ Відповіді на фото та зображення тепер {status}."
+        await log_and_reply(message, log_message, reply_text)
+    else:
+        logger.error(f"Failed to update responds_to_photo for user {user.telegram_id} in DB.")
         await send_error_message(message, "Не вдалося зберегти налаштування.")
