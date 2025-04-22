@@ -94,7 +94,7 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
     system_prompt_parts.append(f"\nCurrent user ID: {user.telegram_id}")
     
     # Add group context if available
-    if any(c.role == "system" and "group chat" in c.parts[0].text for c in contents):
+    if any(c.role == "user" and "group chat" in c.parts[0].text for c in contents):
         system_prompt_parts.append("\nIMPORTANT: You are in a group chat. Keep your responses concise and relevant to the current user's message. Avoid long conversations or complex interactions.")
     
     system_prompt_parts.append("\nIMPORTANT: Your responses and reactions should be specific to the current user. If you choose to disable responses or react negatively, it should only affect this specific user. Previous negative interactions with other users should not influence your response to the current user.")

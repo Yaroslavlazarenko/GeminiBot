@@ -91,7 +91,7 @@ async def video_note_handler(
             if message_history:
                 group_context = types.Content(
                     parts=[types.Part(text=f"Context: This is a group chat named '{group.name}'. The video note is from user {user.telegram_id}.")],
-                    role="system"
+                    role="user"
                 )
                 message_history = [group_context] + message_history
         else:
@@ -112,6 +112,11 @@ async def video_note_handler(
                 user=user,
                 response=generate_full_response
             )
+
+            if isinstance(gemini_result, str):
+                # If we got a string error message, send it to the user
+                await send_error_message(message, gemini_result)
+                return
 
             await handle_gemini_result(
                 gemini_result,
