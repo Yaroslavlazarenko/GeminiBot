@@ -92,7 +92,13 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
     system_prompt_parts = [base_instructions]
     system_prompt_parts.append(f"\nCurrent time: {current_time}")
     system_prompt_parts.append(f"\nCurrent user ID: {user.telegram_id}")
+    
+    # Add group context if available
+    if any(c.role == "system" and "group chat" in c.parts[0].text for c in contents):
+        system_prompt_parts.append("\nIMPORTANT: You are in a group chat. Keep your responses concise and relevant to the current user's message. Avoid long conversations or complex interactions.")
+    
     system_prompt_parts.append("\nIMPORTANT: Your responses and reactions should be specific to the current user. If you choose to disable responses or react negatively, it should only affect this specific user. Previous negative interactions with other users should not influence your response to the current user.")
+    
     if task_hint:
         system_prompt_parts.append(f"\nSpecific instruction for this turn: {task_hint}")
     system_prompt = "\n".join(filter(None, system_prompt_parts))
@@ -193,7 +199,12 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                 }
 
         except ServerError as e:
-            if e.status_code == 500 and retries < MAX_RETRIES - 1:
+            # Extract status code from error message if available
+            status_code = 500  # Default to 500 if not found
+            if hasattr(e, 'error') and isinstance(e.error, dict):
+                status_code = e.error.get('code', 500)
+            
+            if status_code == 500 and retries < MAX_RETRIES - 1:
                 delay = min(BASE_DELAY * (2 ** retries), MAX_DELAY)  # Exponential backoff
                 logger.warning(f"Gemini API 500 error (attempt {retries + 1}/{MAX_RETRIES}), retrying in {delay}s: {e}")
                 await asyncio.sleep(delay)

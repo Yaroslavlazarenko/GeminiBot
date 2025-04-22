@@ -1,7 +1,7 @@
 import logging
 
 from aiogram import F, Router
-from aiogram.types import Message
+from aiogram.types import Message, Content
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
 
 from ai.gemini_client import get_video_response
@@ -82,32 +82,48 @@ async def video_note_handler(
         )
         logger.debug(f"User video note message queued for save (user {user.telegram_id}, group_id {group_db_id})")
 
+        # Different handling for group vs private messages
         if group_db_id is not None:
-            message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id)
+            # For groups, limit history and add group context
+            message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id, limit=5)
+            # Add group context to the first message
+            if message_history:
+                group_context = Content(
+                    parts=[Content(text=f"Context: This is a group chat named '{group.name}'. The video note is from user {user.telegram_id}.")],
+                    role="system"
+                )
+                message_history = [group_context] + message_history
         else:
+            # For private messages, use full history
             message_history = await message_dao.get_user_private_messages_as_contents(user_id=user.id)
+
         logger.debug(f"Fetched {len(message_history)} messages for context (user {user.telegram_id}, group_id {group_db_id})")
 
         if not message_history:
             logger.warning(f"Message history is empty before calling Gemini for user {user.telegram_id}, group_id {group_db_id}")
 
-        generate_full_response = not user.transcribe_voice_only  # Using the same setting as voice messages
+        generate_full_response = not user.transcribe_voice_only
         logger.debug(f"Calling AI for video note. Generate response based on user setting: {generate_full_response} (user {user.telegram_id}, group_id {group_db_id})")
 
-        gemini_result = await get_video_response(
-            message_history=message_history,
-            user=user,
-            response=generate_full_response
-        )
+        try:
+            gemini_result = await get_video_response(
+                message_history=message_history,
+                user=user,
+                response=generate_full_response
+            )
 
-        await handle_gemini_result(
-            gemini_result,
-            message,
-            message_dao=message_dao,
-            user_dao=user_dao,
-            user=user,
-            group_db_id=group_db_id
-        )
+            await handle_gemini_result(
+                gemini_result,
+                message,
+                message_dao=message_dao,
+                user_dao=user_dao,
+                user=user,
+                group_db_id=group_db_id
+            )
+        except Exception as e:
+            logger.error(f"Error calling Gemini API for video note: {e}", exc_info=True)
+            await send_error_message(message, "Помилка під час обробки відео. Спробуйте пізніше.")
+            return
 
     except Exception as e:
         logger.error(f"Handler error processing video note for user {user.telegram_id} in chat {chat.id}: {e}", exc_info=True)

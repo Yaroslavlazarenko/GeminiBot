@@ -149,23 +149,15 @@ class MessageHistoryDAO:
             logger.error(f"Error getting private message history for user_id={user_id}: {e}", exc_info=True)
             return []
 
-    async def get_group_messages_as_contents(self, group_id: int, limit: int = 500) -> List[types.Content]:
-        logger.debug(f"Getting last {limit} messages for group_id={group_id}")
-        contents: List[types.Content] = []
-        try:
-            stmt = (select(MessageHistory).where(MessageHistory.group_id == group_id)
-                    .options(selectinload(MessageHistory.user)) # Eager load user data
-                    .order_by(MessageHistory.timestamp.desc()).limit(limit))
-            result = await self.session.execute(stmt)
-            messages: List[MessageHistory] = list(reversed(result.scalars().all()))
-            logger.debug(f"Retrieved {len(messages)} messages for group_id={group_id} to build contents")
-            for message in messages:
-                content = self._format_message_to_content(message, is_group=True)
-                if content: contents.append(content)
-            return contents
-        except SQLAlchemyError as e:
-            logger.error(f"Error getting group message history for group_id={group_id}: {e}", exc_info=True)
-            return []
+    async def get_group_messages_as_contents(self, group_id: int, limit: int = 50) -> List[types.Content]:
+        """Получает историю сообщений группы в формате для Gemini."""
+        messages = await self.get_group_messages(group_id=group_id, limit=limit)
+        contents = []
+        for message in messages:
+            content = self._format_message_to_content(message, is_group=True)
+            if content:
+                contents.append(content)
+        return contents
 
     def _format_message_to_content(self, message: MessageHistory, is_group: bool = False) -> Optional[types.Content]:
         parts = []
