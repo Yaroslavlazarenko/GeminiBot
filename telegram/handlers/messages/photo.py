@@ -2,6 +2,7 @@
 
 import logging
 import asyncio
+import os
 from typing import Dict, List, Optional, Tuple
 
 from aiogram import F, Router
@@ -21,8 +22,8 @@ router = Router()
 
 # --- Управление Медиагруппами ---
 
-# Кэш для медиагрупп: ключ - media_group_id, значение - список (сообщение, байты фото)
-media_group_cache: Dict[str, List[Tuple[Message, bytes]]] = {}
+# Кэш для медиагрупп: ключ - media_group_id, значение - список (сообщение, байты фото, расширение)
+media_group_cache: Dict[str, List[Tuple[Message, bytes, str]]] = {}
 # Таймеры для обработки медиагрупп
 media_group_timers: Dict[str, asyncio.Task] = {}
 # Время ожидания последнего фото в медиагруппе (в секундах)
@@ -30,8 +31,8 @@ MEDIA_GROUP_TIMEOUT = 5.0 # Можно настроить (например, 2.0
 
 # --- Вспомогательные функции ---
 
-async def get_best_photo_data(message: Message) -> Optional[bytes]:
-    """Получает данные фото наилучшего качества."""
+async def get_best_photo_data(message: Message) -> Optional[Tuple[bytes, str]]:
+    """Получает данные фото наилучшего качества и его расширение."""
     if not message.photo:
         logger.warning(f"No photos found in message {message.message_id}")
         return None
@@ -49,6 +50,11 @@ async def get_best_photo_data(message: Message) -> Optional[bytes]:
             logger.error(f"File path is missing for photo file_id={photo.file_id}")
             return None
 
+        # Get file extension from file path
+        file_extension = os.path.splitext(file.file_path)[1].lower()
+        if not file_extension:
+            file_extension = '.jpg'  # Default to jpg if no extension found
+
         downloaded_file = await message.bot.download_file(file.file_path)
         if downloaded_file is None:
             logger.error(f"Failed to download photo from path={file.file_path}, received None")
@@ -56,7 +62,7 @@ async def get_best_photo_data(message: Message) -> Optional[bytes]:
 
         photo_data = downloaded_file.read()
         logger.debug(f"Downloaded {len(photo_data)} bytes for photo file_id={photo.file_id}")
-        return photo_data
+        return photo_data, file_extension
 
     except (TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError) as e:
         # Логгируем специфичные ошибки Telegram API
@@ -161,12 +167,13 @@ async def process_media_group(
             )
             # Каждое фото (со своим telegram_message_id)
             saved_photo_count = 0
-            for msg, photo_data in photos:
+            for msg, photo_data, file_extension in photos:
                 await message_dao.add_message(
                     user_id=user.id, role=MessageRole.USER,
                     image_data=photo_data,
                     group_id=group_db_id,
-                    telegram_message_id=msg.message_id # ID конкретного фото-сообщения
+                    telegram_message_id=msg.message_id, # ID конкретного фото-сообщения
+                    file_extension=file_extension
                 )
                 saved_photo_count += 1
             logger.debug(f"Added info message and {saved_photo_count} photos from media group {media_group_id} to session.")
@@ -302,7 +309,7 @@ async def photo_handler(
     user = await user_dao.get_user_by_telegram_id(message.from_user.id)
     if not user:
          logger.warning(f"User {message.from_user.id} not found via middleware DAO. Attempting get_or_create.")
-         user = await user_dao.get_or_create_user( # Используем user_dao
+         user = await user_dao.get_or_create_user(
                 telegram_id=message.from_user.id,
                 username=message.from_user.username or str(message.from_user.id),
                 first_name=message.from_user.first_name,
@@ -329,17 +336,19 @@ async def photo_handler(
     logger.info(f"Processing photo from user {user.telegram_id} in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
 
     media_group_id = message.media_group_id
-    photo_data = await get_best_photo_data(message)
-    if not photo_data:
+    photo_result = await get_best_photo_data(message)
+    if not photo_result:
         await send_error_message(message, "Помилка: не вдалося завантажити ваше фото.")
         return
+
+    photo_data, file_extension = photo_result
 
     if media_group_id:
         # --- Обработка МЕДИАГРУППЫ ---
         logger.debug(f"Photo message {message.message_id} is part of media group {media_group_id}. Adding to cache.")
         if media_group_id not in media_group_cache:
             media_group_cache[media_group_id] = []
-        media_group_cache[media_group_id].append((message, photo_data))
+        media_group_cache[media_group_id].append((message, photo_data, file_extension))
         logger.debug(f"Media group {media_group_id} cache now has {len(media_group_cache[media_group_id])} photos.")
 
         # Планируем/перепланируем отложенную задачу `process_media_group`.
@@ -374,7 +383,8 @@ async def photo_handler(
         )
         await message_dao.add_message( # Используем message_dao
             user_id=user.id, role=MessageRole.USER, image_data=photo_data,
-            group_id=group_db_id, telegram_message_id=message.message_id
+            group_id=group_db_id, telegram_message_id=message.message_id,
+            file_extension=file_extension
         )
         logger.debug(f"User single photo message {message.message_id} added to middleware session.")
 
