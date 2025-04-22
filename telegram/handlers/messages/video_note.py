@@ -1,8 +1,9 @@
 import logging
 
 from aiogram import F, Router
-from aiogram.types import Message, Content
+from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
+from google.genai import types
 
 from ai.gemini_client import get_video_response
 from database.models import User, MessageRole
@@ -88,8 +89,8 @@ async def video_note_handler(
             message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id, limit=5)
             # Add group context to the first message
             if message_history:
-                group_context = Content(
-                    parts=[Content(text=f"Context: This is a group chat named '{group.name}'. The video note is from user {user.telegram_id}.")],
+                group_context = types.Content(
+                    parts=[types.Part(text=f"Context: This is a group chat named '{group.name}'. The video note is from user {user.telegram_id}.")],
                     role="system"
                 )
                 message_history = [group_context] + message_history
