@@ -96,7 +96,6 @@ class MessageHistory(Base, PrettyRepr):
     audio_data: Mapped[bytes | None] = mapped_column(LargeBinary)
     image_data: Mapped[bytes | None] = mapped_column(LargeBinary)
     video_data: Mapped[bytes | None] = mapped_column(LargeBinary)
-    file_extension: Mapped[str | None] = mapped_column(String(10))
 
     timestamp: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

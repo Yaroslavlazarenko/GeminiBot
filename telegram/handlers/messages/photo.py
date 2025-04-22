@@ -22,8 +22,8 @@ router = Router()
 
 # --- Управление Медиагруппами ---
 
-# Кэш для медиагрупп: ключ - media_group_id, значение - список (сообщение, байты фото, расширение)
-media_group_cache: Dict[str, List[Tuple[Message, bytes, str]]] = {}
+# Кэш для медиагрупп: ключ - media_group_id, значение - список (сообщение, байты фото)
+media_group_cache: Dict[str, List[Tuple[Message, bytes]]] = {}
 # Таймеры для обработки медиагрупп
 media_group_timers: Dict[str, asyncio.Task] = {}
 # Время ожидания последнего фото в медиагруппе (в секундах)
@@ -31,8 +31,8 @@ MEDIA_GROUP_TIMEOUT = 5.0 # Можно настроить (например, 2.0
 
 # --- Вспомогательные функции ---
 
-async def get_best_photo_data(message: Message) -> Optional[Tuple[bytes, str]]:
-    """Получает данные фото наилучшего качества и его расширение."""
+async def get_best_photo_data(message: Message) -> Optional[bytes]:
+    """Получает данные фото наилучшего качества."""
     if not message.photo:
         logger.warning(f"No photos found in message {message.message_id}")
         return None
@@ -50,11 +50,6 @@ async def get_best_photo_data(message: Message) -> Optional[Tuple[bytes, str]]:
             logger.error(f"File path is missing for photo file_id={photo.file_id}")
             return None
 
-        # Get file extension from file path
-        file_extension = os.path.splitext(file.file_path)[1].lower()
-        if not file_extension:
-            file_extension = '.jpg'  # Default to jpg if no extension found
-
         downloaded_file = await message.bot.download_file(file.file_path)
         if downloaded_file is None:
             logger.error(f"Failed to download photo from path={file.file_path}, received None")
@@ -62,7 +57,7 @@ async def get_best_photo_data(message: Message) -> Optional[Tuple[bytes, str]]:
 
         photo_data = downloaded_file.read()
         logger.debug(f"Downloaded {len(photo_data)} bytes for photo file_id={photo.file_id}")
-        return photo_data, file_extension
+        return photo_data
 
     except (TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError) as e:
         # Логгируем специфичные ошибки Telegram API
@@ -167,13 +162,12 @@ async def process_media_group(
             )
             # Каждое фото (со своим telegram_message_id)
             saved_photo_count = 0
-            for msg, photo_data, file_extension in photos:
+            for msg, photo_data in photos:
                 await message_dao.add_message(
                     user_id=user.id, role=MessageRole.USER,
                     image_data=photo_data,
                     group_id=group_db_id,
-                    telegram_message_id=msg.message_id, # ID конкретного фото-сообщения
-                    file_extension=file_extension
+                    telegram_message_id=msg.message_id # ID конкретного фото-сообщения
                 )
                 saved_photo_count += 1
             logger.debug(f"Added info message and {saved_photo_count} photos from media group {media_group_id} to session.")
@@ -341,14 +335,14 @@ async def photo_handler(
         await send_error_message(message, "Помилка: не вдалося завантажити ваше фото.")
         return
 
-    photo_data, file_extension = photo_result
+    photo_data = photo_result
 
     if media_group_id:
         # --- Обработка МЕДИАГРУППЫ ---
         logger.debug(f"Photo message {message.message_id} is part of media group {media_group_id}. Adding to cache.")
         if media_group_id not in media_group_cache:
             media_group_cache[media_group_id] = []
-        media_group_cache[media_group_id].append((message, photo_data, file_extension))
+        media_group_cache[media_group_id].append((message, photo_data))
         logger.debug(f"Media group {media_group_id} cache now has {len(media_group_cache[media_group_id])} photos.")
 
         # Планируем/перепланируем отложенную задачу `process_media_group`.
@@ -383,8 +377,7 @@ async def photo_handler(
         )
         await message_dao.add_message( # Используем message_dao
             user_id=user.id, role=MessageRole.USER, image_data=photo_data,
-            group_id=group_db_id, telegram_message_id=message.message_id,
-            file_extension=file_extension
+            group_id=group_db_id, telegram_message_id=message.message_id
         )
         logger.debug(f"User single photo message {message.message_id} added to middleware session.")
 

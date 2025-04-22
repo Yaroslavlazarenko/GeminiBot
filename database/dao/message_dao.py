@@ -28,13 +28,11 @@ class MessageHistoryDAO:
         image_data: bytes | None = None, 
         video_data: bytes | None = None, 
         group_id: int | None = None,
-        telegram_message_id: int | None = None,
-        file_extension: str | None = None
+        telegram_message_id: int | None = None
     ) -> MessageHistory:
         log_msg = f"Adding message for user_id={user_id}, role={role.value}"
         if group_id: log_msg += f", group_id={group_id}"
         if telegram_message_id: log_msg += f", telegram_message_id={telegram_message_id}"
-        if file_extension: log_msg += f", file_extension={file_extension}"
         logger.debug(log_msg)
         
         new_message = MessageHistory(
@@ -46,7 +44,6 @@ class MessageHistoryDAO:
             image_data=image_data,
             video_data=video_data,
             telegram_message_id=telegram_message_id,
-            file_extension=file_extension,
             timestamp=datetime.now(timezone.utc)
         )
         self.session.add(new_message)
@@ -204,21 +201,8 @@ class MessageHistoryDAO:
 
         if message.audio_data: parts.append(types.Part.from_bytes(data=message.audio_data, mime_type="audio/ogg"))
         if message.image_data:
-            # Determine MIME type based on file extension or content
-            mime_type = "image/jpeg"  # Default to JPEG
-            if hasattr(message, 'file_extension'):
-                ext = message.file_extension.lower()
-                if ext == '.png':
-                    mime_type = "image/png"
-                elif ext == '.jpeg' or ext == '.jpg':
-                    mime_type = "image/jpeg"
-                elif ext == '.webp':
-                    mime_type = "image/webp"
-                elif ext == '.heic':
-                    mime_type = "image/heic"
-                elif ext == '.heif':
-                    mime_type = "image/heif"
-            parts.append(types.Part.from_bytes(data=message.image_data, mime_type=mime_type))
+            # Telegram always converts images to JPEG
+            parts.append(types.Part.from_bytes(data=message.image_data, mime_type="image/jpeg"))
         if message.video_data: parts.append(types.Part.from_bytes(data=message.video_data, mime_type="video/mp4"))
 
         if parts:
