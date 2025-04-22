@@ -149,6 +149,23 @@ class MessageHistoryDAO:
             logger.error(f"Error getting private message history for user_id={user_id}: {e}", exc_info=True)
             return []
 
+    async def get_group_messages(self, group_id: int, limit: int = 50) -> List[MessageHistory]:
+        """Получает историю сообщений группы."""
+        logger.debug(f"Getting last {limit} messages for group_id={group_id}")
+        try:
+            stmt = (select(MessageHistory)
+                    .where(MessageHistory.group_id == group_id)
+                    .options(selectinload(MessageHistory.user))
+                    .order_by(MessageHistory.timestamp.desc())
+                    .limit(limit))
+            result = await self.session.execute(stmt)
+            messages = list(reversed(result.scalars().all()))
+            logger.debug(f"Retrieved {len(messages)} messages for group_id={group_id}")
+            return messages
+        except SQLAlchemyError as e:
+            logger.error(f"Error getting group message history for group_id={group_id}: {e}", exc_info=True)
+            return []
+
     async def get_group_messages_as_contents(self, group_id: int, limit: int = 50) -> List[types.Content]:
         """Получает историю сообщений группы в формате для Gemini."""
         messages = await self.get_group_messages(group_id=group_id, limit=limit)
