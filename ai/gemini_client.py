@@ -218,17 +218,35 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                 retries += 1
                 continue
             logger.error(f"Gemini API server error after {retries + 1} attempts: {e}")
-            return {"type": "error", "data": f"Gemini API Server Error: {e}"}
+            return {
+                "type": "error",
+                "data": {
+                    "text": f"Gemini API Server Error: {e}",
+                    "commands": []
+                }
+            }
             
         except Exception as e:
             logger.error(f"Error during Gemini API call: {e}", exc_info=True)
-            return {"type": "error", "data": f"Gemini API Error: {e}"}
+            return {
+                "type": "error",
+                "data": {
+                    "text": f"Gemini API Error: {e}",
+                    "commands": []
+                }
+            }
         
         break  # If we get here, the request was successful
 
     # If we exhausted all retries
     if retries == MAX_RETRIES:
-        return {"type": "error", "data": "Maximum retry attempts reached for Gemini API"}
+        return {
+            "type": "error",
+            "data": {
+                "text": "Maximum retry attempts reached for Gemini API",
+                "commands": []
+            }
+        }
 
 async def get_text_response(
     message_history: List[types.Content],
