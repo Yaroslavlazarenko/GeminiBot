@@ -74,6 +74,10 @@ async def get_gemini_response(
         logger.warning("Gemini async client not initialized.")
         return {"type": "error", "data": "Gemini client not available"}
 
+    if not contents:
+        logger.warning("Empty contents list provided to get_gemini_response")
+        return {"type": "error", "data": "No message history provided"}
+
     # Add critical JSON formatting instruction to context
     critical_instruction = types.Content(
         parts=[types.Part(text="""CRITICAL: YOU MUST RETURN ONLY A SINGLE JSON OBJECT AS YOUR COMPLETE RESPONSE.
@@ -94,8 +98,11 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
     system_prompt_parts.append(f"\nCurrent user ID: {user.telegram_id}")
     
     # Add group context if available
-    if any(c.role == "user" and "group chat" in c.parts[0].text for c in contents):
-        system_prompt_parts.append("\nIMPORTANT: You are in a group chat. Keep your responses concise and relevant to the current user's message. Avoid long conversations or complex interactions.")
+    try:
+        if any(c.role == "user" and c.parts and c.parts[0].text and "group chat" in c.parts[0].text for c in contents):
+            system_prompt_parts.append("\nIMPORTANT: You are in a group chat. Keep your responses concise and relevant to the current user's message. Avoid long conversations or complex interactions.")
+    except Exception as e:
+        logger.warning(f"Error checking for group chat context: {e}")
     
     system_prompt_parts.append("\nIMPORTANT: Your responses and reactions should be specific to the current user. If you choose to disable responses or react negatively, it should only affect this specific user. Previous negative interactions with other users should not influence your response to the current user.")
     
