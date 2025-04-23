@@ -21,10 +21,13 @@ router = Router()
 def process_video_data(video_data: bytes) -> bytes:
     """Process video data to ensure minimum duration of 1.5 seconds."""
     try:
+        logger.info(f"Starting video processing. Input size: {len(video_data)} bytes")
+        
         # Create a temporary file on disk
         with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
             temp_file.write(video_data)
             temp_file.flush()
+            logger.info(f"Created temporary file: {temp_file.name}")
             
             # Use OpenCV to read video properties
             cap = cv2.VideoCapture(temp_file.name)
@@ -36,7 +39,7 @@ def process_video_data(video_data: bytes) -> bytes:
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             duration = frame_count / fps if fps > 0 else 0
             
-            logger.info(f"Original video: duration={duration:.2f}s, fps={fps}, frames={frame_count}")
+            logger.info(f"Original video properties: duration={duration:.2f}s, fps={fps}, frames={frame_count}")
             
             if duration >= 1.5:
                 # Video is long enough, return as is
@@ -46,6 +49,8 @@ def process_video_data(video_data: bytes) -> bytes:
                 return video_data
             
             # Video is too short, we need to extend it
+            logger.info(f"Video is too short ({duration:.2f}s), will extend to 1.5s")
+            
             # Get the last frame
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_count - 1)
             ret, last_frame = cap.read()
@@ -79,10 +84,14 @@ def process_video_data(video_data: bytes) -> bytes:
                     out.write(frame)
                     frames_written += 1
             
+            logger.info(f"Wrote {frames_written} original frames")
+            
             # Add additional frames
             for _ in range(frames_needed):
                 out.write(last_frame)
                 frames_written += 1
+            
+            logger.info(f"Added {frames_needed} additional frames, total frames written: {frames_written}")
             
             # Clean up
             cap.release()
@@ -99,7 +108,7 @@ def process_video_data(video_data: bytes) -> bytes:
             extended_fps = cap.get(cv2.CAP_PROP_FPS)
             extended_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             extended_duration = extended_frames / extended_fps if extended_fps > 0 else 0
-            logger.info(f"Extended video: duration={extended_duration:.2f}s, fps={extended_fps}, frames={extended_frames}")
+            logger.info(f"Extended video properties: duration={extended_duration:.2f}s, fps={extended_fps}, frames={extended_frames}")
             
             # Read the extended video
             with open(output_path, 'rb') as f:
