@@ -266,7 +266,8 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
             
             delay = min(BASE_DELAY * (2 ** (retries - 1)), MAX_DELAY)
             logger.warning(f"Server error (attempt {retries}/{MAX_RETRIES}). Retrying in {delay} seconds...")
-                await asyncio.sleep(delay)
+            await asyncio.sleep(delay)
+            continue
             
         except Exception as e:
             logger.error(f"Unexpected error in get_gemini_response: {e}", exc_info=True)
