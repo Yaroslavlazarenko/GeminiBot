@@ -45,6 +45,9 @@ def get_settings_keyboard(user: User) -> InlineKeyboardMarkup:
     # Help button
     builder.button(text="❓ Допомога", callback_data="show_help")
     
+    # Refresh button
+    builder.button(text="🔄 Оновити", callback_data="refresh_menu")
+    
     # Close button
     builder.button(text="❌ Закрити", callback_data="close_menu")
     
@@ -205,3 +208,10 @@ async def close_menu_callback(callback: CallbackQuery):
     """Handler for closing the menu."""
     await callback.message.delete()
     await callback.answer("Меню закрито")
+
+@router.callback_query(F.data == "refresh_menu")
+async def refresh_menu_callback(callback: CallbackQuery, user: User):
+    """Handler for refreshing the menu."""
+    keyboard = get_settings_keyboard(user)
+    await callback.message.edit_reply_markup(reply_markup=keyboard)
+    await callback.answer("Меню оновлено")
