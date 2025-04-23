@@ -28,14 +28,19 @@ def process_video_data(video_data: bytes) -> bytes:
             
             # Use OpenCV to read video properties
             cap = cv2.VideoCapture(temp_file.name)
+            if not cap.isOpened():
+                logger.error("Failed to open video file")
+                return video_data
+                
             fps = cap.get(cv2.CAP_PROP_FPS)
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             duration = frame_count / fps if fps > 0 else 0
             
-            logger.debug(f"Original video: duration={duration:.2f}s, fps={fps}, frames={frame_count}")
+            logger.info(f"Original video: duration={duration:.2f}s, fps={fps}, frames={frame_count}")
             
             if duration >= 1.5:
                 # Video is long enough, return as is
+                logger.info("Video is already long enough, returning original")
                 cap.release()
                 os.unlink(temp_file.name)
                 return video_data
@@ -52,38 +57,62 @@ def process_video_data(video_data: bytes) -> bytes:
             
             # Calculate how many frames we need to add
             frames_needed = int((1.5 - duration) * fps)
-            logger.debug(f"Need to add {frames_needed} frames to reach 1.5s")
+            logger.info(f"Need to add {frames_needed} frames to reach 1.5s")
             
             # Create a new video writer
             output_path = temp_file.name + '_extended.mp4'
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             out = cv2.VideoWriter(output_path, fourcc, fps, (last_frame.shape[1], last_frame.shape[0]))
             
+            if not out.isOpened():
+                logger.error("Failed to create output video writer")
+                cap.release()
+                os.unlink(temp_file.name)
+                return video_data
+            
             # Write original frames
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            frames_written = 0
             for _ in range(frame_count):
                 ret, frame = cap.read()
                 if ret:
                     out.write(frame)
+                    frames_written += 1
             
             # Add additional frames
             for _ in range(frames_needed):
                 out.write(last_frame)
+                frames_written += 1
             
             # Clean up
             cap.release()
             out.release()
             os.unlink(temp_file.name)
             
+            # Verify the extended video
+            cap = cv2.VideoCapture(output_path)
+            if not cap.isOpened():
+                logger.error("Failed to verify extended video")
+                os.unlink(output_path)
+                return video_data
+                
+            extended_fps = cap.get(cv2.CAP_PROP_FPS)
+            extended_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            extended_duration = extended_frames / extended_fps if extended_fps > 0 else 0
+            logger.info(f"Extended video: duration={extended_duration:.2f}s, fps={extended_fps}, frames={extended_frames}")
+            
             # Read the extended video
             with open(output_path, 'rb') as f:
                 extended_data = f.read()
             
             os.unlink(output_path)
+            cap.release()
+            
+            logger.info(f"Video processing complete: original size={len(video_data)}, extended size={len(extended_data)}")
             return extended_data
             
     except Exception as e:
-        logger.error(f"Error processing video: {e}")
+        logger.error(f"Error processing video: {e}", exc_info=True)
         return video_data
 
 @router.message(F.video_note)
@@ -160,7 +189,7 @@ async def video_note_handler(
             await send_error_message(message, "Помилка: не вдалося завантажити відео (отримано None).")
             return
         video_data = downloaded_file.read()
-        logger.debug(f"Downloaded {len(video_data)} bytes for video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id}")
+        logger.info(f"Downloaded {len(video_data)} bytes for video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id}")
     except (TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError) as e:
         logger.error(f"Telegram API error downloading video note file: {e}", exc_info=True)
         await send_error_message(message, f"Помилка мережі або API Telegram під час завантаження: {e}.")
@@ -177,7 +206,7 @@ async def video_note_handler(
     try:
         # Process video data to ensure minimum duration
         processed_video_data = process_video_data(video_data)
-        logger.debug(f"Video processing complete: original size={len(video_data)}, processed size={len(processed_video_data)}")
+        logger.info(f"Video processing complete: original size={len(video_data)}, processed size={len(processed_video_data)}")
 
         # Add message info first
         message_info = f"Message info: next message is video note from {user_display_name}"
@@ -194,21 +223,21 @@ async def video_note_handler(
             telegram_message_id=message.message_id
         )
         
-        # Add video data
+        # Add video data - using the processed video data
         await message_dao.add_message(
             user_id=user.id, 
             role=MessageRole.USER, 
-            video_data=processed_video_data, 
+            video_data=processed_video_data,  # Using processed video data here
             group_id=group_db_id,
             telegram_message_id=message.message_id
         )
-        logger.debug(f"User video note message queued for save (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
+        logger.info(f"User video note message saved with processed video (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
 
         # Different handling for group vs private messages
         if group_db_id is not None:
             # For groups, limit history and add group context
             message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id, limit=500)
-            logger.debug(f"Retrieved {len(message_history)} messages from group history")
+            logger.info(f"Retrieved {len(message_history)} messages from group history")
             
             # Add group context to the first message
             if message_history:
@@ -226,66 +255,30 @@ async def video_note_handler(
                         role="user"
                     )
                     message_history = [user_context] + message_history
-                    logger.debug("Added user context for non-forwarded message")
+                    logger.info("Added user context for non-forwarded message")
                 
                 group_context = types.Content(
                     parts=[types.Part(text=group_context_text)],
                     role="user"
                 )
                 message_history = [group_context] + message_history
-                logger.debug("Added group context to message history")
-                
-                # Log the structure of the first few messages
-                for i, msg in enumerate(message_history[:3]):
-                    logger.debug(f"Message {i+1} from start: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
-                    if msg.parts:
-                        for j, part in enumerate(msg.parts):
-                            if hasattr(part, 'text') and part.text:
-                                logger.debug(f"  Part {j+1} text: {part.text[:100]}...")
-                            elif hasattr(part, 'data') and part.data:
-                                logger.debug(f"  Part {j+1} data size: {len(part.data)} bytes")
+                logger.info("Added group context to message history")
         else:
             # For private messages, use full history
             message_history = await message_dao.get_user_private_messages_as_contents(user_id=user.id)
-            logger.debug(f"Retrieved {len(message_history)} messages from private history")
+            logger.info(f"Retrieved {len(message_history)} messages from private history")
 
-        logger.debug(f"Fetched {len(message_history)} messages for context (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
+        logger.info(f"Fetched {len(message_history)} messages for context (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
 
         if not message_history:
             logger.warning(f"Message history is empty before calling Gemini for user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id}")
             await send_error_message(message, "Помилка: не вдалося отримати історію повідомлень.")
             return
 
-        # Log the structure of the last few messages
-        for i, msg in enumerate(message_history[-3:]):
-            logger.debug(f"Message {i+1} from end: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
-            if msg.parts:
-                for j, part in enumerate(msg.parts):
-                    if hasattr(part, 'text') and part.text:
-                        logger.debug(f"  Part {j+1} text: {part.text[:100]}...")
-                    elif hasattr(part, 'data') and part.data:
-                        logger.debug(f"  Part {j+1} data size: {len(part.data)} bytes")
-
         generate_full_response = not user.transcribe_voice_only
-        logger.debug(f"Calling AI for video note. Generate response based on user setting: {generate_full_response} (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
+        logger.info(f"Calling AI for video note. Generate response based on user setting: {generate_full_response} (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
 
         try:
-            # Add more detailed logging before calling Gemini
-            logger.debug(f"Calling Gemini API with {len(message_history)} messages")
-            for i, msg in enumerate(message_history):
-                logger.debug(f"Message {i+1}: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
-                if msg.parts:
-                    for j, part in enumerate(msg.parts):
-                        if part is None:
-                            logger.debug(f"  Part {j+1}: None")
-                            continue
-                        if hasattr(part, 'text') and part.text is not None:
-                            logger.debug(f"  Part {j+1}: text={part.text[:100]}...")
-                        elif hasattr(part, 'data') and part.data is not None:
-                            logger.debug(f"  Part {j+1}: binary data (size={len(part.data)} bytes)")
-                        else:
-                            logger.debug(f"  Part {j+1}: unknown type")
-
             gemini_result = await get_video_response(
                 message_history=message_history,
                 user=user,
