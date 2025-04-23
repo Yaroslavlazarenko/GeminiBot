@@ -1,101 +1,106 @@
-# GeminiBot
+# GeminiBot - Telegram AI Assistant
 
-![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
+Telegram бот на базе Google Gemini AI с расширенными возможностями обработки текста, голоса и изображений.
 
-Telegram бот на базе Gemini AI с поддержкой голосовых сообщений и групповых чатов.
+## 🚀 Основные возможности
 
-## Возможности
+### 💬 Текстовые сообщения
+- Интеллектуальные ответы на текстовые сообщения
+- Поддержка контекста разговора
+- Возможность включения/выключения ответов на текст
 
-- Обработка текстовых и голосовых сообщений
-- Поддержка групповых чатов с отдельными настройками
-- Контекстное понимание диалога
-- Автоматическое обновление на всех платформах
-- База данных PostgreSQL для хранения настроек и истории
-- Форматированные ответы с HTML
+### 🎤 Голосовые сообщения
+- Распознавание голосовых сообщений
+- Два режима работы с голосом:
+  - 📝 Только транскрипция (преобразование голоса в текст)
+  - 💬 Полноценные ответы на содержание голосового сообщения
+- Возможность включения/выключения обработки голоса
 
-## Требования
+### 📸 Обработка изображений
+- Анализ и описание изображений
+- Ответы на вопросы по содержанию изображений
+- Возможность включения/выключения обработки изображений
 
-- Telegram Bot Token ([@BotFather](https://t.me/BotFather))
-- Gemini API Key ([Google AI Studio](https://makersuite.google.com/app/apikey))
-- Python 3.11+
-- PostgreSQL 14+
-- 512MB RAM
-- 1GB места на диске
+## ⚙️ Настройки пользователя
 
-## Установка
+Бот предоставляет гибкие настройки для каждого пользователя:
 
-### Docker
+1. **Включение/выключение функций**:
+   - Ответы на текстовые сообщения
+   - Обработка голосовых сообщений
+   - Обработка изображений
+
+2. **Режимы работы с голосом**:
+   - Только транскрипция
+   - Полноценные ответы
+
+3. **Управление историей**:
+   - Очистка истории сообщений
+   - Возможность очистки как личной, так и групповой истории
+
+## 🛠 Технические особенности
+
+- Асинхронная архитектура на базе aiogram 3.x
+- PostgreSQL для хранения данных
+- Alembic для управления миграциями базы данных
+- Структурированное логирование
+- Поддержка групповых чатов
+
+## 📋 Команды
+
+- `/start` - Начало работы с ботом
+- `/menu` - Открытие меню настроек
+- `/help` - Показать справку по использованию
+
+## 🔧 Установка и запуск
+
+1. Клонируйте репозиторий:
 ```bash
-git clone https://github.com/Yaroslavlazarenko/GeminiBot.git
-cd GeminiBot
+git clone https://github.com/yourusername/geminibot.git
+cd geminibot
+```
+
+2. Создайте виртуальное окружение и установите зависимости:
+```bash
+python -m venv venv
+source venv/bin/activate  # для Linux/Mac
+# или
+.\venv\Scripts\activate  # для Windows
+pip install -r requirements.txt
+```
+
+3. Настройте переменные окружения:
+```bash
 cp .env.example .env
-# Отредактируйте .env
-docker-compose up -d
+# Отредактируйте .env файл, добавив необходимые токены и настройки
 ```
 
-### Windows
-1. Скачайте и распакуйте бота
-2. Откройте PowerShell (от администратора)
-3. Выполните:
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1
-```
-
-### Linux
+4. Примените миграции базы данных:
 ```bash
-git clone git@github.com:Yaroslavlazarenko/GeminiBot.git
-cd GeminiBot
-chmod +x scripts/install.sh
-sudo scripts/install.sh
+alembic upgrade head
 ```
 
-## Управление
-
-### Docker
+5. Запустите бота:
 ```bash
-docker-compose logs -f     # Логи
-docker-compose restart     # Перезапуск
-docker-compose pull && docker-compose up -d   # Обновление
+python main.py
 ```
 
-### Windows
-- Запуск: Ярлык "Start GeminiBot" на рабочем столе
-- Логи: `bot.log`
-- Обновление: Автоматическое (каждый час)
+## 📝 Логирование
 
-### Linux
+Бот использует структурированное логирование с разными уровнями:
+- CRITICAL - Критические ошибки, требующие немедленного внимания
+- ERROR - Ошибки, влияющие на работу бота
+- INFO - Информационные сообщения о важных событиях
+
+Логи сохраняются в файл и доступны через journalctl на сервере:
 ```bash
-sudo systemctl status geminibot     # Статус
-sudo systemctl restart geminibot    # Перезапуск
-journalctl -u geminibot -f         # Логи
+journalctl -u geminibot -f
 ```
 
-## Конфигурация (.env)
+## 🤝 Поддержка
 
-Создайте файл `.env` в корневой директории проекта со следующим содержимым:
+По всем вопросам и предложениям обращайтесь в Issues репозитория.
 
-```env
-BOT_TOKEN=your_telegram_bot_token
-GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-2.5-flash-preview-04-17
+## 📄 Лицензия
 
-DB_USER=postgres
-DB_PASSWORD=your_database_password
-DB_NAME=gemini_bot
-DB_HOST=localhost
-```
-
-Где:
-- `BOT_TOKEN` - токен вашего Telegram бота от @BotFather
-- `GEMINI_API_KEY` - ваш API ключ от Google Gemini
-- `GEMINI_MODEL` - модель Gemini для использования
-- `DB_USER` - пользователь PostgreSQL
-- `DB_PASSWORD` - пароль для PostgreSQL
-- `DB_NAME` - имя базы данных
-- `DB_HOST` - хост базы данных
-
-## Лицензия
-
-MIT License. См. `LICENSE`.
+MIT License
