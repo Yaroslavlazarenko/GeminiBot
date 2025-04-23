@@ -1,5 +1,7 @@
 import logging
 import io
+import tempfile
+import os
 from PIL import Image
 import numpy as np
 import cv2
@@ -19,10 +21,13 @@ router = Router()
 def process_video_data(video_data: bytes) -> bytes:
     """Process video data to ensure minimum duration of 1.5 seconds."""
     try:
-        # Create a temporary file to read video properties
-        with io.BytesIO(video_data) as temp_file:
+        # Create a temporary file on disk
+        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
+            temp_file.write(video_data)
+            temp_file.flush()
+            
             # Use OpenCV to read video properties
-            cap = cv2.VideoCapture(temp_file)
+            cap = cv2.VideoCapture(temp_file.name)
             fps = cap.get(cv2.CAP_PROP_FPS)
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             duration = frame_count / fps if fps > 0 else 0
@@ -31,6 +36,8 @@ def process_video_data(video_data: bytes) -> bytes:
             
             if duration >= 1.5:
                 # Video is long enough, return as is
+                cap.release()
+                os.unlink(temp_file.name)
                 return video_data
             
             # Video is too short, we need to extend it
@@ -39,6 +46,8 @@ def process_video_data(video_data: bytes) -> bytes:
             ret, last_frame = cap.read()
             if not ret:
                 logger.error("Failed to read last frame")
+                cap.release()
+                os.unlink(temp_file.name)
                 return video_data
             
             # Calculate how many frames we need to add
@@ -46,9 +55,9 @@ def process_video_data(video_data: bytes) -> bytes:
             logger.debug(f"Need to add {frames_needed} frames to reach 1.5s")
             
             # Create a new video writer
-            output = io.BytesIO()
+            output_path = temp_file.name + '_extended.mp4'
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output, fourcc, fps, (last_frame.shape[1], last_frame.shape[0]))
+            out = cv2.VideoWriter(output_path, fourcc, fps, (last_frame.shape[1], last_frame.shape[0]))
             
             # Write original frames
             cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
@@ -57,20 +66,24 @@ def process_video_data(video_data: bytes) -> bytes:
                 if ret:
                     out.write(frame)
             
-            # Add last frame multiple times
+            # Add additional frames
             for _ in range(frames_needed):
                 out.write(last_frame)
             
-            out.release()
+            # Clean up
             cap.release()
+            out.release()
+            os.unlink(temp_file.name)
             
-            # Get the processed video data
-            processed_data = output.getvalue()
-            logger.debug(f"Processed video: original size={len(video_data)}, new size={len(processed_data)}")
-            return processed_data
+            # Read the extended video
+            with open(output_path, 'rb') as f:
+                extended_data = f.read()
+            
+            os.unlink(output_path)
+            return extended_data
             
     except Exception as e:
-        logger.error(f"Error processing video: {e}", exc_info=True)
+        logger.error(f"Error processing video: {e}")
         return video_data
 
 @router.message(F.video_note)
