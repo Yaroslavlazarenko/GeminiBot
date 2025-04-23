@@ -31,9 +31,29 @@ print_message "Installing system dependencies for OpenCV and other requirements.
 apt-get update
 
 # Install OpenCV dependencies
-apt-get install -y libgl1-mesa-glx libglib2.0-0
+print_message "Installing OpenCV dependencies..."
+apt-get install -y \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    libsm6 \
+    libxext6 \
+    libxrender1 \
+    libgl1-mesa-dev \
+    libglu1-mesa-dev \
+    freeglut3-dev \
+    mesa-common-dev
 
 # Install other system dependencies
-apt-get install -y python3 python3-pip python3-venv python3-full postgresql postgresql-contrib git openssh-client jq
+print_message "Installing other system dependencies..."
+apt-get install -y \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-full \
+    postgresql \
+    postgresql-contrib \
+    git \
+    openssh-client \
+    jq
 
 print_message "System dependencies installed successfully!" 
