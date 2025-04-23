@@ -341,6 +341,22 @@ async def get_video_response(
             }
         }
 
+    # Log the structure of the message history
+    logger.debug("Message history structure:")
+    for i, msg in enumerate(message_history):
+        logger.debug(f"Message {i+1}: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
+        if msg.parts:
+            for j, part in enumerate(msg.parts):
+                if part is None:
+                    logger.debug(f"  Part {j+1}: None")
+                    continue
+                if hasattr(part, 'text') and part.text is not None:
+                    logger.debug(f"  Part {j+1}: text={part.text[:100]}...")
+                elif hasattr(part, 'data') and part.data is not None:
+                    logger.debug(f"  Part {j+1}: binary data (size={len(part.data)} bytes)")
+                else:
+                    logger.debug(f"  Part {j+1}: unknown type")
+
     # Add critical JSON formatting instruction
     critical_instruction = types.Content(
         parts=[types.Part(text="""CRITICAL: YOU MUST RETURN ONLY A SINGLE JSON OBJECT AS YOUR COMPLETE RESPONSE.
@@ -394,6 +410,7 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
         system_prompt_parts.append("\nPlease transcribe the video note content without providing any additional commentary or analysis.")
     
     system_prompt = "\n".join(filter(None, system_prompt_parts))
+    logger.debug(f"System prompt: {system_prompt}")
 
     retries = 0
     while retries < MAX_RETRIES:

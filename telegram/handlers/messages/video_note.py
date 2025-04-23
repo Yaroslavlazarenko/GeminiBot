@@ -147,10 +147,15 @@ async def video_note_handler(
                 logger.debug(f"Message {i+1}: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
                 if msg.parts:
                     for j, part in enumerate(msg.parts):
-                        if hasattr(part, 'text'):
+                        if part is None:
+                            logger.debug(f"  Part {j+1}: None")
+                            continue
+                        if hasattr(part, 'text') and part.text is not None:
                             logger.debug(f"  Part {j+1}: text={part.text[:100]}...")
+                        elif hasattr(part, 'data') and part.data is not None:
+                            logger.debug(f"  Part {j+1}: binary data (size={len(part.data)} bytes)")
                         else:
-                            logger.debug(f"  Part {j+1}: binary data")
+                            logger.debug(f"  Part {j+1}: unknown type")
 
             gemini_result = await get_video_response(
                 message_history=message_history,
