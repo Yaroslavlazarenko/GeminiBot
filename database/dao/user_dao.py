@@ -59,9 +59,26 @@ class UserDAO:
             logger.critical(f"Database error during get_or_create_user for telegram_id={telegram_id}: {e}", exc_info=True)
             raise
 
-    async def update_user_settings(self, user_id: int, is_admin: bool | None = None) -> bool:
+    async def update_user_settings(
+        self, 
+        user_id: int, 
+        is_admin: bool | None = None,
+        responds_to_text: bool | None = None,
+        responds_to_voice: bool | None = None,
+        responds_to_photo: bool | None = None,
+        transcribe_voice_only: bool | None = None
+    ) -> bool:
         values_to_update = {}
-        if is_admin is not None: values_to_update["is_admin"] = is_admin
+        if is_admin is not None: 
+            values_to_update["is_admin"] = is_admin
+        if responds_to_text is not None:
+            values_to_update["responds_to_text"] = responds_to_text
+        if responds_to_voice is not None:
+            values_to_update["responds_to_voice"] = responds_to_voice
+        if responds_to_photo is not None:
+            values_to_update["responds_to_photo"] = responds_to_photo
+        if transcribe_voice_only is not None:
+            values_to_update["transcribe_voice_only"] = transcribe_voice_only
         
         if not values_to_update:
             return False
