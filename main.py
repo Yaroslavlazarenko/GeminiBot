@@ -14,11 +14,9 @@ from logging_config import setup_logging
 async def main():
     # Setup logging
     logger = setup_logging()
-    logger.info("Starting bot...")
+    logger.critical("Starting bot...")
 
     config = Config()
-    logger.info("Configuration loaded.")
-
     db_manager = DatabaseManager(
         user=config.db_user,
         password=config.db_password,
@@ -40,12 +38,11 @@ async def main():
     dp.include_routers(*all_routers)
     logger.info("Response handlers router included.")
 
-    logger.info("Starting polling...")
     try:
         await bot.delete_webhook(drop_pending_updates=True)
         await dp.start_polling(bot)
     finally:
-        logger.info("Stopping bot...")
+        logger.critical("Stopping bot...")
         await bot.session.close()
         await db_manager.dispose_engine()
         logger.info("Bot stopped.")
@@ -54,6 +51,6 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        logging.getLogger(__name__).info("Bot stopped by user.")
+        logging.getLogger(__name__).critical("Bot stopped by user.")
     except Exception as e:
         logging.getLogger(__name__).critical(f"Unhandled exception in main: {e}", exc_info=True)

@@ -49,16 +49,16 @@ class DatabaseManager:
                     await conn.execute(f'CREATE DATABASE "{self.db_name}"')
                     logger.info(f"Database '{self.db_name}' created successfully.")
                 except asyncpg.PostgresError as e:
-                    logger.error(f"Error creating database '{self.db_name}': {e}", exc_info=True)
+                    logger.critical(f"Error creating database '{self.db_name}': {e}", exc_info=True)
             else:
                 logger.debug(f"Database '{self.db_name}' already exists.")
 
         except asyncpg.InvalidCatalogNameError:
-            logger.error("Database 'postgres' not found. Cannot check/create database automatically.")
+            logger.critical("Database 'postgres' not found. Cannot check/create database automatically.")
         except asyncpg.PostgresError as e:
-            logger.error(f"Error connecting to 'postgres' db or checking database '{self.db_name}': {e}", exc_info=True)
+            logger.critical(f"Error connecting to 'postgres' db or checking database '{self.db_name}': {e}", exc_info=True)
         except Exception as e:
-            logger.error(f"Unexpected error during database check/creation: {e}", exc_info=True)
+            logger.critical(f"Unexpected error during database check/creation: {e}", exc_info=True)
         finally:
             if conn:
                 await conn.close()

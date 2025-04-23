@@ -22,7 +22,7 @@ class GroupDAO:
             result = await self.session.execute(stmt)
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
-            logger.error(f"Error getting group by internal id={group_id}: {e}", exc_info=True)
+            logger.critical(f"Error getting group by internal id={group_id}: {e}", exc_info=True)
             raise
 
     async def get_group_by_telegram_id(self, telegram_chat_id: int) -> Optional[Group]:
@@ -31,7 +31,7 @@ class GroupDAO:
             result = await self.session.execute(stmt)
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
-            logger.error(f"Error getting group by telegram_chat_id={telegram_chat_id}: {e}", exc_info=True)
+            logger.critical(f"Error getting group by telegram_chat_id={telegram_chat_id}: {e}", exc_info=True)
             raise
 
     async def get_or_create_group(self, telegram_chat_id: int, name: str) -> Group:
@@ -50,7 +50,7 @@ class GroupDAO:
             result = await self.session.execute(insert_stmt)
             return result.scalar_one()
         except SQLAlchemyError as e:
-            logger.error(f"Database error during get_or_create_group for telegram_chat_id={telegram_chat_id}: {e}", exc_info=True)
+            logger.critical(f"Database error during get_or_create_group for telegram_chat_id={telegram_chat_id}: {e}", exc_info=True)
             raise
 
     async def update_group_settings(self, group_id: int, responds_to_text: bool | None = None, responds_to_voice: bool | None = None, responds_to_photo: bool | None = None) -> bool:
@@ -60,7 +60,6 @@ class GroupDAO:
         if responds_to_photo is not None: values_to_update["responds_to_photo"] = responds_to_photo
         
         if not values_to_update:
-            logger.warning(f"No settings provided to update for group_id={group_id}")
             return False
             
         stmt = update(Group).where(Group.id == group_id).values(**values_to_update)
@@ -72,5 +71,5 @@ class GroupDAO:
                 group_exists = await self.session.get(Group, group_id)
                 return group_exists is not None
         except SQLAlchemyError as e:
-            logger.error(f"Database error updating settings for group_id={group_id}: {e}", exc_info=True)
+            logger.critical(f"Database error updating settings for group_id={group_id}: {e}", exc_info=True)
             raise
