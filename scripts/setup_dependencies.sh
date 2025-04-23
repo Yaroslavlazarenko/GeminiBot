@@ -33,6 +33,7 @@ apt-get update
 # Check if ffmpeg is installed
 if ! command -v ffmpeg &> /dev/null || ! command -v ffprobe &> /dev/null; then
     print_message "Installing ffmpeg and its dependencies..."
+    apt-get update
     apt-get install -y \
         ffmpeg \
         libavcodec-extra \
@@ -43,6 +44,14 @@ if ! command -v ffmpeg &> /dev/null || ! command -v ffprobe &> /dev/null; then
         libavdevice-extra \
         libpostproc-extra \
         libswresample-extra
+    
+    # Verify installation immediately after
+    if ! command -v ffmpeg &> /dev/null || ! command -v ffprobe &> /dev/null; then
+        print_error "FFmpeg installation failed. Trying alternative installation method..."
+        add-apt-repository -y ppa:jonathonf/ffmpeg-4
+        apt-get update
+        apt-get install -y ffmpeg
+    fi
 else
     print_message "ffmpeg is already installed"
 fi
@@ -79,6 +88,8 @@ if command -v ffmpeg &> /dev/null && command -v ffprobe &> /dev/null; then
     ffprobe -version | head -n 1
 else
     print_error "ffmpeg installation failed. Please check the error messages above."
+    print_error "You can try installing manually with:"
+    print_error "sudo apt-get install ffmpeg"
     exit 1
 fi
 
