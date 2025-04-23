@@ -60,37 +60,37 @@ class UserDAO:
             raise
 
     async def update_user_settings(
-        self, 
-        user_id: int, 
-        is_admin: bool | None = None,
+        self,
+        user_id: int,
         responds_to_text: bool | None = None,
         responds_to_voice: bool | None = None,
         responds_to_photo: bool | None = None,
-        transcribe_voice_only: bool | None = None
+        responds_to_video_note: bool | None = None,
+        transcribe_voice_only: bool | None = None,
+        is_admin: bool | None = None
     ) -> bool:
-        values_to_update = {}
-        if is_admin is not None: 
-            values_to_update["is_admin"] = is_admin
-        if responds_to_text is not None:
-            values_to_update["responds_to_text"] = responds_to_text
-        if responds_to_voice is not None:
-            values_to_update["responds_to_voice"] = responds_to_voice
-        if responds_to_photo is not None:
-            values_to_update["responds_to_photo"] = responds_to_photo
-        if transcribe_voice_only is not None:
-            values_to_update["transcribe_voice_only"] = transcribe_voice_only
-        
-        if not values_to_update:
-            return False
-            
-        stmt = update(User).where(User.id == user_id).values(**values_to_update)
+        """Update user settings."""
         try:
-            result = await self.session.execute(stmt)
-            if result.rowcount > 0:
+            async with self.session() as session:
+                user = await session.get(User, user_id)
+                if not user:
+                    return False
+
+                if responds_to_text is not None:
+                    user.responds_to_text = responds_to_text
+                if responds_to_voice is not None:
+                    user.responds_to_voice = responds_to_voice
+                if responds_to_photo is not None:
+                    user.responds_to_photo = responds_to_photo
+                if responds_to_video_note is not None:
+                    user.responds_to_video_note = responds_to_video_note
+                if transcribe_voice_only is not None:
+                    user.transcribe_voice_only = transcribe_voice_only
+                if is_admin is not None:
+                    user.is_admin = is_admin
+
+                await session.commit()
                 return True
-            else:
-                user_exists = await self.session.get(User, user_id)
-                return user_exists is not None
-        except SQLAlchemyError as e:
-            logger.critical(f"Database error updating settings for user_id={user_id}: {e}", exc_info=True)
-            raise
+        except Exception as e:
+            logger.error(f"Error updating user settings: {e}")
+            return False

@@ -22,6 +22,14 @@ def get_settings_keyboard(user: User) -> InlineKeyboardMarkup:
     voice_status = "✅" if user.responds_to_voice else "❌"
     builder.button(text=f"Обробка голосу {voice_status}", callback_data="toggle_voice")
     
+    # Photo processing toggle button
+    photo_status = "✅" if user.responds_to_photo else "❌"
+    builder.button(text=f"Обробка фото {photo_status}", callback_data="toggle_photo")
+    
+    # Video note processing toggle button
+    video_note_status = "✅" if user.responds_to_video_note else "❌"
+    builder.button(text=f"Обробка відео {video_note_status}", callback_data="toggle_video_note")
+    
     # Voice mode button (only shown if voice processing is enabled)
     if user.responds_to_voice:
         mode_text = "📝 Тільки транскрипція" if user.transcribe_voice_only else "💬 Відповідь на голос"
@@ -119,6 +127,34 @@ async def clear_messages_callback(callback: CallbackQuery, user: User, message_d
         logger.error(f"Error clearing messages for user {user.telegram_id} in chat {chat.id}: {e}", exc_info=True)
         await callback.answer("❌ Помилка при очищенні історії", show_alert=True)
 
+@router.callback_query(F.data == "toggle_photo")
+async def toggle_photo_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
+    """Handle photo processing toggle."""
+    new_value = not user.responds_to_photo
+    success = await user_dao.update_user_settings(user_id=user.id, responds_to_photo=new_value)
+    
+    if success:
+        user.responds_to_photo = new_value
+        status = "увімкнено" if new_value else "вимкнено"
+        await callback.answer(f"✅ Обробку фото {status}")
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
+@router.callback_query(F.data == "toggle_video_note")
+async def toggle_video_note_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
+    """Handle video note processing toggle."""
+    new_value = not user.responds_to_video_note
+    success = await user_dao.update_user_settings(user_id=user.id, responds_to_video_note=new_value)
+    
+    if success:
+        user.responds_to_video_note = new_value
+        status = "увімкнено" if new_value else "вимкнено"
+        await callback.answer(f"✅ Обробку відео-повідомлень {status}")
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
 @router.callback_query(F.data == "show_help")
 async def show_help_callback(callback: CallbackQuery, user: User):
     """Show help message."""
@@ -126,6 +162,8 @@ async def show_help_callback(callback: CallbackQuery, user: User):
         "📋 <b>Довідка по налаштуванням:</b>\n\n"
         "• <b>Відповіді на текст</b> - Бот буде відповідати на ваші текстові повідомлення\n\n"
         "• <b>Обробка голосу</b> - Бот буде обробляти ваші голосові повідомлення\n\n"
+        "• <b>Обробка фото</b> - Бот буде аналізувати та відповідати на фото\n\n"
+        "• <b>Обробка відео</b> - Бот буде аналізувати та відповідати на відео-повідомлення\n\n"
         "• <b>Режим голосу</b>:\n"
         "  - 📝 <i>Тільки транскрипція</i> - Бот лише перетворить голос у текст\n"
         "  - 💬 <i>Відповідь на голос</i> - Бот відповість на зміст голосового\n\n"
@@ -133,7 +171,6 @@ async def show_help_callback(callback: CallbackQuery, user: User):
         "Натисніть на кнопку, щоб змінити відповідне налаштування"
     )
     await callback.answer()
-    # Use the user object from middleware instead of callback.from_user
     keyboard = get_settings_keyboard(user)
     await callback.message.edit_text(
         help_text,
