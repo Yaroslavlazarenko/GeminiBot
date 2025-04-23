@@ -84,9 +84,27 @@ if [[ -z "$DB_NAME" || -z "$DB_USER" || -z "$DB_PASSWORD" ||
     exit 1
 fi
 
+# Install system dependencies
 print_message "Installing system dependencies..."
-# Run the setup_dependencies script
-bash "$BOT_DIR/scripts/setup_dependencies.sh"
+if ! bash "$BOT_DIR/scripts/setup_dependencies.sh"; then
+    print_error "Failed to install system dependencies!"
+    exit 1
+fi
+
+# Verify FFmpeg installation
+if ! command -v ffmpeg &> /dev/null || ! command -v ffprobe &> /dev/null; then
+    print_error "FFmpeg installation verification failed!"
+    print_error "Please ensure FFmpeg is installed correctly:"
+    print_error "sudo apt-get install ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libavfilter-dev libavdevice-dev libpostproc-dev libswresample-dev"
+    exit 1
+fi
+
+# Update Python dependencies
+print_message "Updating Python dependencies..."
+if ! sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && pip install --require-virtualenv -r requirements.txt"; then
+    print_error "Failed to update Python dependencies!"
+    exit 1
+fi
 
 # Configure PostgreSQL
 print_message "Configuring PostgreSQL..."
