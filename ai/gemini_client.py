@@ -342,21 +342,21 @@ async def get_video_response(
             }
         }
 
-    # Log the structure of the message history
-    logger.debug("Message history structure:")
+    # Log the structure of the message history in detail
+    logger.info("Message history structure:")
     for i, msg in enumerate(message_history):
-        logger.debug(f"Message {i+1}: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
+        logger.info(f"Message {i+1}: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
         if msg.parts:
             for j, part in enumerate(msg.parts):
                 if part is None:
-                    logger.debug(f"  Part {j+1}: None")
+                    logger.info(f"  Part {j+1}: None")
                     continue
                 if hasattr(part, 'text') and part.text is not None:
-                    logger.debug(f"  Part {j+1}: text={part.text[:100]}...")
+                    logger.info(f"  Part {j+1}: text={part.text[:100]}...")
                 elif hasattr(part, 'data') and part.data is not None:
-                    logger.debug(f"  Part {j+1}: binary data (size={len(part.data)} bytes)")
+                    logger.info(f"  Part {j+1}: binary data (size={len(part.data)} bytes)")
                 else:
-                    logger.debug(f"  Part {j+1}: unknown type")
+                    logger.info(f"  Part {j+1}: unknown type")
 
     # Add critical JSON formatting instruction
     critical_instruction = types.Content(
@@ -411,17 +411,20 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
         system_prompt_parts.append("\nPlease transcribe the video note content without providing any additional commentary or analysis.")
     
     system_prompt = "\n".join(filter(None, system_prompt_parts))
-    logger.debug(f"System prompt: {system_prompt}")
+    logger.info(f"System prompt: {system_prompt}")
 
     retries = 0
     max_retries = 3
     base_delay = 2  # Start with 2 seconds delay
-    max_delay = 10  # Maximum delay of 10 seconds
+    max_delay = 10
 
     while retries < max_retries:
         try:
-            logger.debug(f"Sending video note request to Gemini (attempt {retries + 1}/{max_retries}). History length: {len(message_history)}")
+            logger.info(f"Sending video note request to Gemini (attempt {retries + 1}/{max_retries}). History length: {len(message_history)}")
 
+            # Log the request configuration
+            logger.info(f"Request config: model={config.gemini_model}, response_modalities=['text']")
+            
             response = await async_client.models._generate_content(
                 model=config.gemini_model,
                 contents=message_history,

@@ -49,26 +49,63 @@ def process_video_data(video_data: bytes) -> bytes:
                 os.unlink(input_file.name)
                 return video_data
             
-            # Calculate how many times we need to loop the video
-            loop_count = int(2.0 / duration) + 1
-            logger.info(f"Will loop video {loop_count} times to reach 2.0s")
+            # Calculate speed factor to reach 2.0 seconds
+            target_duration = 2.0
+            speed_factor = duration / target_duration
+            logger.info(f"Will slow down video by factor {speed_factor:.2f} to reach {target_duration}s")
             
             # Process video with ffmpeg using full path
             try:
                 stream = ffmpeg.input(input_file.name)
-                video = stream.video.filter('loop', loop=loop_count, size=1, start=0)
-                audio = stream.audio.filter('aloop', loop=loop_count, size=1)
                 
-                stream = ffmpeg.output(
-                    video, audio,
-                    output_file.name,
-                    t=2.0,  # Limit to 2.0 seconds
-                    vcodec='libx264',  # Use H.264 codec
-                    preset='ultrafast',  # Fast encoding
-                    crf=23,  # Good quality
-                    acodec='aac',  # Use AAC audio codec
-                    audio_bitrate='128k'  # Audio bitrate
-                )
+                # Split into video and audio streams
+                video = stream.video
+                audio = stream.audio
+                
+                # Apply setpts filter to slow down video
+                video = video.filter('setpts', f'{1/speed_factor}*PTS')
+                
+                # Apply atempo filter to slow down audio if it exists
+                if audio is not None:
+                    # Calculate how many atempo filters we need
+                    atempo_filters = []
+                    remaining_speed = speed_factor
+                    
+                    # If speed factor is less than 0.5, we need multiple atempo filters
+                    while remaining_speed < 0.5:
+                        atempo_filters.append(0.5)  # Each atempo filter can slow down by 0.5x
+                        remaining_speed *= 2
+                    
+                    # Add the final atempo filter if needed
+                    if remaining_speed != 1.0:
+                        atempo_filters.append(remaining_speed)
+                    
+                    # Apply atempo filters sequentially
+                    if atempo_filters:
+                        audio = audio.filter('atempo', atempo_filters[0])
+                        for atempo in atempo_filters[1:]:
+                            audio = audio.filter('atempo', atempo)
+                
+                # Create output stream
+                if audio is not None:
+                    stream = ffmpeg.output(video, audio, output_file.name)
+                else:
+                    stream = ffmpeg.output(video, output_file.name)
+                
+                # Set output parameters to maintain file size
+                stream = stream.overwrite_output()
+                stream = stream.global_args('-t', str(target_duration))
+                stream = stream.global_args('-c:v', 'libx264')  # Use h264 codec
+                stream = stream.global_args('-preset', 'veryslow')  # Highest quality preset
+                stream = stream.global_args('-crf', '0')  # Lossless quality
+                stream = stream.global_args('-b:v', '0')  # No bitrate limit
+                stream = stream.global_args('-maxrate', '0')  # No maximum bitrate
+                stream = stream.global_args('-bufsize', '0')  # No buffer size limit
+                stream = stream.global_args('-x264-params', 'keyint=1:scenecut=0')  # Force keyframes every frame
+                
+                if audio is not None:
+                    stream = stream.global_args('-c:a', 'aac')
+                    stream = stream.global_args('-b:a', '320k')  # High audio bitrate
                 
                 ffmpeg.run(stream, cmd=FFMPEG_PATH, overwrite_output=True, capture_stdout=True, capture_stderr=True)
                 logger.info("Successfully processed video with ffmpeg")
