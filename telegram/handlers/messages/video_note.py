@@ -106,7 +106,7 @@ async def video_note_handler(
         # Different handling for group vs private messages
         if group_db_id is not None:
             # For groups, limit history and add group context
-            message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id, limit=5)
+            message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id, limit=500)
             # Add group context to the first message
             if message_history:
                 group_context = types.Content(

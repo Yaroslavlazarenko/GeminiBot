@@ -152,7 +152,7 @@ class MessageHistoryDAO:
             logger.error(f"Error getting private message history for user_id={user_id}: {e}", exc_info=True)
             return []
 
-    async def get_group_messages(self, group_id: int, limit: int = 50) -> List[MessageHistory]:
+    async def get_group_messages(self, group_id: int, limit: int = 500) -> List[MessageHistory]:
         """Получает историю сообщений группы."""
         logger.debug(f"Getting last {limit} messages for group_id={group_id}")
         try:
