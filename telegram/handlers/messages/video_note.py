@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 def process_video_data(video_data: bytes) -> bytes:
-    """Process video data to ensure minimum duration of 1.6 seconds."""
+    """Process video data to ensure minimum duration of 2.0 seconds."""
     try:
         logger.info(f"Starting video processing. Input size: {len(video_data)} bytes")
         
@@ -43,7 +43,7 @@ def process_video_data(video_data: bytes) -> bytes:
             
             logger.info(f"Original video properties: duration={duration:.2f}s, fps={fps}, frames={frame_count}, resolution={width}x{height}")
             
-            if duration >= 1.6:
+            if duration >= 2.0:
                 # Video is long enough, return as is
                 logger.info("Video is already long enough, returning original")
                 cap.release()
@@ -51,7 +51,7 @@ def process_video_data(video_data: bytes) -> bytes:
                 return video_data
             
             # Video is too short, we need to extend it
-            logger.info(f"Video is too short ({duration:.2f}s), will extend to 1.6s")
+            logger.info(f"Video is too short ({duration:.2f}s), will extend to 2.0s")
             
             # Get the last frame
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_count - 1)
@@ -63,8 +63,8 @@ def process_video_data(video_data: bytes) -> bytes:
                 return video_data
             
             # Calculate how many frames we need to add
-            frames_needed = int((1.6 - duration) * fps)
-            logger.info(f"Need to add {frames_needed} frames to reach 1.6s")
+            frames_needed = int((2.0 - duration) * fps)
+            logger.info(f"Need to add {frames_needed} frames to reach 2.0s")
             
             # Create a new video writer with better encoding settings
             output_path = temp_file.name + '_extended.mp4'
