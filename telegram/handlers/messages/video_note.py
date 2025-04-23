@@ -170,10 +170,10 @@ async def video_note_handler(
         else:
             logger.debug(f"Processing forwarded video note from unknown original sender")
 
-    if not user.responds_to_voice:  # Using the same setting as voice messages
+    if not user.responds_to_video_note:  # Using video note specific setting
         logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to USER settings.")
         return
-    if group and not group.responds_to_voice:  # Using the same setting as voice messages
+    if group and not group.responds_to_voice:  # Using the same setting as voice messages for groups
         logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} (DB ID: {group.id}) due to GROUP settings.")
         return
 
@@ -288,7 +288,7 @@ async def video_note_handler(
             await send_error_message(message, "Помилка: не вдалося отримати історію повідомлень.")
             return
 
-        generate_full_response = not user.transcribe_voice_only
+        generate_full_response = not user.transcribe_video_note  # Using video note specific setting
         logger.info(f"Calling AI for video note. Generate response based on user setting: {generate_full_response} (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
 
         try:

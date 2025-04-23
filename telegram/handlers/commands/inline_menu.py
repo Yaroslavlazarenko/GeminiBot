@@ -12,49 +12,62 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 def get_settings_keyboard(user: User) -> InlineKeyboardMarkup:
-    """Create an inline keyboard for user settings."""
-    builder = InlineKeyboardBuilder()
-    
-    # Global toggle button
-    global_status = "✅" if not user.is_global_disabled else "❌"
-    builder.button(text=f"Глобальні відповіді {global_status}", callback_data="toggle_global")
-    
-    # Text responses toggle button
-    text_status = "✅" if user.responds_to_text else "❌"
-    builder.button(text=f"Відповіді на текст {text_status}", callback_data="toggle_text")
-    
-    # Voice processing toggle button
-    voice_status = "✅" if user.responds_to_voice else "❌"
-    builder.button(text=f"Обробка голосу {voice_status}", callback_data="toggle_voice")
-    
-    # Photo processing toggle button
-    photo_status = "✅" if user.responds_to_photo else "❌"
-    builder.button(text=f"Обробка фото {photo_status}", callback_data="toggle_photo")
-    
-    # Video note processing toggle button
-    video_note_status = "✅" if user.responds_to_video_note else "❌"
-    builder.button(text=f"Обробка відео {video_note_status}", callback_data="toggle_video_note")
-    
-    # Voice mode button (only shown if voice processing is enabled)
-    if user.responds_to_voice:
-        mode_text = "📝 Тільки транскрипція" if user.transcribe_voice_only else "💬 Відповідь на голос"
-        builder.button(text=mode_text, callback_data="toggle_mode")
-    
-    # Clear messages button
-    builder.button(text="🗑 Очистити історію", callback_data="clear_messages")
-    
-    # Help button
-    builder.button(text="❓ Допомога", callback_data="show_help")
-    
-    # Refresh button
-    builder.button(text="🔄 Оновити", callback_data="refresh_menu")
-    
-    # Close button
-    builder.button(text="❌ Закрити", callback_data="close_menu")
-    
-    # Adjust the layout: 2 buttons per row
-    builder.adjust(2)
-    return builder.as_markup()
+    """Creates an inline keyboard with user settings."""
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if not user.is_global_disabled else '❌'} Відповідати на повідомлення",
+                callback_data="toggle_global_disabled"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if user.responds_to_text else '❌'} Відповідати на текст",
+                callback_data="toggle_responds_to_text"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if user.responds_to_voice else '❌'} Відповідати на голосові",
+                callback_data="toggle_responds_to_voice"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if user.responds_to_photo else '❌'} Відповідати на фото",
+                callback_data="toggle_responds_to_photo"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if user.responds_to_video_note else '❌'} Відповідати на відео-кружки",
+                callback_data="toggle_responds_to_video_note"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if user.transcribe_voice_only else '❌'} Транскрибувати голосові",
+                callback_data="toggle_transcribe_voice_only"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if user.transcribe_video_note else '❌'} Транскрибувати відео-кружки",
+                callback_data="toggle_transcribe_video_note"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🔄 Оновити",
+                callback_data="refresh_menu"
+            ),
+            InlineKeyboardButton(
+                text="❌ Закрити",
+                callback_data="close_menu"
+            )
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 @router.message(filters.Command("menu"))
 async def show_menu(message: Message, user: User):
@@ -223,3 +236,10 @@ async def refresh_menu_callback(callback: CallbackQuery, user: User):
         else:
             logger.error(f"Error refreshing menu: {e}")
             await callback.answer("❌ Помилка при оновленні меню", show_alert=True)
+
+@router.callback_query(F.data == "toggle_transcribe_video_note")
+async def toggle_transcribe_video_note_callback(callback: CallbackQuery, user_dao: UserDAO, user: User) -> None:
+    """Toggle video note transcription mode."""
+    await user_dao.update_user_settings(user.id, transcribe_video_note=not user.transcribe_video_note)
+    await callback.answer("Налаштування оновлено")
+    await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
