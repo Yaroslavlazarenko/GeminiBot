@@ -89,6 +89,11 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
     # Add instruction to the start of the context
     contents = [critical_instruction] + contents
 
+    # Validate contents after adding instruction
+    if not contents:
+        logger.warning("Contents list is empty after adding instruction")
+        return {"type": "error", "data": "Failed to prepare message history"}
+
     base_instructions = read_system_instructions()
     current_time = get_current_time_str()
 
@@ -99,7 +104,16 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
     
     # Add group context if available
     try:
-        if any(c.role == "user" and c.parts and c.parts[0].text and "group chat" in c.parts[0].text for c in contents):
+        is_group_chat = False
+        for c in contents:
+            if c.role == "user" and c.parts:
+                try:
+                    if c.parts[0].text and "group chat" in c.parts[0].text:
+                        is_group_chat = True
+                        break
+                except (IndexError, AttributeError):
+                    continue
+        if is_group_chat:
             system_prompt_parts.append("\nIMPORTANT: You are in a group chat. Keep your responses concise and relevant to the current user's message. Avoid long conversations or complex interactions.")
     except Exception as e:
         logger.warning(f"Error checking for group chat context: {e}")
@@ -197,56 +211,24 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                 
             except json.JSONDecodeError as e:
                 logger.warning(f"Failed to parse response as JSON: {e}. Response: {raw_text[:200]}...")
-                return {
-                    "type": "json_response",
-                    "data": {
-                        "text": raw_text.strip(),
-                        "commands": []
-                    }
-                }
+                return {"type": "error", "data": "Failed to parse Gemini response"}
+            except Exception as e:
+                logger.error(f"Unexpected error processing response: {e}", exc_info=True)
+                return {"type": "error", "data": "Failed to process Gemini response"}
 
         except ServerError as e:
-            # Extract status code from error message if available
-            status_code = 500  # Default to 500 if not found
-            if hasattr(e, 'error') and isinstance(e.error, dict):
-                status_code = e.error.get('code', 500)
+            retries += 1
+            if retries >= MAX_RETRIES:
+                logger.error(f"Max retries ({MAX_RETRIES}) reached. Last error: {e}", exc_info=True)
+                return {"type": "error", "data": "Server error after multiple retries"}
             
-            if status_code == 500 and retries < MAX_RETRIES - 1:
-                delay = min(BASE_DELAY * (2 ** retries), MAX_DELAY)  # Exponential backoff
-                logger.warning(f"Gemini API 500 error (attempt {retries + 1}/{MAX_RETRIES}), retrying in {delay}s: {e}")
-                await asyncio.sleep(delay)
-                retries += 1
-                continue
-            logger.error(f"Gemini API server error after {retries + 1} attempts: {e}")
-            return {
-                "type": "error",
-                "data": {
-                    "text": f"Gemini API Server Error: {e}",
-                    "commands": []
-                }
-            }
+            delay = min(BASE_DELAY * (2 ** (retries - 1)), MAX_DELAY)
+            logger.warning(f"Server error (attempt {retries}/{MAX_RETRIES}). Retrying in {delay} seconds...")
+            await asyncio.sleep(delay)
             
         except Exception as e:
-            logger.error(f"Error during Gemini API call: {e}", exc_info=True)
-            return {
-                "type": "error",
-                "data": {
-                    "text": f"Gemini API Error: {e}",
-                    "commands": []
-                }
-            }
-        
-        break  # If we get here, the request was successful
-
-    # If we exhausted all retries
-    if retries == MAX_RETRIES:
-        return {
-            "type": "error",
-            "data": {
-                "text": "Maximum retry attempts reached for Gemini API",
-                "commands": []
-            }
-        }
+            logger.error(f"Unexpected error in get_gemini_response: {e}", exc_info=True)
+            return {"type": "error", "data": "Unexpected error occurred"}
 
 async def get_text_response(
     message_history: List[types.Content],

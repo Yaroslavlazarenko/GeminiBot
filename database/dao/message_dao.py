@@ -132,18 +132,21 @@ class MessageHistoryDAO:
             raise
 
     async def get_user_private_messages_as_contents(self, user_id: int, limit: int = 500) -> List[types.Content]:
+        """Получает историю сообщений пользователя в формате для Gemini."""
         logger.debug(f"Getting last {limit} private messages for user_id={user_id}")
         contents: List[types.Content] = []
         try:
             stmt = (select(MessageHistory).where(and_(MessageHistory.user_id == user_id, MessageHistory.group_id.is_(None)))
-                    .options(selectinload(MessageHistory.user))  # Add this line
+                    .options(selectinload(MessageHistory.user))
                     .order_by(MessageHistory.timestamp.desc()).limit(limit))
             result = await self.session.execute(stmt)
             messages: List[MessageHistory] = list(reversed(result.scalars().all()))
             logger.debug(f"Retrieved {len(messages)} private messages for user_id={user_id} to build contents")
+            
             for message in messages:
                 content = self._format_message_to_content(message, is_group=False)
-                if content: contents.append(content)
+                if content:
+                    contents.append(content)
             return contents
         except SQLAlchemyError as e:
             logger.error(f"Error getting private message history for user_id={user_id}: {e}", exc_info=True)
@@ -166,15 +169,20 @@ class MessageHistoryDAO:
             logger.error(f"Error getting group message history for group_id={group_id}: {e}", exc_info=True)
             return []
 
-    async def get_group_messages_as_contents(self, group_id: int, limit: int = 50) -> List[types.Content]:
+    async def get_group_messages_as_contents(self, group_id: int, limit: int = 500) -> List[types.Content]:
         """Получает историю сообщений группы в формате для Gemini."""
-        messages = await self.get_group_messages(group_id=group_id, limit=limit)
-        contents = []
-        for message in messages:
-            content = self._format_message_to_content(message, is_group=True)
-            if content:
-                contents.append(content)
-        return contents
+        logger.debug(f"Getting last {limit} messages for group_id={group_id}")
+        contents: List[types.Content] = []
+        try:
+            messages = await self.get_group_messages(group_id=group_id, limit=limit)
+            for message in messages:
+                content = self._format_message_to_content(message, is_group=True)
+                if content:
+                    contents.append(content)
+            return contents
+        except Exception as e:
+            logger.error(f"Error getting group message history for group_id={group_id}: {e}", exc_info=True)
+            return []
 
     def _format_message_to_content(self, message: MessageHistory, is_group: bool = False) -> Optional[types.Content]:
         """Форматирует сообщение из БД в формат, понятный Gemini API."""
@@ -182,12 +190,22 @@ class MessageHistoryDAO:
             logger.warning("Attempted to format None message")
             return None
 
+        if not message.role:
+            logger.warning(f"Message {message.id} has no role")
+            return None
+
+        try:
+            role_str = message.role.value
+        except (AttributeError, ValueError) as e:
+            logger.error(f"Invalid role value for message {message.id}: {e}")
+            return None
+
         parts = []
         
         # Add text if present
         if message.text:
             try:
-                parts.append(types.Part.from_text(message.text))
+                parts.append(types.Part.from_text(text=message.text))
             except Exception as e:
                 logger.error(f"Error creating text part for message {message.id}: {e}")
                 return None
@@ -222,11 +240,7 @@ class MessageHistoryDAO:
             return None
 
         try:
-            role_str = message.role.value
             return types.Content(role=role_str, parts=parts)
-        except ValueError as e:
-            logger.error(f"Invalid role value '{role_str}' for message {message.id}: {e}")
-            return None
         except Exception as e:
             logger.error(f"Unexpected error creating Content for message {message.id}: {e}")
             return None
