@@ -67,16 +67,28 @@ async def get_gemini_response(
 
     Returns:
         A dictionary with the response type and data:
-        - {"type": "json_response", "data": {"text": "response text", "commands": [...]}}
-        - {"type": "error", "data": "Error message"}
+        - {"type": "json_response", "data": {"text": "response text", "commands": []}}
+        - {"type": "error", "data": {"text": "Error message", "commands": []}}
     """
     if not async_client:
         logger.warning("Gemini async client not initialized.")
-        return {"type": "error", "data": "Gemini client not available"}
+        return {
+            "type": "error",
+            "data": {
+                "text": "Gemini client not available",
+                "commands": []
+            }
+        }
 
     if not contents:
         logger.warning("Empty contents list provided to get_gemini_response")
-        return {"type": "error", "data": "No message history provided"}
+        return {
+            "type": "error",
+            "data": {
+                "text": "No message history provided",
+                "commands": []
+            }
+        }
 
     # Add critical JSON formatting instruction to context
     critical_instruction = types.Content(
@@ -92,7 +104,13 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
     # Validate contents after adding instruction
     if not contents:
         logger.warning("Contents list is empty after adding instruction")
-        return {"type": "error", "data": "Failed to prepare message history"}
+        return {
+            "type": "error",
+            "data": {
+                "text": "Failed to prepare message history",
+                "commands": []
+            }
+        }
 
     base_instructions = read_system_instructions()
     current_time = get_current_time_str()
@@ -141,7 +159,13 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
 
             if not response or not response.text:
                 logger.warning("Gemini response is empty or None.")
-                return {"type": "error", "data": "Empty response from Gemini"}
+                return {
+                    "type": "error",
+                    "data": {
+                        "text": "Empty response from Gemini",
+                        "commands": []
+                    }
+                }
 
             try:
                 # Clean the response and process JSON as before
@@ -211,16 +235,34 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                 
             except json.JSONDecodeError as e:
                 logger.warning(f"Failed to parse response as JSON: {e}. Response: {raw_text[:200]}...")
-                return {"type": "error", "data": "Failed to parse Gemini response"}
+                return {
+                    "type": "error",
+                    "data": {
+                        "text": "Failed to parse Gemini response",
+                        "commands": []
+                    }
+                }
             except Exception as e:
                 logger.error(f"Unexpected error processing response: {e}", exc_info=True)
-                return {"type": "error", "data": "Failed to process Gemini response"}
+                return {
+                    "type": "error",
+                    "data": {
+                        "text": "Failed to process Gemini response",
+                        "commands": []
+                    }
+                }
 
         except ServerError as e:
             retries += 1
             if retries >= MAX_RETRIES:
                 logger.error(f"Max retries ({MAX_RETRIES}) reached. Last error: {e}", exc_info=True)
-                return {"type": "error", "data": "Server error after multiple retries"}
+                return {
+                    "type": "error",
+                    "data": {
+                        "text": "Server error after multiple retries",
+                        "commands": []
+                    }
+                }
             
             delay = min(BASE_DELAY * (2 ** (retries - 1)), MAX_DELAY)
             logger.warning(f"Server error (attempt {retries}/{MAX_RETRIES}). Retrying in {delay} seconds...")
@@ -228,7 +270,13 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
             
         except Exception as e:
             logger.error(f"Unexpected error in get_gemini_response: {e}", exc_info=True)
-            return {"type": "error", "data": "Unexpected error occurred"}
+            return {
+                "type": "error",
+                "data": {
+                    "text": "Unexpected error occurred",
+                    "commands": []
+                }
+            }
 
 async def get_text_response(
     message_history: List[types.Content],
