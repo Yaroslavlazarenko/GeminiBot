@@ -25,24 +25,30 @@ class UserDAO:
             logger.critical(f"Error getting user by internal id={user_id}: {e}", exc_info=True)
             raise
 
-    async def get_user_by_telegram_id(self, telegram_user_id: int) -> Optional[User]:
+    async def get_user_by_telegram_id(self, telegram_id: int) -> Optional[User]:
         try:
-            stmt = select(User).where(User.telegram_user_id == telegram_user_id)
+            stmt = select(User).where(User.telegram_id == telegram_id)
             result = await self.session.execute(stmt)
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
-            logger.critical(f"Error getting user by telegram_user_id={telegram_user_id}: {e}", exc_info=True)
+            logger.critical(f"Error getting user by telegram_id={telegram_id}: {e}", exc_info=True)
             raise
 
-    async def get_or_create_user(self, telegram_user_id: int, username: str | None = None) -> User:
+    async def get_or_create_user(self, telegram_id: int, username: str | None = None, first_name: str | None = None, last_name: str | None = None) -> User:
         values_to_insert = {
-            "telegram_user_id": telegram_user_id,
-            "username": username
+            "telegram_id": telegram_id,
+            "username": username,
+            "first_name": first_name,
+            "last_name": last_name
         }
-        values_to_update = {"username": username}
+        values_to_update = {
+            "username": username,
+            "first_name": first_name,
+            "last_name": last_name
+        }
 
         insert_stmt = pg_insert(User).values(**values_to_insert).on_conflict_do_update(
-            index_elements=['telegram_user_id'],
+            index_elements=['telegram_id'],
             set_=values_to_update
         ).returning(User)
 
@@ -50,7 +56,7 @@ class UserDAO:
             result = await self.session.execute(insert_stmt)
             return result.scalar_one()
         except SQLAlchemyError as e:
-            logger.critical(f"Database error during get_or_create_user for telegram_user_id={telegram_user_id}: {e}", exc_info=True)
+            logger.critical(f"Database error during get_or_create_user for telegram_id={telegram_id}: {e}", exc_info=True)
             raise
 
     async def update_user_settings(self, user_id: int, is_admin: bool | None = None) -> bool:
