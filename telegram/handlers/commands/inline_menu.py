@@ -45,6 +45,9 @@ def get_settings_keyboard(user: User) -> InlineKeyboardMarkup:
     # Help button
     builder.button(text="❓ Допомога", callback_data="show_help")
     
+    # Close button
+    builder.button(text="❌ Закрити", callback_data="close_menu")
+    
     # Adjust the layout: 2 buttons per row
     builder.adjust(2)
     return builder.as_markup()
@@ -196,3 +199,9 @@ async def toggle_global_callback(callback: CallbackQuery, user: User, user_dao: 
         await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
+@router.callback_query(F.data == "close_menu")
+async def close_menu_callback(callback: CallbackQuery):
+    """Handler for closing the menu."""
+    await callback.message.delete()
+    await callback.answer("Меню закрито")
