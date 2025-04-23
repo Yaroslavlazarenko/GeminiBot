@@ -8,7 +8,7 @@ from config import Config
 from datetime import datetime
 import pytz
 import asyncio
-from google.genai.errors import ServerError
+from google.genai.errors import ServerError, ClientError
 
 from database.models import User
 
@@ -413,9 +413,13 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
     logger.debug(f"System prompt: {system_prompt}")
 
     retries = 0
-    while retries < MAX_RETRIES:
+    max_retries = 3
+    base_delay = 2  # Start with 2 seconds delay
+    max_delay = 10  # Maximum delay of 10 seconds
+
+    while retries < max_retries:
         try:
-            logger.debug(f"Sending video note request to Gemini (attempt {retries + 1}/{MAX_RETRIES}). History length: {len(message_history)}")
+            logger.debug(f"Sending video note request to Gemini (attempt {retries + 1}/{max_retries}). History length: {len(message_history)}")
 
             response = await async_client.models._generate_content(
                 model=config.gemini_model,
@@ -504,16 +508,42 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
 
         except ServerError as e:
             retries += 1
-            if retries < MAX_RETRIES:
-                delay = min(BASE_DELAY * (2 ** (retries - 1)), MAX_DELAY)
-                logger.warning(f"Server error (attempt {retries}/{MAX_RETRIES}). Retrying in {delay} seconds...")
+            if retries < max_retries:
+                delay = min(base_delay * (2 ** (retries - 1)), max_delay)
+                logger.warning(f"Server error (attempt {retries}/{max_retries}). Retrying in {delay} seconds...")
                 await asyncio.sleep(delay)
             else:
-                logger.error(f"Max retries ({MAX_RETRIES}) reached. Last error: {e}")
+                logger.error(f"Max retries ({max_retries}) reached. Last error: {e}")
                 return {
                     "type": "error",
                     "data": {
                         "text": "Server error from Gemini API. Please try again later.",
+                        "commands": []
+                    }
+                }
+        except ClientError as e:
+            if "RESOURCE_EXHAUSTED" in str(e):
+                # For rate limiting, use longer delays
+                retries += 1
+                if retries < max_retries:
+                    delay = min(base_delay * (3 ** (retries - 1)), max_delay * 2)  # Longer delays for rate limits
+                    logger.warning(f"Rate limit hit (attempt {retries}/{max_retries}). Retrying in {delay} seconds...")
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error(f"Max retries ({max_retries}) reached due to rate limiting. Last error: {e}")
+                    return {
+                        "type": "error",
+                        "data": {
+                            "text": "Rate limit exceeded. Please try again in a few minutes.",
+                            "commands": []
+                        }
+                    }
+            else:
+                logger.error(f"Unexpected client error: {e}")
+                return {
+                    "type": "error",
+                    "data": {
+                        "text": "Unexpected error from Gemini API",
                         "commands": []
                     }
                 }
