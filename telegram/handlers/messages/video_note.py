@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 def process_video_data(video_data: bytes) -> bytes:
-    """Process video data to ensure minimum duration of 1.5 seconds."""
+    """Process video data to ensure minimum duration of 1.6 seconds."""
     try:
         logger.info(f"Starting video processing. Input size: {len(video_data)} bytes")
         
@@ -38,10 +38,12 @@ def process_video_data(video_data: bytes) -> bytes:
             fps = cap.get(cv2.CAP_PROP_FPS)
             frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
             duration = frame_count / fps if fps > 0 else 0
+            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
             
-            logger.info(f"Original video properties: duration={duration:.2f}s, fps={fps}, frames={frame_count}")
+            logger.info(f"Original video properties: duration={duration:.2f}s, fps={fps}, frames={frame_count}, resolution={width}x{height}")
             
-            if duration >= 1.5:
+            if duration >= 1.6:
                 # Video is long enough, return as is
                 logger.info("Video is already long enough, returning original")
                 cap.release()
@@ -49,7 +51,7 @@ def process_video_data(video_data: bytes) -> bytes:
                 return video_data
             
             # Video is too short, we need to extend it
-            logger.info(f"Video is too short ({duration:.2f}s), will extend to 1.5s")
+            logger.info(f"Video is too short ({duration:.2f}s), will extend to 1.6s")
             
             # Get the last frame
             cap.set(cv2.CAP_PROP_POS_FRAMES, frame_count - 1)
@@ -61,13 +63,19 @@ def process_video_data(video_data: bytes) -> bytes:
                 return video_data
             
             # Calculate how many frames we need to add
-            frames_needed = int((1.5 - duration) * fps)
-            logger.info(f"Need to add {frames_needed} frames to reach 1.5s")
+            frames_needed = int((1.6 - duration) * fps)
+            logger.info(f"Need to add {frames_needed} frames to reach 1.6s")
             
-            # Create a new video writer
+            # Create a new video writer with better encoding settings
             output_path = temp_file.name + '_extended.mp4'
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-            out = cv2.VideoWriter(output_path, fourcc, fps, (last_frame.shape[1], last_frame.shape[0]))
+            fourcc = cv2.VideoWriter_fourcc(*'avc1')  # Using H.264 codec
+            out = cv2.VideoWriter(
+                output_path,
+                fourcc,
+                fps,
+                (width, height),
+                isColor=True
+            )
             
             if not out.isOpened():
                 logger.error("Failed to create output video writer")
