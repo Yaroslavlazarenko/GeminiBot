@@ -80,7 +80,21 @@ async def show_menu(message: Message, user: User):
         parse_mode="HTML"
     )
 
-@router.callback_query(F.data == "toggle_text")
+@router.callback_query(F.data == "toggle_global_disabled")
+async def toggle_global_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
+    """Handle global response toggle."""
+    new_value = not user.is_global_disabled
+    success = await user_dao.update_user_settings(user_id=user.id, is_global_disabled=new_value)
+    
+    if success:
+        user.is_global_disabled = new_value
+        status = "увімкнено" if not new_value else "вимкнено"
+        await callback.answer(f"✅ Глобальні відповіді {status}")
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
+@router.callback_query(F.data == "toggle_responds_to_text")
 async def toggle_text_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
     """Handle text response toggle."""
     new_value = not user.responds_to_text
@@ -94,7 +108,7 @@ async def toggle_text_callback(callback: CallbackQuery, user: User, user_dao: Us
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
-@router.callback_query(F.data == "toggle_voice")
+@router.callback_query(F.data == "toggle_responds_to_voice")
 async def toggle_voice_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
     """Handle voice processing toggle."""
     new_value = not user.responds_to_voice
@@ -108,7 +122,35 @@ async def toggle_voice_callback(callback: CallbackQuery, user: User, user_dao: U
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
-@router.callback_query(F.data == "toggle_mode")
+@router.callback_query(F.data == "toggle_responds_to_photo")
+async def toggle_photo_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
+    """Handle photo processing toggle."""
+    new_value = not user.responds_to_photo
+    success = await user_dao.update_user_settings(user_id=user.id, responds_to_photo=new_value)
+    
+    if success:
+        user.responds_to_photo = new_value
+        status = "увімкнено" if new_value else "вимкнено"
+        await callback.answer(f"✅ Обробку фото {status}")
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
+@router.callback_query(F.data == "toggle_responds_to_video_note")
+async def toggle_video_note_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
+    """Handle video note processing toggle."""
+    new_value = not user.responds_to_video_note
+    success = await user_dao.update_user_settings(user_id=user.id, responds_to_video_note=new_value)
+    
+    if success:
+        user.responds_to_video_note = new_value
+        status = "увімкнено" if new_value else "вимкнено"
+        await callback.answer(f"✅ Обробку відео-повідомлень {status}")
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
+@router.callback_query(F.data == "toggle_transcribe_voice_only")
 async def toggle_mode_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
     """Handle voice mode toggle."""
     if not user.responds_to_voice:
@@ -122,6 +164,24 @@ async def toggle_mode_callback(callback: CallbackQuery, user: User, user_dao: Us
         user.transcribe_voice_only = new_value
         mode = "транскрипція" if new_value else "відповідь"
         await callback.answer(f"✅ Режим голосу: {mode}")
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
+@router.callback_query(F.data == "toggle_transcribe_video_note")
+async def toggle_transcribe_video_note_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
+    """Handle video note transcription mode toggle."""
+    if not user.responds_to_video_note:
+        await callback.answer("Спочатку увімкніть обробку відео-повідомлень", show_alert=True)
+        return
+        
+    new_value = not user.transcribe_video_note
+    success = await user_dao.update_user_settings(user_id=user.id, transcribe_video_note=new_value)
+    
+    if success:
+        user.transcribe_video_note = new_value
+        mode = "транскрипція" if new_value else "відповідь"
+        await callback.answer(f"✅ Режим відео: {mode}")
         await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
@@ -151,34 +211,6 @@ async def clear_messages_callback(callback: CallbackQuery, user: User, message_d
         logger.error(f"Error clearing messages for user {user.telegram_id} in chat {chat.id}: {e}", exc_info=True)
         await callback.answer("❌ Помилка при очищенні історії", show_alert=True)
 
-@router.callback_query(F.data == "toggle_photo")
-async def toggle_photo_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
-    """Handle photo processing toggle."""
-    new_value = not user.responds_to_photo
-    success = await user_dao.update_user_settings(user_id=user.id, responds_to_photo=new_value)
-    
-    if success:
-        user.responds_to_photo = new_value
-        status = "увімкнено" if new_value else "вимкнено"
-        await callback.answer(f"✅ Обробку фото {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
-    else:
-        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
-
-@router.callback_query(F.data == "toggle_video_note")
-async def toggle_video_note_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
-    """Handle video note processing toggle."""
-    new_value = not user.responds_to_video_note
-    success = await user_dao.update_user_settings(user_id=user.id, responds_to_video_note=new_value)
-    
-    if success:
-        user.responds_to_video_note = new_value
-        status = "увімкнено" if new_value else "вимкнено"
-        await callback.answer(f"✅ Обробку відео-повідомлень {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
-    else:
-        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
-
 @router.callback_query(F.data == "show_help")
 async def show_help_callback(callback: CallbackQuery, user: User):
     """Show help message."""
@@ -203,20 +235,6 @@ async def show_help_callback(callback: CallbackQuery, user: User):
         reply_markup=keyboard
     )
 
-@router.callback_query(F.data == "toggle_global")
-async def toggle_global_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
-    """Handle global response toggle."""
-    new_value = not user.is_global_disabled
-    success = await user_dao.update_user_settings(user_id=user.id, is_global_disabled=new_value)
-    
-    if success:
-        user.is_global_disabled = new_value
-        status = "увімкнено" if not new_value else "вимкнено"
-        await callback.answer(f"✅ Глобальні відповіді {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
-    else:
-        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
-
 @router.callback_query(F.data == "close_menu")
 async def close_menu_callback(callback: CallbackQuery):
     """Handler for closing the menu."""
@@ -236,10 +254,3 @@ async def refresh_menu_callback(callback: CallbackQuery, user: User):
         else:
             logger.error(f"Error refreshing menu: {e}")
             await callback.answer("❌ Помилка при оновленні меню", show_alert=True)
-
-@router.callback_query(F.data == "toggle_transcribe_video_note")
-async def toggle_transcribe_video_note_callback(callback: CallbackQuery, user_dao: UserDAO, user: User) -> None:
-    """Toggle video note transcription mode."""
-    await user_dao.update_user_settings(user.id, transcribe_video_note=not user.transcribe_video_note)
-    await callback.answer("Налаштування оновлено")
-    await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
