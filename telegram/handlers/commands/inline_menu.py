@@ -110,7 +110,10 @@ async def clear_messages_callback(callback: CallbackQuery, user: User, message_d
 
         target_description = "особисту історію" if not group else f"вашу історію у групі '{group.name}'"
         await callback.answer(f"✅ Видалено {deleted_count} повідомлень", show_alert=True)
-        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+        
+        # Only update the keyboard if messages were actually deleted
+        if deleted_count > 0:
+            await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
 
     except Exception as e:
         logger.error(f"Error clearing messages for user {user.telegram_id} in chat {chat.id}: {e}", exc_info=True)
