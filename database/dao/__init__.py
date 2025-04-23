@@ -3,7 +3,7 @@ from ..manager import DatabaseManager
 
 from .user_dao import UserDAO
 from .group_dao import GroupDAO
-from .message_dao import MessageHistoryDAO
+from .message_dao import MessageHistoryDAO, MessageDAO
 
 __all__ = [
     # Models & Base
@@ -18,4 +18,5 @@ __all__ = [
     "UserDAO",
     "GroupDAO",
     "MessageHistoryDAO",
+    "MessageDAO"
 ]
