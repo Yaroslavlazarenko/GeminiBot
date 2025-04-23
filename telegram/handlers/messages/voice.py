@@ -14,8 +14,8 @@ from ..utils import send_error_message, get_group_or_none, handle_gemini_result
 logger = logging.getLogger(__name__)
 router = Router()
 
-@router.message(types.ContentType.VOICE)
-async def handle_voice(message: types.Message, state: FSMContext, user_dao: UserDAO, group_dao: GroupDAO, message_dao: MessageDAO):
+@router.message(F.voice)
+async def handle_voice(message: Message, state: FSMContext, user_dao: UserDAO, group_dao: GroupDAO, message_dao: MessageHistoryDAO):
     try:
         # Get or create user
         user = await user_dao.get_or_create_user(
@@ -30,9 +30,10 @@ async def handle_voice(message: types.Message, state: FSMContext, user_dao: User
         )
 
         # Create message record
-        await message_dao.create_message(
-            telegram_message_id=message.message_id,
+        await message_dao.add_message(
             user_id=user.id,
+            role=MessageRole.USER,
+            telegram_message_id=message.message_id,
             group_id=group.id
         )
 
