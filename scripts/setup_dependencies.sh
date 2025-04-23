@@ -30,14 +30,18 @@ print_message "Installing system dependencies..."
 # Update package list
 apt-get update
 
-# Install ffmpeg and its dependencies
-print_message "Installing ffmpeg and its dependencies..."
-apt-get install -y \
-    ffmpeg \
-    libavcodec-extra \
-    libavformat-extra \
-    libavutil-extra \
-    libswscale-extra
+# Check if ffmpeg is installed
+if ! command -v ffmpeg &> /dev/null || ! command -v ffprobe &> /dev/null; then
+    print_message "Installing ffmpeg and its dependencies..."
+    apt-get install -y \
+        ffmpeg \
+        libavcodec-extra \
+        libavformat-extra \
+        libavutil-extra \
+        libswscale-extra
+else
+    print_message "ffmpeg is already installed"
+fi
 
 # Install other system dependencies
 print_message "Installing other system dependencies..."
@@ -62,6 +66,16 @@ if [ -d "/opt/geminibot" ]; then
             pip install -r requirements.txt
         "
     fi
+fi
+
+# Verify ffmpeg installation
+if command -v ffmpeg &> /dev/null && command -v ffprobe &> /dev/null; then
+    print_message "ffmpeg installation verified successfully"
+    ffmpeg -version | head -n 1
+    ffprobe -version | head -n 1
+else
+    print_error "ffmpeg installation failed. Please check the error messages above."
+    exit 1
 fi
 
 print_message "System dependencies installed successfully!" 
