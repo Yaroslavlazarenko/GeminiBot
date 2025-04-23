@@ -56,4 +56,17 @@ apt-get install -y \
     openssh-client \
     jq
 
+# If we're in the bot directory, reinstall OpenCV
+if [ -d "/opt/geminibot" ]; then
+    print_message "Reinstalling OpenCV in virtual environment..."
+    cd /opt/geminibot
+    if [ -d "venv" ]; then
+        sudo -u $SUDO_USER bash -c "
+            source venv/bin/activate && \
+            pip uninstall -y opencv-python opencv-python-headless && \
+            pip install opencv-python-headless
+        "
+    fi
+fi
+
 print_message "System dependencies installed successfully!" 
