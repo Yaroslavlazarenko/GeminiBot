@@ -159,18 +159,14 @@ async def video_note_handler(
     if not user_display_name:
         user_display_name = f"User {user.telegram_id}"
 
-    # Log detailed user information
-    logger.info(f"Processing video note from user: name={user_display_name}, id={user.telegram_id}, username={message.from_user.username}, is_bot={message.from_user.is_bot}")
-    logger.info(f"User settings: responds_to_voice={user.responds_to_voice}, transcribe_voice_only={user.transcribe_voice_only}")
-
     # Check if message is forwarded
     is_forwarded = message.forward_from is not None or message.forward_from_chat is not None
     if is_forwarded:
         original_sender = message.forward_from
         if original_sender:
-            logger.info(f"Processing forwarded video note from original sender {original_sender.full_name} (ID: {original_sender.id})")
+            logger.debug(f"Processing forwarded video note from original sender {original_sender.full_name} (ID: {original_sender.id})")
         else:
-            logger.info(f"Processing forwarded video note from unknown original sender")
+            logger.debug(f"Processing forwarded video note from unknown original sender")
 
     if not user.responds_to_voice:  # Using the same setting as voice messages
         logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to USER settings.")

@@ -25,25 +25,44 @@ async def voice_handler(
     group = await get_group_or_none(group_dao, chat)
     group_db_id = group.id if group else None
 
+    # Validate user data
+    if not user:
+        logger.error(f"User object is None for message {message.message_id}")
+        await send_error_message(message, "Помилка: не вдалося отримати дані користувача.")
+        return
+
+    if not user.telegram_id:
+        logger.error(f"User {user.id} has no telegram_id")
+        await send_error_message(message, "Помилка: не вдалося ідентифікувати користувача.")
+        return
+
+    # Get user display name for better identification
+    user_display_name = message.from_user.full_name
+    if not user_display_name:
+        user_display_name = f"User {user.telegram_id}"
+
+    # Check if message is forwarded
+    is_forwarded = message.forward_from is not None or message.forward_from_chat is not None
+    if is_forwarded:
+        original_sender = message.forward_from
+        if original_sender:
+            logger.debug(f"Processing forwarded voice message from original sender {original_sender.full_name} (ID: {original_sender.id})")
+        else:
+            logger.debug(f"Processing forwarded voice message from unknown original sender")
+
     if not user.responds_to_voice:
-        logger.debug(f"Ignoring voice message from user {user.telegram_id} in chat {chat.id} due to USER settings.")
+        logger.debug(f"Voice messages disabled for user {user_display_name} (ID: {user.telegram_id})")
         return
+
     if group and not group.responds_to_voice:
-        logger.debug(f"Ignoring voice message from user {user.telegram_id} in group chat {chat.id} (DB ID: {group.id}) due to GROUP settings.")
+        logger.debug(f"Voice messages disabled for group {group.name} (ID: {group.telegram_chat_id})")
         return
-
-    if not message.voice:
-        logger.warning(f"Voice message object is missing for user {user.telegram_id} in chat {chat.id}")
-        return
-
-    logger.info(f"Processing voice message from user {user.telegram_id} in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
-    try:
-        await message.bot.send_chat_action(chat_id=chat.id, action="typing")
-    except Exception as inner_e:
-        logger.warning(f"Failed to send fallback chat action 'typing' to {chat.id}: {inner_e}")
 
     voice = message.voice
-    audio_bytes: bytes | None = None
+    if not voice:
+        logger.error(f"Voice object is None for message {message.message_id}")
+        await send_error_message(message, "Помилка: не вдалося отримати голосове повідомлення.")
+        return
 
     try:
         file = await message.bot.get_file(voice.file_id)
@@ -57,7 +76,6 @@ async def voice_handler(
             await send_error_message(message, "Помилка: не вдалося завантажити голосове повідомлення (отримано None).")
             return
         audio_bytes = downloaded_file.read()
-        logger.debug(f"Downloaded {len(audio_bytes)} bytes for voice message from user {user.telegram_id} in chat {chat.id}")
     except (TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError) as e:
         logger.error(f"Telegram API error downloading voice file: {e}", exc_info=True)
         await send_error_message(message, f"Помилка мережі або API Telegram під час завантаження: {e}.")

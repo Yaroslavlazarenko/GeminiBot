@@ -30,11 +30,6 @@ class MessageHistoryDAO:
         group_id: int | None = None,
         telegram_message_id: int | None = None
     ) -> MessageHistory:
-        log_msg = f"Adding message for user_id={user_id}, role={role.value}"
-        if group_id: log_msg += f", group_id={group_id}"
-        if telegram_message_id: log_msg += f", telegram_message_id={telegram_message_id}"
-        logger.debug(log_msg)
-        
         new_message = MessageHistory(
             user_id=user_id,
             group_id=group_id,
@@ -47,9 +42,6 @@ class MessageHistoryDAO:
             timestamp=datetime.now(timezone.utc)
         )
         self.session.add(new_message)
-        # Don't flush or commit here, let the session manager handle it.
-        # await self.session.flush([new_message]) # Flush only if you NEED the ID immediately
-        logger.debug(f"Message for user_id={user_id} added to session.")
         return new_message
 
     async def clear_history(

@@ -20,24 +20,23 @@ class DatabaseManager:
         self.engine = create_async_engine(
             self.async_url,
             echo=False,
-            pool_size=20,  # Увеличиваем размер пула
-            max_overflow=30,  # Увеличиваем максимальное количество дополнительных соединений
-            pool_timeout=60,  # Увеличиваем таймаут
-            pool_pre_ping=True,  # Проверка соединения перед использованием
-            pool_recycle=3600,  # Пересоздание соединений каждый час
+            pool_size=20,
+            max_overflow=30,
+            pool_timeout=60,
+            pool_pre_ping=True,
+            pool_recycle=3600,
         )
         self.async_session_maker = async_sessionmaker(
             bind=self.engine,
             expire_on_commit=False,
             class_=AsyncSession,
         )
-        logger.info(f"DatabaseManager initialized for database '{db_name}' at {host}")
+        logger.debug(f"DatabaseManager initialized for database '{db_name}' at {host}")
 
     async def create_database(self):
         """Создает базу данных асинхронно, если она не существует."""
         conn = None
         try:
-            logger.info(f"Attempting to connect to 'postgres' db at {self.host} to check/create database '{self.db_name}'")
             conn = await asyncpg.connect(
                 user=self.user, password=self.password, host=self.host, database="postgres"
             )
@@ -45,34 +44,31 @@ class DatabaseManager:
                 "SELECT 1 FROM pg_database WHERE datname = $1", self.db_name
             )
             if not exists:
-                 logger.info(f"Database '{self.db_name}' does not exist. Creating...")
-                 try:
-                     await conn.execute(f'CREATE DATABASE "{self.db_name}"')
-                     logger.info(f"Database '{self.db_name}' created successfully.")
-                 except asyncpg.PostgresError as e:
-                     logger.error(f"Error creating database '{self.db_name}': {e}", exc_info=True)
+                logger.info(f"Creating database '{self.db_name}'...")
+                try:
+                    await conn.execute(f'CREATE DATABASE "{self.db_name}"')
+                    logger.info(f"Database '{self.db_name}' created successfully.")
+                except asyncpg.PostgresError as e:
+                    logger.error(f"Error creating database '{self.db_name}': {e}", exc_info=True)
             else:
-                logger.info(f"Database '{self.db_name}' already exists.")
+                logger.debug(f"Database '{self.db_name}' already exists.")
 
         except asyncpg.InvalidCatalogNameError:
-             logger.warning("Database 'postgres' not found? Cannot check/create database automatically.")
+            logger.error("Database 'postgres' not found. Cannot check/create database automatically.")
         except asyncpg.PostgresError as e:
             logger.error(f"Error connecting to 'postgres' db or checking database '{self.db_name}': {e}", exc_info=True)
         except Exception as e:
-             logger.error(f"Unexpected error during database check/creation: {e}", exc_info=True)
+            logger.error(f"Unexpected error during database check/creation: {e}", exc_info=True)
         finally:
             if conn:
                 await conn.close()
-                logger.debug("Connection to 'postgres' db closed.")
-
 
     async def create_tables(self) -> None:
         """Создает таблицы в базе данных."""
-        logger.info(f"Attempting to create tables defined in Base.metadata for database '{self.db_name}'...")
         try:
             async with self.engine.begin() as conn:
                 await conn.run_sync(self.base.metadata.create_all)
-            logger.info("Tables checked/created successfully.")
+            logger.info("Database tables created successfully.")
         except Exception as e:
             logger.critical(f"FATAL: Could not create tables in database '{self.db_name}': {e}", exc_info=True)
             raise
@@ -83,6 +79,5 @@ class DatabaseManager:
 
     async def dispose_engine(self) -> None:
         """Закрывает пул соединений движка."""
-        logger.info("Disposing database engine connections...")
         await self.engine.dispose()
-        logger.info("Database engine connections disposed.")
+        logger.debug("Database engine connections disposed.")

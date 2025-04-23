@@ -9,12 +9,11 @@ from config import Config
 from telegram.handlers import all_routers
 from middlewares.db_session import DAOMiddleware
 from database.manager import DatabaseManager
+from logging_config import setup_logging
 
 async def main():
-    log_level = logging.INFO
-    log_format = "%(asctime)s - %(levelname)s - %(name)s - %(message)s"
-    logging.basicConfig(level=log_level, stream=sys.stdout, format=log_format)
-    logger = logging.getLogger(__name__)
+    # Setup logging
+    logger = setup_logging()
     logger.info("Starting bot...")
 
     config = Config()
@@ -57,4 +56,4 @@ if __name__ == "__main__":
     except (KeyboardInterrupt, SystemExit):
         logging.getLogger(__name__).info("Bot stopped by user.")
     except Exception as e:
-         logging.getLogger(__name__).critical(f"Unhandled exception in main: {e}", exc_info=True)
+        logging.getLogger(__name__).critical(f"Unhandled exception in main: {e}", exc_info=True)

@@ -17,7 +17,6 @@ class UserDAO:
         self.session = session
 
     async def get_or_create_user(self, telegram_id: int, username: str | None = None, first_name: str | None = None, last_name: str | None = None, **kwargs) -> User:
-        logger.debug(f"Attempting to get or create/update user for telegram_id={telegram_id}")
         values_to_insert = {
             "telegram_id": telegram_id,
             "username": username if username is not None else str(telegram_id),
@@ -35,9 +34,7 @@ class UserDAO:
         ).returning(User)
         try:
             result = await self.session.execute(insert_stmt)
-            user = result.scalar_one()
-            logger.info(f"Successfully got or created/updated user: {user.id=} {user.telegram_id=}")
-            return user
+            return result.scalar_one()
         except SQLAlchemyError as e:
             logger.error(f"Database error during get_or_create_user for telegram_id={telegram_id}: {e}", exc_info=True)
             raise

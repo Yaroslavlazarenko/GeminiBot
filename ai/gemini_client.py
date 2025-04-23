@@ -323,7 +323,7 @@ async def get_video_response(
         Dict with response type and data
     """
     if not async_client:
-        logger.warning("Gemini async client not initialized")
+        logger.error("Gemini async client not initialized")
         return {
             "type": "error",
             "data": {
@@ -333,7 +333,7 @@ async def get_video_response(
         }
 
     if not message_history:
-        logger.warning("Empty message history provided to get_video_response")
+        logger.error("Empty message history provided to get_video_response")
         return {
             "type": "error",
             "data": {
@@ -343,20 +343,20 @@ async def get_video_response(
         }
 
     # Log the structure of the message history in detail
-    logger.info("Message history structure:")
+    logger.debug("Message history structure:")
     for i, msg in enumerate(message_history):
-        logger.info(f"Message {i+1}: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
+        logger.debug(f"Message {i+1}: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
         if msg.parts:
             for j, part in enumerate(msg.parts):
                 if part is None:
-                    logger.info(f"  Part {j+1}: None")
+                    logger.debug(f"  Part {j+1}: None")
                     continue
                 if hasattr(part, 'text') and part.text is not None:
-                    logger.info(f"  Part {j+1}: text={part.text[:100]}...")
+                    logger.debug(f"  Part {j+1}: text={part.text[:100]}...")
                 elif hasattr(part, 'data') and part.data is not None:
-                    logger.info(f"  Part {j+1}: binary data (size={len(part.data)} bytes)")
+                    logger.debug(f"  Part {j+1}: binary data (size={len(part.data)} bytes)")
                 else:
-                    logger.info(f"  Part {j+1}: unknown type")
+                    logger.debug(f"  Part {j+1}: unknown type")
 
     # Add critical JSON formatting instruction
     critical_instruction = types.Content(
