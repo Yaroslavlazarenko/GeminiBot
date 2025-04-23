@@ -10,7 +10,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from google.genai import types
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
-from ..models import MessageHistory, MessageRole, Message
+from ..models import MessageHistory, MessageRole
 
 logger = logging.getLogger(__name__)
 
@@ -246,38 +246,39 @@ class MessageHistoryDAO:
             return None
 
 class MessageDAO:
-    """Асинхронный DAO для работы с моделью Message."""
+    """Асинхронный DAO для работы с моделью MessageHistory."""
 
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_message_by_internal_id(self, message_id: int) -> Optional[Message]:
+    async def get_message_by_internal_id(self, message_id: int) -> Optional[MessageHistory]:
         try:
-            stmt = select(Message).where(Message.id == message_id)
+            stmt = select(MessageHistory).where(MessageHistory.id == message_id)
             result = await self.session.execute(stmt)
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
             logger.critical(f"Error getting message by internal id={message_id}: {e}", exc_info=True)
             raise
 
-    async def get_message_by_telegram_id(self, telegram_message_id: int) -> Optional[Message]:
+    async def get_message_by_telegram_id(self, telegram_message_id: int) -> Optional[MessageHistory]:
         try:
-            stmt = select(Message).where(Message.telegram_message_id == telegram_message_id)
+            stmt = select(MessageHistory).where(MessageHistory.telegram_message_id == telegram_message_id)
             result = await self.session.execute(stmt)
             return result.scalar_one_or_none()
         except SQLAlchemyError as e:
             logger.critical(f"Error getting message by telegram_message_id={telegram_message_id}: {e}", exc_info=True)
             raise
 
-    async def create_message(self, telegram_message_id: int, user_id: int, group_id: int, content: str | None = None) -> Message:
+    async def create_message(self, telegram_message_id: int, user_id: int, group_id: int, content: str | None = None) -> MessageHistory:
         values_to_insert = {
             "telegram_message_id": telegram_message_id,
             "user_id": user_id,
             "group_id": group_id,
-            "content": content
+            "text": content,
+            "role": MessageRole.USER
         }
 
-        insert_stmt = pg_insert(Message).values(**values_to_insert).returning(Message)
+        insert_stmt = pg_insert(MessageHistory).values(**values_to_insert).returning(MessageHistory)
 
         try:
             result = await self.session.execute(insert_stmt)
@@ -287,13 +288,13 @@ class MessageDAO:
             raise
 
     async def update_message_content(self, message_id: int, content: str) -> bool:
-        stmt = update(Message).where(Message.id == message_id).values(content=content)
+        stmt = update(MessageHistory).where(MessageHistory.id == message_id).values(text=content)
         try:
             result = await self.session.execute(stmt)
             if result.rowcount > 0:
                 return True
             else:
-                message_exists = await self.session.get(Message, message_id)
+                message_exists = await self.session.get(MessageHistory, message_id)
                 return message_exists is not None
         except SQLAlchemyError as e:
             logger.critical(f"Database error updating content for message_id={message_id}: {e}", exc_info=True)
