@@ -19,8 +19,10 @@ async def handle_voice(message: Message, state: FSMContext, user_dao: UserDAO, g
     try:
         # Get or create user
         user = await user_dao.get_or_create_user(
-            telegram_user_id=message.from_user.id,
-            username=message.from_user.username
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name
         )
 
         # Get or create group
