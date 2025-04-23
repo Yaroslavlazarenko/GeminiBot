@@ -2,6 +2,7 @@ import logging
 from aiogram import Router, F, filters
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.exceptions import TelegramBadRequest
 
 from database.models import User
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
@@ -212,6 +213,13 @@ async def close_menu_callback(callback: CallbackQuery):
 @router.callback_query(F.data == "refresh_menu")
 async def refresh_menu_callback(callback: CallbackQuery, user: User):
     """Handler for refreshing the menu."""
-    keyboard = get_settings_keyboard(user)
-    await callback.message.edit_reply_markup(reply_markup=keyboard)
-    await callback.answer("Меню оновлено")
+    try:
+        keyboard = get_settings_keyboard(user)
+        await callback.message.edit_reply_markup(reply_markup=keyboard)
+        await callback.answer("Меню оновлено")
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            await callback.answer("Меню вже актуальне")
+        else:
+            logger.error(f"Error refreshing menu: {e}")
+            await callback.answer("❌ Помилка при оновленні меню", show_alert=True)
