@@ -153,12 +153,12 @@ async def handle_gemini_result(
                 return
             elif command_name == "disable_responses":
                 logger.info(f"Found disable_responses command for user {user.telegram_id}")
-                success = await user_dao.update_user_settings(user_id=user.id, responds_to_text=False)
+                success = await user_dao.update_user_settings(user_id=user.id, is_global_disabled=True)
                 if success:
-                    user.responds_to_text = False
+                    user.is_global_disabled = True
                     # Не отправляем дополнительное сообщение, если уже был текст в ответе
                     if not response_data.get("text", "").strip():
-                        await message.answer("⛔️ Я більше не буду відповідати на ваші текстові повідомлення за вашим запитом.")
+                        await message.answer("⛔️ Я більше не буду відповідати на ваші повідомлення за вашим запитом.")
                 else:
                     logger.error(f"Failed to disable responses for user {user.telegram_id}")
                     if not response_data.get("text", "").strip():
