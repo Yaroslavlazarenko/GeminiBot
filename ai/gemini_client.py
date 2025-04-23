@@ -311,9 +311,201 @@ async def get_video_response(
     response: bool = True
 ) -> Dict[str, Any]:
     """
-    Processes video notes and returns Gemini's response.
-    When response=True, generates a full response to the video.
-    When response=False, only transcribes/describes the video.
+    Gets a response from Gemini for a video note.
+    
+    Args:
+        message_history: List of message contents including the video note
+        user: The user object
+        response: Whether to generate a response (True) or just transcribe (False)
+    
+    Returns:
+        Dict with response type and data
     """
-    task_hint = None if response else "Describe what you see in the video note. Don't respond to it, just describe what you see."
-    return await get_gemini_response(message_history, user, task_hint)
+    if not async_client:
+        logger.warning("Gemini async client not initialized")
+        return {
+            "type": "error",
+            "data": {
+                "text": "Gemini client not available",
+                "commands": []
+            }
+        }
+
+    if not message_history:
+        logger.warning("Empty message history provided to get_video_response")
+        return {
+            "type": "error",
+            "data": {
+                "text": "No message history provided",
+                "commands": []
+            }
+        }
+
+    # Add critical JSON formatting instruction
+    critical_instruction = types.Content(
+        parts=[types.Part(text="""CRITICAL: YOU MUST RETURN ONLY A SINGLE JSON OBJECT AS YOUR COMPLETE RESPONSE.
+DO NOT FORMAT IT AS CODE. DO NOT ADD ANY MARKDOWN. NO BACKTICKS. NO EXPLANATION TEXT.
+JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
+        role="user"
+    )
+    
+    # Add instruction to the start of the context
+    message_history = [critical_instruction] + message_history
+
+    # Validate contents after adding instruction
+    if not message_history:
+        logger.warning("Message history is empty after adding instruction")
+        return {
+            "type": "error",
+            "data": {
+                "text": "Failed to prepare message history",
+                "commands": []
+            }
+        }
+
+    base_instructions = read_system_instructions()
+    current_time = get_current_time_str()
+
+    # Add user-specific context to system instructions
+    system_prompt_parts = [base_instructions]
+    system_prompt_parts.append(f"\nCurrent time: {current_time}")
+    system_prompt_parts.append(f"\nCurrent user ID: {user.telegram_id}")
+    
+    # Add group context if available
+    try:
+        is_group_chat = False
+        for c in message_history:
+            if c.role == "user" and c.parts:
+                try:
+                    if c.parts[0].text and "group chat" in c.parts[0].text:
+                        is_group_chat = True
+                        break
+                except (IndexError, AttributeError):
+                    continue
+        if is_group_chat:
+            system_prompt_parts.append("\nIMPORTANT: You are in a group chat. Keep your responses concise and relevant to the current user's message. Avoid long conversations or complex interactions.")
+            system_prompt_parts.append("\nFor video notes in group chats, provide a brief analysis of the video content and any relevant reactions.")
+    except Exception as e:
+        logger.warning(f"Error checking for group chat context: {e}")
+    
+    system_prompt_parts.append("\nIMPORTANT: Your responses and reactions should be specific to the current user. If you choose to disable responses or react negatively, it should only affect this specific user. Previous negative interactions with other users should not influence your response to the current user.")
+    
+    if not response:
+        system_prompt_parts.append("\nPlease transcribe the video note content without providing any additional commentary or analysis.")
+    
+    system_prompt = "\n".join(filter(None, system_prompt_parts))
+
+    retries = 0
+    while retries < MAX_RETRIES:
+        try:
+            logger.debug(f"Sending video note request to Gemini (attempt {retries + 1}/{MAX_RETRIES}). History length: {len(message_history)}")
+
+            response = await async_client.models._generate_content(
+                model=config.gemini_model,
+                contents=message_history,
+                config=GenerateContentConfig(
+                    tools=tools_to_pass_in_list,
+                    response_modalities=["text"],
+                    system_instruction=system_prompt,
+                )
+            )
+
+            if not response or not response.text:
+                logger.warning("Gemini response is empty or None.")
+                return {
+                    "type": "error",
+                    "data": {
+                        "text": "Empty response from Gemini",
+                        "commands": []
+                    }
+                }
+
+            try:
+                # Clean the response and process JSON as before
+                raw_text = response.text.strip()
+                clean_text = re.sub(r'```(?:json)?\n?', '', raw_text)
+                clean_text = clean_text.strip()
+                
+                def extract_json_object(text):
+                    # Ищем первую открывающую скобку
+                    start = text.find('{')
+                    if start == -1:
+                        return None
+                    
+                    # Отслеживаем вложенность скобок
+                    count = 0
+                    for i in range(start, len(text)):
+                        if text[i] == '{':
+                            count += 1
+                        elif text[i] == '}':
+                            count -= 1
+                            if count == 0:
+                                # Нашли соответствующую закрывающую скобку
+                                return text[start:i + 1]
+                    return None
+
+                # Извлекаем первый полный JSON объект
+                json_text = extract_json_object(clean_text)
+                if json_text:
+                    clean_text = json_text
+
+                # Парсим JSON ответ от модели
+                import json
+                response_data = json.loads(clean_text)
+                
+                # Validate response structure
+                if not isinstance(response_data, dict):
+                    logger.error(f"Invalid response structure: {response_data}")
+                    return {
+                        "type": "error",
+                        "data": {
+                            "text": "Invalid response format from Gemini",
+                            "commands": []
+                        }
+                    }
+                
+                # Ensure required fields exist
+                if "text" not in response_data:
+                    response_data["text"] = ""
+                if "commands" not in response_data:
+                    response_data["commands"] = []
+                
+                return {
+                    "type": "json_response",
+                    "data": response_data
+                }
+
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse JSON response: {e}")
+                return {
+                    "type": "error",
+                    "data": {
+                        "text": "Failed to parse Gemini response",
+                        "commands": []
+                    }
+                }
+
+        except ServerError as e:
+            retries += 1
+            if retries < MAX_RETRIES:
+                delay = min(BASE_DELAY * (2 ** (retries - 1)), MAX_DELAY)
+                logger.warning(f"Server error (attempt {retries}/{MAX_RETRIES}). Retrying in {delay} seconds...")
+                await asyncio.sleep(delay)
+            else:
+                logger.error(f"Max retries ({MAX_RETRIES}) reached. Last error: {e}")
+                return {
+                    "type": "error",
+                    "data": {
+                        "text": "Server error from Gemini API. Please try again later.",
+                        "commands": []
+                    }
+                }
+        except Exception as e:
+            logger.error(f"Unexpected error in get_video_response: {e}", exc_info=True)
+            return {
+                "type": "error",
+                "data": {
+                    "text": "Unexpected error processing video note",
+                    "commands": []
+                }
+            }

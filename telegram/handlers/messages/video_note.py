@@ -112,11 +112,15 @@ async def video_note_handler(
             # Add group context to the first message
             if message_history:
                 group_context = types.Content(
-                    parts=[types.Part(text=f"Context: This is a group chat named '{group.name}'. The video note is from user {user.telegram_id}.")],
+                    parts=[types.Part(text=f"Context: This is a group chat named '{group.name}'. The video note is from user {user.telegram_id}. Please analyze the video note and provide a concise response.")],
                     role="user"
                 )
                 message_history = [group_context] + message_history
                 logger.debug("Added group context to message history")
+                
+                # Log the structure of the first few messages
+                for i, msg in enumerate(message_history[:3]):
+                    logger.debug(f"Message {i+1} from start: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
         else:
             # For private messages, use full history
             message_history = await message_dao.get_user_private_messages_as_contents(user_id=user.id)
@@ -137,6 +141,17 @@ async def video_note_handler(
         logger.debug(f"Calling AI for video note. Generate response based on user setting: {generate_full_response} (user {user.telegram_id}, group_id {group_db_id})")
 
         try:
+            # Add more detailed logging before calling Gemini
+            logger.debug(f"Calling Gemini API with {len(message_history)} messages")
+            for i, msg in enumerate(message_history):
+                logger.debug(f"Message {i+1}: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
+                if msg.parts:
+                    for j, part in enumerate(msg.parts):
+                        if hasattr(part, 'text'):
+                            logger.debug(f"  Part {j+1}: text={part.text[:100]}...")
+                        else:
+                            logger.debug(f"  Part {j+1}: binary data")
+
             gemini_result = await get_video_response(
                 message_history=message_history,
                 user=user,
