@@ -8,47 +8,11 @@ from aiogram.fsm.context import FSMContext
 
 from ai.gemini_client import get_audio_response
 from database.models import User, MessageRole
-from database.dao import UserDAO, GroupDAO, MessageHistoryDAO, MessageDAO
+from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
 from ..utils import send_error_message, get_group_or_none, handle_gemini_result
 
 logger = logging.getLogger(__name__)
 router = Router()
-
-@router.message(F.voice)
-async def handle_voice(message: Message, state: FSMContext, user_dao: UserDAO, group_dao: GroupDAO, message_dao: MessageHistoryDAO):
-    try:
-        # Get or create user
-        user = await user_dao.get_or_create_user(
-            telegram_id=message.from_user.id,
-            username=message.from_user.username,
-            first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name
-        )
-
-        # Get or create group
-        group = await group_dao.get_or_create_group(
-            telegram_chat_id=message.chat.id,
-            name=message.chat.title or str(message.chat.id)
-        )
-
-        # Create message record
-        await message_dao.add_message(
-            user_id=user.id,
-            role=MessageRole.USER,
-            telegram_message_id=message.message_id,
-            group_id=group.id
-        )
-
-        # Check if group responds to voice messages
-        if not group.responds_to_voice:
-            return
-
-        # Process voice message
-        # TODO: Add voice message processing logic here
-
-    except Exception as e:
-        logger.critical(f"Error processing voice message: {e}", exc_info=True)
-        raise
 
 @router.message(F.voice)
 async def voice_handler(
