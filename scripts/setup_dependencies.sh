@@ -25,23 +25,19 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-print_message "Installing system dependencies for OpenCV and other requirements..."
+print_message "Installing system dependencies..."
 
 # Update package list
 apt-get update
 
-# Install OpenCV dependencies
-print_message "Installing OpenCV dependencies..."
+# Install ffmpeg and its dependencies
+print_message "Installing ffmpeg and its dependencies..."
 apt-get install -y \
-    libgl1-mesa-glx \
-    libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libxrender1 \
-    libgl1-mesa-dev \
-    libglu1-mesa-dev \
-    freeglut3-dev \
-    mesa-common-dev
+    ffmpeg \
+    libavcodec-extra \
+    libavformat-extra \
+    libavutil-extra \
+    libswscale-extra
 
 # Install other system dependencies
 print_message "Installing other system dependencies..."
@@ -56,15 +52,14 @@ apt-get install -y \
     openssh-client \
     jq
 
-# If we're in the bot directory, reinstall OpenCV
+# If we're in the bot directory, update Python dependencies
 if [ -d "/opt/geminibot" ]; then
-    print_message "Reinstalling OpenCV in virtual environment..."
+    print_message "Updating Python dependencies in virtual environment..."
     cd /opt/geminibot
     if [ -d "venv" ]; then
         sudo -u $SUDO_USER bash -c "
             source venv/bin/activate && \
-            pip uninstall -y opencv-python opencv-python-headless && \
-            pip install opencv-python-headless
+            pip install -r requirements.txt
         "
     fi
 fi
