@@ -75,6 +75,21 @@ if (-not (Test-Command git)) {
     }
 }
 
+# Check and install FFmpeg if needed
+Write-ColorOutput Cyan "Checking FFmpeg installation..."
+if (-not (Test-Command ffmpeg) -or -not (Test-Command ffprobe)) {
+    Write-ColorOutput Yellow "FFmpeg not found. Installing FFmpeg..."
+    try {
+        winget install Gyan.FFmpeg
+        if (-not $?) { throw "Failed to install FFmpeg" }
+        $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+    }
+    catch {
+        Write-ColorOutput Red "Failed to install FFmpeg. Please install FFmpeg manually from ffmpeg.org"
+        Exit 1
+    }
+}
+
 # Create and configure .env if it doesn't exist
 if (-not (Test-Path ".env")) {
     Write-ColorOutput Cyan "Creating .env file..."

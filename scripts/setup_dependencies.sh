@@ -38,7 +38,11 @@ if ! command -v ffmpeg &> /dev/null || ! command -v ffprobe &> /dev/null; then
         libavcodec-extra \
         libavformat-extra \
         libavutil-extra \
-        libswscale-extra
+        libswscale-extra \
+        libavfilter-extra \
+        libavdevice-extra \
+        libpostproc-extra \
+        libswresample-extra
 else
     print_message "ffmpeg is already installed"
 fi
