@@ -9,6 +9,7 @@ from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from google.genai import types as gemini_types
 
 from ai.gemini_client import get_video_response
 from database.models import User, MessageRole
@@ -262,15 +263,15 @@ async def video_note_handler(
                 
                 # Add user context for non-forwarded messages
                 if not is_forwarded:
-                    user_context = types.Content(
-                        parts=[types.Part(text=f"User context: This is a video note from {user_display_name} (ID: {user.telegram_id}) in the group chat '{group.name}'. Please analyze the video note and provide a concise response.")],
+                    user_context = gemini_types.Content(
+                        parts=[gemini_types.Part(text=f"User context: This is a video note from {user_display_name} (ID: {user.telegram_id}) in the group chat '{group.name}'. Please analyze the video note and provide a concise response.")],
                         role="user"
                     )
                     message_history = [user_context] + message_history
                     logger.info("Added user context for non-forwarded message")
                 
-                group_context = types.Content(
-                    parts=[types.Part(text=group_context_text)],
+                group_context = gemini_types.Content(
+                    parts=[gemini_types.Part(text=group_context_text)],
                     role="user"
                 )
                 message_history = [group_context] + message_history
