@@ -127,14 +127,27 @@ fi
 
 # Update dependencies
 print_message "Updating dependencies..."
-# Install system dependencies if needed
-bash "$BOT_DIR/scripts/setup_dependencies.sh"
+
+# Install system dependencies
+print_message "Installing system dependencies..."
+if ! bash "$BOT_DIR/scripts/setup_dependencies.sh"; then
+    print_error "Failed to install system dependencies!"
+    exit 1
+fi
+
 # Update Python dependencies
-sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && pip install --require-virtualenv -r requirements.txt"
+print_message "Updating Python dependencies..."
+if ! sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && pip install --require-virtualenv -r requirements.txt"; then
+    print_error "Failed to update Python dependencies!"
+    exit 1
+fi
 
 # Apply database migrations
 print_message "Applying database migrations..."
-sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && cd /opt/geminibot && alembic upgrade head"
+if ! sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && cd /opt/geminibot && alembic upgrade head"; then
+    print_error "Failed to apply database migrations!"
+    exit 1
+fi
 
 # Start the service
 print_message "Starting the bot service..."
