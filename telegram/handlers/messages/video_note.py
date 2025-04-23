@@ -7,13 +7,12 @@ import ffmpeg
 from aiogram import F, Router, types
 from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
-from google.genai import types
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 
 from ai.gemini_client import get_video_response
 from database.models import User, MessageRole
-from database.dao import UserDAO, GroupDAO, MessageHistoryDAO, MessageDAO
+from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
 from ..utils import send_error_message, get_group_or_none, handle_gemini_result
 
 logger = logging.getLogger(__name__)
@@ -131,73 +130,6 @@ def process_video_data(video_data: bytes) -> bytes:
     except Exception as e:
         logger.error(f"Error processing video: {e}", exc_info=True)
         return video_data
-
-@router.message(types.ContentType.VIDEO_NOTE)
-async def handle_video_note(message: types.Message, state: FSMContext, user_dao: UserDAO, group_dao: GroupDAO, message_dao: MessageDAO):
-    try:
-        # Get or create user
-        user = await user_dao.get_or_create_user(
-            telegram_user_id=message.from_user.id,
-            username=message.from_user.username
-        )
-
-        # Get or create group
-        group = await group_dao.get_or_create_group(
-            telegram_chat_id=message.chat.id,
-            name=message.chat.title or str(message.chat.id)
-        )
-
-        # Create message record
-        await message_dao.create_message(
-            telegram_message_id=message.message_id,
-            user_id=user.id,
-            group_id=group.id
-        )
-
-        # Check if group responds to video notes
-        if not group.responds_to_video_note:
-            return
-
-        # Process video note
-        # TODO: Add video note processing logic here
-
-    except Exception as e:
-        logger.critical(f"Error processing video note message: {e}", exc_info=True)
-        raise
-
-@router.message(F.video_note)
-async def handle_video_note(message: Message, state: FSMContext, user_dao: UserDAO, group_dao: GroupDAO, message_dao: MessageHistoryDAO):
-    try:
-        # Get or create user
-        user = await user_dao.get_or_create_user(
-            telegram_user_id=message.from_user.id,
-            username=message.from_user.username
-        )
-
-        # Get or create group
-        group = await group_dao.get_or_create_group(
-            telegram_chat_id=message.chat.id,
-            name=message.chat.title or str(message.chat.id)
-        )
-
-        # Create message record
-        await message_dao.add_message(
-            user_id=user.id,
-            role=MessageRole.USER,
-            telegram_message_id=message.message_id,
-            group_id=group.id
-        )
-
-        # Check if group responds to video notes
-        if not group.responds_to_video_note:
-            return
-
-        # Process video note
-        # TODO: Add video note processing logic here
-
-    except Exception as e:
-        logger.critical(f"Error processing video note message: {e}", exc_info=True)
-        raise
 
 @router.message(F.video_note)
 async def video_note_handler(
