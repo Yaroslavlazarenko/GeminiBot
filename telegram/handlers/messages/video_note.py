@@ -17,6 +17,10 @@ from ..utils import send_error_message, get_group_or_none, handle_gemini_result
 logger = logging.getLogger(__name__)
 router = Router()
 
+# Define FFmpeg paths
+FFMPEG_PATH = "/usr/bin/ffmpeg"
+FFPROBE_PATH = "/usr/bin/ffprobe"
+
 def process_video_data(video_data: bytes) -> bytes:
     """Process video data to ensure minimum duration of 2.0 seconds using ffmpeg."""
     try:
@@ -31,9 +35,9 @@ def process_video_data(video_data: bytes) -> bytes:
             input_file.flush()
             logger.info(f"Created temporary input file: {input_file.name}")
             
-            # Get video duration using ffprobe
+            # Get video duration using ffprobe with full path
             try:
-                probe = ffmpeg.probe(input_file.name)
+                probe = ffmpeg.probe(input_file.name, cmd=FFPROBE_PATH)
                 duration = float(probe['format']['duration'])
                 logger.info(f"Original video duration: {duration:.2f}s")
             except ffmpeg.Error as e:
@@ -49,7 +53,7 @@ def process_video_data(video_data: bytes) -> bytes:
             loop_count = int(2.0 / duration) + 1
             logger.info(f"Will loop video {loop_count} times to reach 2.0s")
             
-            # Process video with ffmpeg
+            # Process video with ffmpeg using full path
             try:
                 stream = ffmpeg.input(input_file.name)
                 video = stream.video.filter('loop', loop=loop_count, size=1, start=0)
@@ -66,7 +70,7 @@ def process_video_data(video_data: bytes) -> bytes:
                     audio_bitrate='128k'  # Audio bitrate
                 )
                 
-                ffmpeg.run(stream, overwrite_output=True, capture_stdout=True, capture_stderr=True)
+                ffmpeg.run(stream, cmd=FFMPEG_PATH, overwrite_output=True, capture_stdout=True, capture_stderr=True)
                 logger.info("Successfully processed video with ffmpeg")
                 
             except ffmpeg.Error as e:
