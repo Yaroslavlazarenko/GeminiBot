@@ -127,6 +127,9 @@ fi
 
 # Update dependencies
 print_message "Updating dependencies..."
+# Install system dependencies if needed
+bash "$BOT_DIR/scripts/setup_dependencies.sh"
+# Update Python dependencies
 sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && pip install --require-virtualenv -r requirements.txt"
 
 # Apply database migrations

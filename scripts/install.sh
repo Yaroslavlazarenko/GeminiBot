@@ -85,8 +85,8 @@ if [[ -z "$DB_NAME" || -z "$DB_USER" || -z "$DB_PASSWORD" ||
 fi
 
 print_message "Installing system dependencies..."
-apt update
-DEBIAN_FRONTEND=noninteractive apt install -y python3 python3-pip python3-venv python3-full postgresql postgresql-contrib git openssh-client
+# Run the setup_dependencies script
+bash "$BOT_DIR/scripts/setup_dependencies.sh"
 
 # Configure PostgreSQL
 print_message "Configuring PostgreSQL..."
