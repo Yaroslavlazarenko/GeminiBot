@@ -199,6 +199,17 @@ chown $ACTUAL_USER:$ACTUAL_USER $BOT_DIR/.env
 print_message "Setting up Python virtual environment..."
 cd $BOT_DIR
 sudo -u $ACTUAL_USER python3 -m venv venv
+
+# Create symlinks to FFmpeg binaries in virtual environment
+print_message "Setting up FFmpeg in virtual environment..."
+sudo -u $ACTUAL_USER bash -c "
+    mkdir -p $BOT_DIR/venv/bin
+    ln -sf /usr/bin/ffmpeg $BOT_DIR/venv/bin/ffmpeg
+    ln -sf /usr/bin/ffprobe $BOT_DIR/venv/bin/ffprobe
+"
+
+# Install Python dependencies
+print_message "Installing Python dependencies..."
 sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && pip install --require-virtualenv -r requirements.txt"
 
 # Create systemd service

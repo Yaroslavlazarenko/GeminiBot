@@ -142,6 +142,14 @@ if ! sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && pip install --req
     exit 1
 fi
 
+# Ensure FFmpeg is properly linked in virtual environment
+print_message "Ensuring FFmpeg is properly linked..."
+sudo -u $ACTUAL_USER bash -c "
+    mkdir -p $BOT_DIR/venv/bin
+    ln -sf /usr/bin/ffmpeg $BOT_DIR/venv/bin/ffmpeg
+    ln -sf /usr/bin/ffprobe $BOT_DIR/venv/bin/ffprobe
+"
+
 # Apply database migrations
 print_message "Applying database migrations..."
 if ! sudo -u $ACTUAL_USER bash -c "source venv/bin/activate && cd /opt/geminibot && alembic upgrade head"; then
