@@ -14,6 +14,10 @@ def get_settings_keyboard(user: User) -> InlineKeyboardMarkup:
     """Create an inline keyboard for user settings."""
     builder = InlineKeyboardBuilder()
     
+    # Global toggle button
+    global_status = "✅" if not user.is_global_disabled else "❌"
+    builder.button(text=f"Глобальні відповіді {global_status}", callback_data="toggle_global")
+    
     # Text responses toggle button
     text_status = "✅" if user.responds_to_text else "❌"
     builder.button(text=f"Відповіді на текст {text_status}", callback_data="toggle_text")
@@ -160,6 +164,7 @@ async def show_help_callback(callback: CallbackQuery, user: User):
     """Show help message."""
     help_text = (
         "📋 <b>Довідка по налаштуванням:</b>\n\n"
+        "• <b>Глобальні відповіді</b> - Увімкнення/вимкнення всіх відповідей бота\n\n"
         "• <b>Відповіді на текст</b> - Бот буде відповідати на ваші текстові повідомлення\n\n"
         "• <b>Обробка голосу</b> - Бот буде обробляти ваші голосові повідомлення\n\n"
         "• <b>Обробка фото</b> - Бот буде аналізувати та відповідати на фото\n\n"
@@ -177,3 +182,17 @@ async def show_help_callback(callback: CallbackQuery, user: User):
         parse_mode="HTML",
         reply_markup=keyboard
     )
+
+@router.callback_query(F.data == "toggle_global")
+async def toggle_global_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
+    """Handle global response toggle."""
+    new_value = not user.is_global_disabled
+    success = await user_dao.update_user_settings(user_id=user.id, is_global_disabled=new_value)
+    
+    if success:
+        user.is_global_disabled = new_value
+        status = "увімкнено" if not new_value else "вимкнено"
+        await callback.answer(f"✅ Глобальні відповіді {status}")
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)

@@ -41,6 +41,7 @@ class User(Base, PrettyRepr):
     first_name: Mapped[str | None] = mapped_column(String(256))
     last_name: Mapped[str | None] = mapped_column(String(256))
 
+    is_global_disabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false(), nullable=False)
     responds_to_text: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
     responds_to_voice: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)
     responds_to_photo: Mapped[bool] = mapped_column(Boolean, default=True, server_default=true(), nullable=False)

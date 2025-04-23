@@ -208,3 +208,26 @@ async def toggle_video_note_response_handler(
     else:
         logger.error(f"Failed to update responds_to_video_note for user {user.telegram_id} in DB.")
         await send_error_message(message, "Не вдалося зберегти налаштування.")
+
+@router.message(filters.Command("toggleall"))
+async def toggle_global_response_handler(
+    message: Message,
+    user_dao: UserDAO,
+    user: User
+) -> None:
+    """Toggles global response setting."""
+    if message.chat.type != ChatType.PRIVATE:
+         await message.answer("ℹ️ Зверніть увагу: ця команда змінює ваші глобальні налаштування для всіх чатів.")
+
+    new_value = not user.is_global_disabled
+    success = await user_dao.update_user_settings(user_id=user.id, is_global_disabled=new_value)
+
+    if success:
+        user.is_global_disabled = new_value
+        log_message = f"User {user.telegram_id} toggled is_global_disabled to {user.is_global_disabled}"
+        status = "<b>увімкнено</b>" if not user.is_global_disabled else "<b>вимкнено</b>"
+        reply_text = f"✅ Глобальні відповіді бота тепер {status}."
+        await log_and_reply(message, log_message, reply_text)
+    else:
+        logger.error(f"Failed to update is_global_disabled for user {user.telegram_id} in DB.")
+        await send_error_message(message, "Не вдалося зберегти налаштування.")

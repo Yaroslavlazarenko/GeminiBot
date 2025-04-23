@@ -62,6 +62,7 @@ class UserDAO:
     async def update_user_settings(
         self,
         user_id: int,
+        is_global_disabled: bool | None = None,
         responds_to_text: bool | None = None,
         responds_to_voice: bool | None = None,
         responds_to_photo: bool | None = None,
@@ -69,28 +70,31 @@ class UserDAO:
         transcribe_voice_only: bool | None = None,
         is_admin: bool | None = None
     ) -> bool:
-        """Update user settings."""
         try:
-            async with self.session as session:
-                user = await session.get(User, user_id)
-                if not user:
-                    return False
+            update_data = {}
+            if is_global_disabled is not None:
+                update_data["is_global_disabled"] = is_global_disabled
+            if responds_to_text is not None:
+                update_data["responds_to_text"] = responds_to_text
+            if responds_to_voice is not None:
+                update_data["responds_to_voice"] = responds_to_voice
+            if responds_to_photo is not None:
+                update_data["responds_to_photo"] = responds_to_photo
+            if responds_to_video_note is not None:
+                update_data["responds_to_video_note"] = responds_to_video_note
+            if transcribe_voice_only is not None:
+                update_data["transcribe_voice_only"] = transcribe_voice_only
+            if is_admin is not None:
+                update_data["is_admin"] = is_admin
 
-                if responds_to_text is not None:
-                    user.responds_to_text = responds_to_text
-                if responds_to_voice is not None:
-                    user.responds_to_voice = responds_to_voice
-                if responds_to_photo is not None:
-                    user.responds_to_photo = responds_to_photo
-                if responds_to_video_note is not None:
-                    user.responds_to_video_note = responds_to_video_note
-                if transcribe_voice_only is not None:
-                    user.transcribe_voice_only = transcribe_voice_only
-                if is_admin is not None:
-                    user.is_admin = is_admin
-
-                await session.commit()
+            if not update_data:
                 return True
-        except Exception as e:
-            logger.error(f"Error updating user settings: {e}")
+
+            stmt = update(User).where(User.id == user_id).values(**update_data)
+            await self.session.execute(stmt)
+            await self.session.commit()
+            return True
+        except SQLAlchemyError as e:
+            logger.error(f"Error updating user settings for user_id={user_id}: {e}", exc_info=True)
+            await self.session.rollback()
             return False
