@@ -6,6 +6,5 @@ google-genai
 pydantic-settings
 alembic
 psycopg2-binary
-opencv-python-headless>=4.11.0
-numpy>=2.2.5
+ffmpeg-python>=0.2.0
 pillow>=11.1.0

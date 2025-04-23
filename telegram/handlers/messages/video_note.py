@@ -3,8 +3,7 @@ import io
 import tempfile
 import os
 from PIL import Image
-import numpy as np
-import cv2
+import ffmpeg
 from aiogram import F, Router
 from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
@@ -19,114 +18,72 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 def process_video_data(video_data: bytes) -> bytes:
-    """Process video data to ensure minimum duration of 2.0 seconds."""
+    """Process video data to ensure minimum duration of 2.0 seconds using ffmpeg."""
     try:
         logger.info(f"Starting video processing. Input size: {len(video_data)} bytes")
         
-        # Create a temporary file on disk
-        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as temp_file:
-            temp_file.write(video_data)
-            temp_file.flush()
-            logger.info(f"Created temporary file: {temp_file.name}")
+        # Create temporary files
+        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as input_file, \
+             tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as output_file:
             
-            # Use OpenCV to read video properties
-            cap = cv2.VideoCapture(temp_file.name)
-            if not cap.isOpened():
-                logger.error("Failed to open video file")
+            # Write input video data
+            input_file.write(video_data)
+            input_file.flush()
+            logger.info(f"Created temporary input file: {input_file.name}")
+            
+            # Get video duration using ffprobe
+            try:
+                probe = ffmpeg.probe(input_file.name)
+                duration = float(probe['format']['duration'])
+                logger.info(f"Original video duration: {duration:.2f}s")
+            except ffmpeg.Error as e:
+                logger.error(f"Failed to get video duration: {e.stderr.decode()}")
                 return video_data
-                
-            fps = cap.get(cv2.CAP_PROP_FPS)
-            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            duration = frame_count / fps if fps > 0 else 0
-            width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-            height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-            
-            logger.info(f"Original video properties: duration={duration:.2f}s, fps={fps}, frames={frame_count}, resolution={width}x{height}")
             
             if duration >= 2.0:
-                # Video is long enough, return as is
                 logger.info("Video is already long enough, returning original")
-                cap.release()
-                os.unlink(temp_file.name)
+                os.unlink(input_file.name)
                 return video_data
             
-            # Video is too short, we need to extend it
-            logger.info(f"Video is too short ({duration:.2f}s), will extend to 2.0s")
+            # Calculate how many times we need to loop the video
+            loop_count = int(2.0 / duration) + 1
+            logger.info(f"Will loop video {loop_count} times to reach 2.0s")
             
-            # Get the last frame
-            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_count - 1)
-            ret, last_frame = cap.read()
-            if not ret:
-                logger.error("Failed to read last frame")
-                cap.release()
-                os.unlink(temp_file.name)
+            # Process video with ffmpeg
+            try:
+                stream = ffmpeg.input(input_file.name)
+                video = stream.video.filter('loop', loop=loop_count, size=1, start=0)
+                audio = stream.audio.filter('aloop', loop=loop_count, size=1)
+                
+                stream = ffmpeg.output(
+                    video, audio,
+                    output_file.name,
+                    t=2.0,  # Limit to 2.0 seconds
+                    vcodec='libx264',  # Use H.264 codec
+                    preset='ultrafast',  # Fast encoding
+                    crf=23,  # Good quality
+                    acodec='aac',  # Use AAC audio codec
+                    audio_bitrate='128k'  # Audio bitrate
+                )
+                
+                ffmpeg.run(stream, overwrite_output=True, capture_stdout=True, capture_stderr=True)
+                logger.info("Successfully processed video with ffmpeg")
+                
+            except ffmpeg.Error as e:
+                logger.error(f"ffmpeg processing failed: {e.stderr.decode()}")
+                os.unlink(input_file.name)
                 return video_data
             
-            # Calculate how many frames we need to add
-            frames_needed = int((2.0 - duration) * fps)
-            logger.info(f"Need to add {frames_needed} frames to reach 2.0s")
-            
-            # Create a new video writer with better encoding settings
-            output_path = temp_file.name + '_extended.mp4'
-            fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Using MPEG-4 codec
-            out = cv2.VideoWriter(
-                output_path,
-                fourcc,
-                fps,
-                (width, height),
-                isColor=True
-            )
-            
-            if not out.isOpened():
-                logger.error("Failed to create output video writer")
-                cap.release()
-                os.unlink(temp_file.name)
-                return video_data
-            
-            # Write original frames
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            frames_written = 0
-            for _ in range(frame_count):
-                ret, frame = cap.read()
-                if ret:
-                    out.write(frame)
-                    frames_written += 1
-            
-            logger.info(f"Wrote {frames_written} original frames")
-            
-            # Add additional frames
-            for _ in range(frames_needed):
-                out.write(last_frame)
-                frames_written += 1
-            
-            logger.info(f"Added {frames_needed} additional frames, total frames written: {frames_written}")
+            # Read processed video
+            with open(output_file.name, 'rb') as f:
+                processed_data = f.read()
             
             # Clean up
-            cap.release()
-            out.release()
-            os.unlink(temp_file.name)
+            os.unlink(input_file.name)
+            os.unlink(output_file.name)
             
-            # Verify the extended video
-            cap = cv2.VideoCapture(output_path)
-            if not cap.isOpened():
-                logger.error("Failed to verify extended video")
-                os.unlink(output_path)
-                return video_data
-                
-            extended_fps = cap.get(cv2.CAP_PROP_FPS)
-            extended_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            extended_duration = extended_frames / extended_fps if extended_fps > 0 else 0
-            logger.info(f"Extended video properties: duration={extended_duration:.2f}s, fps={extended_fps}, frames={extended_frames}")
-            
-            # Read the extended video
-            with open(output_path, 'rb') as f:
-                extended_data = f.read()
-            
-            os.unlink(output_path)
-            cap.release()
-            
-            logger.info(f"Video processing complete: original size={len(video_data)}, extended size={len(extended_data)}")
-            return extended_data
+            logger.info(f"Video processing complete: original size={len(video_data)}, processed size={len(processed_data)}")
+            return processed_data
             
     except Exception as e:
         logger.error(f"Error processing video: {e}", exc_info=True)
