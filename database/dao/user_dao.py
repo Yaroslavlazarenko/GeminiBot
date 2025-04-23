@@ -71,7 +71,7 @@ class UserDAO:
     ) -> bool:
         """Update user settings."""
         try:
-            async with self.session() as session:
+            async with self.session as session:
                 user = await session.get(User, user_id)
                 if not user:
                     return False
