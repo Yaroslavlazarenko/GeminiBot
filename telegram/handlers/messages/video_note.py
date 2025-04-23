@@ -37,18 +37,23 @@ async def video_note_handler(
         await send_error_message(message, "Помилка: не вдалося ідентифікувати користувача.")
         return
 
+    # Get user display name for better identification
+    user_display_name = message.from_user.full_name
+    if not user_display_name:
+        user_display_name = f"User {user.telegram_id}"
+
     if not user.responds_to_voice:  # Using the same setting as voice messages
-        logger.debug(f"Ignoring video note from user {user.telegram_id} in chat {chat.id} due to USER settings.")
+        logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to USER settings.")
         return
     if group and not group.responds_to_voice:  # Using the same setting as voice messages
-        logger.debug(f"Ignoring video note from user {user.telegram_id} in group chat {chat.id} (DB ID: {group.id}) due to GROUP settings.")
+        logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} (DB ID: {group.id}) due to GROUP settings.")
         return
 
     if not message.video_note:
-        logger.warning(f"Video note object is missing for user {user.telegram_id} in chat {chat.id}")
+        logger.warning(f"Video note object is missing for user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id}")
         return
 
-    logger.info(f"Processing video note from user {user.telegram_id} in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
+    logger.info(f"Processing video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
     try:
         await message.bot.send_chat_action(chat_id=chat.id, action="typing")
     except Exception as inner_e:
@@ -69,7 +74,7 @@ async def video_note_handler(
             await send_error_message(message, "Помилка: не вдалося завантажити відео (отримано None).")
             return
         video_data = downloaded_file.read()
-        logger.debug(f"Downloaded {len(video_data)} bytes for video note from user {user.telegram_id} in chat {chat.id}")
+        logger.debug(f"Downloaded {len(video_data)} bytes for video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id}")
     except (TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError) as e:
         logger.error(f"Telegram API error downloading video note file: {e}", exc_info=True)
         await send_error_message(message, f"Помилка мережі або API Telegram під час завантаження: {e}.")
@@ -80,7 +85,7 @@ async def video_note_handler(
         return
 
     if not video_data:
-        logger.error(f"Video data is empty after download attempt for user {user.telegram_id}")
+        logger.error(f"Video data is empty after download attempt for user {user_display_name} (ID: {user.telegram_id})")
         return
 
     try:
@@ -88,7 +93,7 @@ async def video_note_handler(
         await message_dao.add_message(
             user_id=user.id, 
             role=MessageRole.USER, 
-            text="Message info: next message is video note", 
+            text=f"Message info: next message is video note from {user_display_name}", 
             group_id=group_db_id,
             telegram_message_id=message.message_id
         )
@@ -101,7 +106,7 @@ async def video_note_handler(
             group_id=group_db_id,
             telegram_message_id=message.message_id
         )
-        logger.debug(f"User video note message queued for save (user {user.telegram_id}, group_id {group_db_id})")
+        logger.debug(f"User video note message queued for save (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
 
         # Different handling for group vs private messages
         if group_db_id is not None:
@@ -112,7 +117,7 @@ async def video_note_handler(
             # Add group context to the first message
             if message_history:
                 group_context = types.Content(
-                    parts=[types.Part(text=f"Context: This is a group chat named '{group.name}'. The video note is from user {user.telegram_id}. Please analyze the video note and provide a concise response.")],
+                    parts=[types.Part(text=f"Context: This is a group chat named '{group.name}'. The video note is from {user_display_name} (ID: {user.telegram_id}). Please analyze the video note and provide a concise response.")],
                     role="user"
                 )
                 message_history = [group_context] + message_history
@@ -126,10 +131,10 @@ async def video_note_handler(
             message_history = await message_dao.get_user_private_messages_as_contents(user_id=user.id)
             logger.debug(f"Retrieved {len(message_history)} messages from private history")
 
-        logger.debug(f"Fetched {len(message_history)} messages for context (user {user.telegram_id}, group_id {group_db_id})")
+        logger.debug(f"Fetched {len(message_history)} messages for context (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
 
         if not message_history:
-            logger.warning(f"Message history is empty before calling Gemini for user {user.telegram_id}, group_id {group_db_id}")
+            logger.warning(f"Message history is empty before calling Gemini for user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id}")
             await send_error_message(message, "Помилка: не вдалося отримати історію повідомлень.")
             return
 
@@ -138,7 +143,7 @@ async def video_note_handler(
             logger.debug(f"Message {i+1} from end: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
 
         generate_full_response = not user.transcribe_voice_only
-        logger.debug(f"Calling AI for video note. Generate response based on user setting: {generate_full_response} (user {user.telegram_id}, group_id {group_db_id})")
+        logger.debug(f"Calling AI for video note. Generate response based on user setting: {generate_full_response} (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
 
         try:
             # Add more detailed logging before calling Gemini
@@ -182,5 +187,5 @@ async def video_note_handler(
             return
 
     except Exception as e:
-        logger.error(f"Handler error processing video note for user {user.telegram_id} in chat {chat.id}: {e}", exc_info=True)
+        logger.error(f"Handler error processing video note for user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id}: {e}", exc_info=True)
         await send_error_message(message, "🤯 Ой! Сталася неочікувана помилка під час обробки вашого відео повідомлення.")
