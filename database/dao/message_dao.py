@@ -196,6 +196,7 @@ class MessageHistoryDAO:
 
         try:
             role_str = message.role.value
+            logger.debug(f"Processing message {message.id} with role {role_str}")
         except (AttributeError, ValueError) as e:
             logger.error(f"Invalid role value for message {message.id}: {e}")
             return None
@@ -206,6 +207,7 @@ class MessageHistoryDAO:
         if message.text:
             try:
                 parts.append(types.Part.from_text(text=message.text))
+                logger.debug(f"Added text part to message {message.id}")
             except Exception as e:
                 logger.error(f"Error creating text part for message {message.id}: {e}")
                 return None
@@ -214,6 +216,7 @@ class MessageHistoryDAO:
         if message.audio_data:
             try:
                 parts.append(types.Part.from_bytes(data=message.audio_data, mime_type="audio/ogg"))
+                logger.debug(f"Added audio part to message {message.id}")
             except Exception as e:
                 logger.error(f"Error creating audio part for message {message.id}: {e}")
                 return None
@@ -223,6 +226,7 @@ class MessageHistoryDAO:
             try:
                 # Telegram always converts images to JPEG
                 parts.append(types.Part.from_bytes(data=message.image_data, mime_type="image/jpeg"))
+                logger.debug(f"Added image part to message {message.id}")
             except Exception as e:
                 logger.error(f"Error creating image part for message {message.id}: {e}")
                 return None
@@ -231,6 +235,7 @@ class MessageHistoryDAO:
         if message.video_data:
             try:
                 parts.append(types.Part.from_bytes(data=message.video_data, mime_type="video/mp4"))
+                logger.debug(f"Added video part to message {message.id}")
             except Exception as e:
                 logger.error(f"Error creating video part for message {message.id}: {e}")
                 return None
@@ -240,7 +245,9 @@ class MessageHistoryDAO:
             return None
 
         try:
-            return types.Content(role=role_str, parts=parts)
+            content = types.Content(role=role_str, parts=parts)
+            logger.debug(f"Successfully created Content for message {message.id} with {len(parts)} parts")
+            return content
         except Exception as e:
             logger.error(f"Unexpected error creating Content for message {message.id}: {e}")
             return None

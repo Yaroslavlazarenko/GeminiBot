@@ -107,6 +107,8 @@ async def video_note_handler(
         if group_db_id is not None:
             # For groups, limit history and add group context
             message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id, limit=500)
+            logger.debug(f"Retrieved {len(message_history)} messages from group history")
+            
             # Add group context to the first message
             if message_history:
                 group_context = types.Content(
@@ -114,14 +116,22 @@ async def video_note_handler(
                     role="user"
                 )
                 message_history = [group_context] + message_history
+                logger.debug("Added group context to message history")
         else:
             # For private messages, use full history
             message_history = await message_dao.get_user_private_messages_as_contents(user_id=user.id)
+            logger.debug(f"Retrieved {len(message_history)} messages from private history")
 
         logger.debug(f"Fetched {len(message_history)} messages for context (user {user.telegram_id}, group_id {group_db_id})")
 
         if not message_history:
             logger.warning(f"Message history is empty before calling Gemini for user {user.telegram_id}, group_id {group_db_id}")
+            await send_error_message(message, "Помилка: не вдалося отримати історію повідомлень.")
+            return
+
+        # Log the structure of the last few messages
+        for i, msg in enumerate(message_history[-3:]):
+            logger.debug(f"Message {i+1} from end: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
 
         generate_full_response = not user.transcribe_voice_only
         logger.debug(f"Calling AI for video note. Generate response based on user setting: {generate_full_response} (user {user.telegram_id}, group_id {group_db_id})")
