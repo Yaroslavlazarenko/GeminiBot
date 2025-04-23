@@ -42,6 +42,19 @@ async def video_note_handler(
     if not user_display_name:
         user_display_name = f"User {user.telegram_id}"
 
+    # Log detailed user information
+    logger.info(f"Processing video note from user: name={user_display_name}, id={user.telegram_id}, username={message.from_user.username}, is_bot={message.from_user.is_bot}")
+    logger.info(f"User settings: responds_to_voice={user.responds_to_voice}, transcribe_voice_only={user.transcribe_voice_only}")
+
+    # Check if message is forwarded
+    is_forwarded = message.forward_from is not None or message.forward_from_chat is not None
+    if is_forwarded:
+        original_sender = message.forward_from
+        if original_sender:
+            logger.info(f"Processing forwarded video note from original sender {original_sender.full_name} (ID: {original_sender.id})")
+        else:
+            logger.info(f"Processing forwarded video note from unknown original sender")
+
     if not user.responds_to_voice:  # Using the same setting as voice messages
         logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to USER settings.")
         return
@@ -53,7 +66,7 @@ async def video_note_handler(
         logger.warning(f"Video note object is missing for user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id}")
         return
 
-    logger.info(f"Processing video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
+    logger.info(f"Processing video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} (type: {chat.type}, group_id: {group_db_id}, forwarded: {is_forwarded})")
     try:
         await message.bot.send_chat_action(chat_id=chat.id, action="typing")
     except Exception as inner_e:
@@ -90,10 +103,16 @@ async def video_note_handler(
 
     try:
         # Add message info first
+        message_info = f"Message info: next message is video note from {user_display_name}"
+        if is_forwarded and original_sender:
+            message_info += f" (forwarded from {original_sender.full_name})"
+        elif is_forwarded:
+            message_info += " (forwarded from unknown user)"
+            
         await message_dao.add_message(
             user_id=user.id, 
             role=MessageRole.USER, 
-            text=f"Message info: next message is video note from {user_display_name}", 
+            text=message_info, 
             group_id=group_db_id,
             telegram_message_id=message.message_id
         )
@@ -116,8 +135,15 @@ async def video_note_handler(
             
             # Add group context to the first message
             if message_history:
+                group_context_text = f"Context: This is a group chat named '{group.name}'. The video note is from {user_display_name} (ID: {user.telegram_id})"
+                if is_forwarded and original_sender:
+                    group_context_text += f" (forwarded from {original_sender.full_name})"
+                elif is_forwarded:
+                    group_context_text += " (forwarded from unknown user)"
+                group_context_text += ". Please analyze the video note and provide a concise response."
+                
                 group_context = types.Content(
-                    parts=[types.Part(text=f"Context: This is a group chat named '{group.name}'. The video note is from {user_display_name} (ID: {user.telegram_id}). Please analyze the video note and provide a concise response.")],
+                    parts=[types.Part(text=group_context_text)],
                     role="user"
                 )
                 message_history = [group_context] + message_history
@@ -126,6 +152,12 @@ async def video_note_handler(
                 # Log the structure of the first few messages
                 for i, msg in enumerate(message_history[:3]):
                     logger.debug(f"Message {i+1} from start: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
+                    if msg.parts:
+                        for j, part in enumerate(msg.parts):
+                            if hasattr(part, 'text') and part.text:
+                                logger.debug(f"  Part {j+1} text: {part.text[:100]}...")
+                            elif hasattr(part, 'data') and part.data:
+                                logger.debug(f"  Part {j+1} data size: {len(part.data)} bytes")
         else:
             # For private messages, use full history
             message_history = await message_dao.get_user_private_messages_as_contents(user_id=user.id)
@@ -141,6 +173,12 @@ async def video_note_handler(
         # Log the structure of the last few messages
         for i, msg in enumerate(message_history[-3:]):
             logger.debug(f"Message {i+1} from end: role={msg.role}, parts={len(msg.parts) if msg.parts else 0}")
+            if msg.parts:
+                for j, part in enumerate(msg.parts):
+                    if hasattr(part, 'text') and part.text:
+                        logger.debug(f"  Part {j+1} text: {part.text[:100]}...")
+                    elif hasattr(part, 'data') and part.data:
+                        logger.debug(f"  Part {j+1} data size: {len(part.data)} bytes")
 
         generate_full_response = not user.transcribe_voice_only
         logger.debug(f"Calling AI for video note. Generate response based on user setting: {generate_full_response} (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
