@@ -68,7 +68,7 @@ def process_video_data(video_data: bytes) -> bytes:
             
             # Create a new video writer with better encoding settings
             output_path = temp_file.name + '_extended.mp4'
-            fourcc = cv2.VideoWriter_fourcc(*'avc1')  # Using H.264 codec
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')  # Using MPEG-4 codec
             out = cv2.VideoWriter(
                 output_path,
                 fourcc,
