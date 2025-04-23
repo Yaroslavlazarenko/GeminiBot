@@ -1,5 +1,8 @@
 import logging
-
+import io
+from PIL import Image
+import numpy as np
+import cv2
 from aiogram import F, Router
 from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
@@ -12,6 +15,63 @@ from ..utils import send_error_message, get_group_or_none, handle_gemini_result
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+def process_video_data(video_data: bytes) -> bytes:
+    """Process video data to ensure minimum duration of 1.5 seconds."""
+    try:
+        # Create a temporary file to read video properties
+        with io.BytesIO(video_data) as temp_file:
+            # Use OpenCV to read video properties
+            cap = cv2.VideoCapture(temp_file)
+            fps = cap.get(cv2.CAP_PROP_FPS)
+            frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = frame_count / fps if fps > 0 else 0
+            
+            logger.debug(f"Original video: duration={duration:.2f}s, fps={fps}, frames={frame_count}")
+            
+            if duration >= 1.5:
+                # Video is long enough, return as is
+                return video_data
+            
+            # Video is too short, we need to extend it
+            # Get the last frame
+            cap.set(cv2.CAP_PROP_POS_FRAMES, frame_count - 1)
+            ret, last_frame = cap.read()
+            if not ret:
+                logger.error("Failed to read last frame")
+                return video_data
+            
+            # Calculate how many frames we need to add
+            frames_needed = int((1.5 - duration) * fps)
+            logger.debug(f"Need to add {frames_needed} frames to reach 1.5s")
+            
+            # Create a new video writer
+            output = io.BytesIO()
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            out = cv2.VideoWriter(output, fourcc, fps, (last_frame.shape[1], last_frame.shape[0]))
+            
+            # Write original frames
+            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+            for _ in range(frame_count):
+                ret, frame = cap.read()
+                if ret:
+                    out.write(frame)
+            
+            # Add last frame multiple times
+            for _ in range(frames_needed):
+                out.write(last_frame)
+            
+            out.release()
+            cap.release()
+            
+            # Get the processed video data
+            processed_data = output.getvalue()
+            logger.debug(f"Processed video: original size={len(video_data)}, new size={len(processed_data)}")
+            return processed_data
+            
+    except Exception as e:
+        logger.error(f"Error processing video: {e}", exc_info=True)
+        return video_data
 
 @router.message(F.video_note)
 async def video_note_handler(
@@ -102,6 +162,10 @@ async def video_note_handler(
         return
 
     try:
+        # Process video data to ensure minimum duration
+        processed_video_data = process_video_data(video_data)
+        logger.debug(f"Video processing complete: original size={len(video_data)}, processed size={len(processed_video_data)}")
+
         # Add message info first
         message_info = f"Message info: next message is video note from {user_display_name}"
         if is_forwarded and original_sender:
@@ -121,7 +185,7 @@ async def video_note_handler(
         await message_dao.add_message(
             user_id=user.id, 
             role=MessageRole.USER, 
-            video_data=video_data, 
+            video_data=processed_video_data, 
             group_id=group_db_id,
             telegram_message_id=message.message_id
         )
@@ -141,6 +205,15 @@ async def video_note_handler(
                 elif is_forwarded:
                     group_context_text += " (forwarded from unknown user)"
                 group_context_text += ". Please analyze the video note and provide a concise response."
+                
+                # Add user context for non-forwarded messages
+                if not is_forwarded:
+                    user_context = types.Content(
+                        parts=[types.Part(text=f"User context: This is a video note from {user_display_name} (ID: {user.telegram_id}) in the group chat '{group.name}'. Please analyze the video note and provide a concise response.")],
+                        role="user"
+                    )
+                    message_history = [user_context] + message_history
+                    logger.debug("Added user context for non-forwarded message")
                 
                 group_context = types.Content(
                     parts=[types.Part(text=group_context_text)],
