@@ -133,6 +133,25 @@ async def toggle_group_transcribe_video_note_callback(callback: CallbackQuery, g
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
+@router.callback_query(lambda c: c.data == "refresh_group_menu")
+async def refresh_group_menu_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    """Обновляет меню группы (inline keyboard) по кнопке 'Оновити'."""
+    chat = callback.message.chat
+    group = await get_group_or_none(group_dao, chat)
+    if not group:
+        await callback.answer("Групу не знайдено у базі", show_alert=True)
+        return
+    try:
+        keyboard = get_group_settings_keyboard(group)
+        await callback.message.edit_reply_markup(reply_markup=keyboard)
+        await callback.answer("Меню оновлено")
+    except TelegramBadRequest as e:
+        if "message is not modified" in str(e):
+            await callback.answer("Меню вже актуальне")
+        else:
+            logger.error(f"Error refreshing group menu: {e}")
+            await callback.answer("❌ Помилка при оновленні меню", show_alert=True)
+
 def get_group_settings_keyboard(group) -> InlineKeyboardMarkup:
     """Создает клавиатуру с настройками для группы."""
     keyboard = [
