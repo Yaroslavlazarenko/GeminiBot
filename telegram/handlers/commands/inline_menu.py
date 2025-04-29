@@ -8,74 +8,10 @@ from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
 from ..utils import get_group_or_none
 from ..utils import is_user_group_admin
 
+
 logger = logging.getLogger(__name__)
 router = Router()
 
-def get_settings_keyboard(user: User, show_group_settings_button=False) -> InlineKeyboardMarkup:
-    """Creates an inline keyboard with user settings."""
-    keyboard = [
-        [
-            InlineKeyboardButton(
-                text=f"{'✅' if not user.is_global_disabled else '❌'} Відповідати на повідомлення",
-                callback_data="toggle_global_disabled"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text=f"{'✅' if user.responds_to_text else '❌'} Відповідати на текст",
-                callback_data="toggle_responds_to_text"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text=f"{'✅' if user.responds_to_voice else '❌'} Відповідати на голосові",
-                callback_data="toggle_responds_to_voice"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text=f"{'✅' if user.responds_to_photo else '❌'} Відповідати на фото",
-                callback_data="toggle_responds_to_photo"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text=f"{'✅' if user.responds_to_video_note else '❌'} Відповідати на відео-кружки",
-                callback_data="toggle_responds_to_video_note"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text=f"{'✅' if user.transcribe_voice_only else '❌'} Транскрибувати голосові",
-                callback_data="toggle_transcribe_voice_only"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text=f"{'✅' if user.transcribe_video_note else '❌'} Транскрибувати відео-кружки",
-                callback_data="toggle_transcribe_video_note"
-            )
-        ],
-        [
-            InlineKeyboardButton(
-                text="🔄 Оновити",
-                callback_data="refresh_menu"
-            ),
-            InlineKeyboardButton(
-                text="❌ Закрити",
-                callback_data="close_menu"
-            )
-        ]
-    ]
-    # Кнопка перехода к настройкам группы для админов
-    if show_group_settings_button:
-        keyboard.append([
-            InlineKeyboardButton(
-                text="⚙️ Налаштування групи",
-                callback_data="open_group_settings_menu"
-            )
-        ])
-    return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 from .group_inline_menu import show_group_menu
 from .keyboards import get_settings_keyboard, get_group_settings_keyboard
@@ -105,8 +41,7 @@ async def show_menu(message: Message, user: User, group_dao: GroupDAO):
 
 @router.callback_query(F.data == "back_to_user_settings")
 async def back_to_user_settings_callback(callback: CallbackQuery, user: User):
-    from .inline_menu import get_settings_keyboard
-    from ..utils import is_user_group_admin
+
     chat = callback.message.chat
     is_admin = await is_user_group_admin(chat, user.telegram_id)
     keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
@@ -334,7 +269,11 @@ async def close_menu_callback(callback: CallbackQuery):
 async def refresh_menu_callback(callback: CallbackQuery, user: User):
     """Handler for refreshing the menu."""
     try:
-        keyboard = get_settings_keyboard(user)
+        chat = callback.message.chat
+        is_admin = False
+        if chat.type in ["group", "supergroup"]:
+            is_admin = await is_user_group_admin(chat, user.telegram_id)
+        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
         await callback.message.edit_reply_markup(reply_markup=keyboard)
         await callback.answer("Меню оновлено")
     except TelegramBadRequest as e:
