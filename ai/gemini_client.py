@@ -173,29 +173,6 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                 raw_text = response.text.strip()
                 clean_text = re.sub(r'```(?:json)?\n?', '', raw_text)
                 clean_text = clean_text.strip()
-                
-                def extract_json_object(text):
-                    # Ищем первую открывающую скобку
-                    start = text.find('{')
-                    if start == -1:
-                        return None
-                    
-                    # Отслеживаем вложенность скобок
-                    count = 0
-                    for i in range(start, len(text)):
-                        if text[i] == '{':
-                            count += 1
-                        elif text[i] == '}':
-                            count -= 1
-                            if count == 0:
-                                # Нашли соответствующую закрывающую скобку
-                                return text[start:i + 1]
-                    return None
-
-                # Извлекаем первый полный JSON объект
-                json_text = extract_json_object(clean_text)
-                if json_text:
-                    clean_text = json_text
 
                 # Парсим JSON ответ от модели
                 response_json = json.loads(clean_text)
