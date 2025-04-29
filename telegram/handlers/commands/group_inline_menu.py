@@ -3,7 +3,6 @@ from aiogram import Router, filters
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
-from .group_inline_menu import get_group_settings_keyboard
 from database.models import User
 from database.dao import GroupDAO
 from ..utils import get_group_or_none
