@@ -180,11 +180,25 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                     multiple_json = False
                 except json.JSONDecodeError as e:
                     # Try to split if multiple objects are concatenated
-                    import re as _re
-                    json_objects = _re.findall(r'\{(?:[^{}]|(?R))*\}', clean_text)
-                    if json_objects:
-                        logger.warning(f"Multiple JSON objects found in Gemini response. Using the first one.")
-                        response_json = json.loads(json_objects[0])
+                    from json import JSONDecoder
+                    decoder = JSONDecoder()
+                    objs = []
+                    s = clean_text.lstrip()
+                    idx = 0
+                    while idx < len(s):
+                        try:
+                            obj, end = decoder.raw_decode(s, idx)
+                            objs.append(obj)
+                            idx = end
+                            # skip whitespace
+                            while idx < len(s) and s[idx].isspace():
+                                idx += 1
+                        except json.JSONDecodeError:
+                            break
+                    if objs:
+                        if len(objs) > 1:
+                            logger.warning(f"Multiple JSON objects found in Gemini response. Using the first one.")
+                        response_json = objs[0]
                         multiple_json = True
                     else:
                         raise e
