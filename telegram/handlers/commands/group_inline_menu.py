@@ -183,7 +183,7 @@ async def refresh_group_menu_callback(callback: CallbackQuery, group_dao: GroupD
         await callback.answer("Групу не знайдено у базі", show_alert=True)
         return
     try:
-        keyboard = get_group_settings_keyboard(group)
+        keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
         await callback.message.edit_reply_markup(reply_markup=keyboard)
         await callback.answer("Меню оновлено")
     except TelegramBadRequest as e:
