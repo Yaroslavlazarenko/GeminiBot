@@ -48,6 +48,10 @@ def get_settings_keyboard(user: User, show_group_settings_button=False) -> Inlin
         ],
         [
             InlineKeyboardButton(
+                text="ℹ️ Довідка",
+                callback_data="show_help"
+            ),
+            InlineKeyboardButton(
                 text="🔄 Оновити",
                 callback_data="refresh_menu"
             ),

@@ -252,7 +252,11 @@ async def show_help_callback(callback: CallbackQuery, user: User):
         "Натисніть на кнопку, щоб змінити відповідне налаштування"
     )
     await callback.answer()
-    keyboard = get_settings_keyboard(user)
+    chat = callback.message.chat
+    is_admin = False
+    if chat.type in ["group", "supergroup"]:
+        is_admin = await is_user_group_admin(chat, user.telegram_id)
+    keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
     await callback.message.edit_text(
         help_text,
         parse_mode="HTML",
