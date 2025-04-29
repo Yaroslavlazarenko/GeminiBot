@@ -7,7 +7,6 @@ from database.models import User
 from database.dao import GroupDAO
 from ..utils import is_user_group_admin
 from ..utils import get_group_or_none
-from .group_inline_menu import get_group_settings_keyboard
 from .inline_menu import get_settings_keyboard
 
 logger = logging.getLogger(__name__)
