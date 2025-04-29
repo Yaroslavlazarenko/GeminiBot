@@ -76,6 +76,18 @@ class Group(Base, PrettyRepr):
     responds_to_photo: Mapped[bool] = mapped_column(
         Boolean, default=True, server_default=true(), nullable=False
     )
+    is_global_disabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    responds_to_video_note: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=true(), nullable=False
+    )
+    transcribe_voice_only: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
+    transcribe_video_note: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=false(), nullable=False
+    )
 
     messages: Mapped[List["MessageHistory"]] = relationship(
         back_populates="group"

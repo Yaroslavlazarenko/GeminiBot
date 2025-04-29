@@ -11,13 +11,101 @@ from ..utils import get_group_or_none
 logger = logging.getLogger(__name__)
 router = Router()
 
+from aiogram.types import CallbackQuery
+
+@router.callback_query(lambda c: c.data == "toggle_group_global_disabled")
+async def toggle_group_global_disabled_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    chat = callback.message.chat
+    group = await get_group_or_none(group_dao, chat)
+    if not group:
+        await callback.answer("Групу не знайдено у базі", show_alert=True)
+        return
+    new_value = not group.is_global_disabled
+    success = await group_dao.update_group_settings(group_id=group.id, is_global_disabled=new_value)
+    if success:
+        group.is_global_disabled = new_value
+        status = "увімкнено" if not new_value else "вимкнено"
+        await callback.answer(f"✅ Глобальні відповіді {status}")
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
+@router.callback_query(lambda c: c.data == "toggle_group_responds_to_text")
+async def toggle_group_responds_to_text_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    chat = callback.message.chat
+    group = await get_group_or_none(group_dao, chat)
+    if not group:
+        await callback.answer("Групу не знайдено у базі", show_alert=True)
+        return
+    new_value = not group.responds_to_text
+    success = await group_dao.update_group_settings(group_id=group.id, responds_to_text=new_value)
+    if success:
+        group.responds_to_text = new_value
+        status = "увімкнено" if new_value else "вимкнено"
+        await callback.answer(f"✅ Відповіді на текст {status}")
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
+@router.callback_query(lambda c: c.data == "toggle_group_responds_to_voice")
+async def toggle_group_responds_to_voice_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    chat = callback.message.chat
+    group = await get_group_or_none(group_dao, chat)
+    if not group:
+        await callback.answer("Групу не знайдено у базі", show_alert=True)
+        return
+    new_value = not group.responds_to_voice
+    success = await group_dao.update_group_settings(group_id=group.id, responds_to_voice=new_value)
+    if success:
+        group.responds_to_voice = new_value
+        status = "увімкнено" if new_value else "вимкнено"
+        await callback.answer(f"✅ Відповіді на голосові {status}")
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
+@router.callback_query(lambda c: c.data == "toggle_group_responds_to_photo")
+async def toggle_group_responds_to_photo_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    chat = callback.message.chat
+    group = await get_group_or_none(group_dao, chat)
+    if not group:
+        await callback.answer("Групу не знайдено у базі", show_alert=True)
+        return
+    new_value = not group.responds_to_photo
+    success = await group_dao.update_group_settings(group_id=group.id, responds_to_photo=new_value)
+    if success:
+        group.responds_to_photo = new_value
+        status = "увімкнено" if new_value else "вимкнено"
+        await callback.answer(f"✅ Відповіді на фото {status}")
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
 def get_group_settings_keyboard(group) -> InlineKeyboardMarkup:
     """Создает клавиатуру с настройками для группы."""
     keyboard = [
         [
             InlineKeyboardButton(
+                text=f"{'✅' if not group.is_global_disabled else '❌'} Відповідати на повідомлення",
+                callback_data="toggle_group_global_disabled"
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text=f"{'✅' if group.responds_to_text else '❌'} Відповідати на текст",
                 callback_data="toggle_group_responds_to_text"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if group.responds_to_voice else '❌'} Відповідати на голосові",
+                callback_data="toggle_group_responds_to_voice"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if group.responds_to_photo else '❌'} Відповідати на фото",
+                callback_data="toggle_group_responds_to_photo"
             )
         ],
         [
