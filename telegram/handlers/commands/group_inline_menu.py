@@ -1,5 +1,5 @@
 import logging
-from aiogram import Router, filters
+from aiogram import Router, filters, F
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
@@ -33,7 +33,7 @@ async def show_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO)
     ]])
     await callback.message.edit_text(help_text, parse_mode="HTML", reply_markup=keyboard)
 
-@router.callback_query(lambda c: c.data == "close_group_help")
+@router.callback_query(F.data == "close_group_help")
 async def close_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
     group = await get_group_or_none(group_dao, chat)
@@ -52,7 +52,7 @@ from aiogram.types import CallbackQuery
 
 # Ensure get_group_settings_keyboard is defined before usage in callbacks
 
-@router.callback_query(lambda c: c.data == "toggle_group_global_disabled")
+@router.callback_query(F.data == "toggle_group_global_disabled")
 async def toggle_group_global_disabled_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
 
@@ -74,7 +74,7 @@ async def toggle_group_global_disabled_callback(callback: CallbackQuery, group_d
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
-@router.callback_query(lambda c: c.data == "toggle_group_responds_to_text")
+@router.callback_query(F.data == "toggle_group_responds_to_text")
 async def toggle_group_responds_to_text_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
     
@@ -96,7 +96,7 @@ async def toggle_group_responds_to_text_callback(callback: CallbackQuery, group_
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
-@router.callback_query(lambda c: c.data == "toggle_group_responds_to_voice")
+@router.callback_query(F.data == "toggle_group_responds_to_voice")
 async def toggle_group_responds_to_voice_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
     is_admin = await is_user_group_admin(chat, callback.from_user.id)
@@ -117,7 +117,7 @@ async def toggle_group_responds_to_voice_callback(callback: CallbackQuery, group
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
-@router.callback_query(lambda c: c.data == "toggle_group_responds_to_photo")
+@router.callback_query(F.data == "toggle_group_responds_to_photo")
 async def toggle_group_responds_to_photo_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
     is_admin = await is_user_group_admin(chat, callback.from_user.id)
@@ -138,7 +138,7 @@ async def toggle_group_responds_to_photo_callback(callback: CallbackQuery, group
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
-@router.callback_query(lambda c: c.data == "toggle_group_responds_to_video_note")
+@router.callback_query(F.data == "toggle_group_responds_to_video_note")
 async def toggle_group_responds_to_video_note_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
     is_admin = await is_user_group_admin(chat, callback.from_user.id)
@@ -159,7 +159,7 @@ async def toggle_group_responds_to_video_note_callback(callback: CallbackQuery, 
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
-@router.callback_query(lambda c: c.data == "toggle_group_transcribe_voice_only")
+@router.callback_query(F.data == "toggle_group_transcribe_voice_only")
 async def toggle_group_transcribe_voice_only_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
     is_admin = await is_user_group_admin(chat, callback.from_user.id)
@@ -180,7 +180,7 @@ async def toggle_group_transcribe_voice_only_callback(callback: CallbackQuery, g
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
-@router.callback_query(lambda c: c.data == "toggle_group_transcribe_video_note")
+@router.callback_query(F.data == "toggle_group_transcribe_video_note")
 async def toggle_group_transcribe_video_note_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
     is_admin = await is_user_group_admin(chat, callback.from_user.id)
@@ -201,7 +201,7 @@ async def toggle_group_transcribe_video_note_callback(callback: CallbackQuery, g
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
-@router.callback_query(lambda c: c.data == "refresh_group_menu")
+@router.callback_query(F.data == "refresh_group_menu")
 async def refresh_group_menu_callback(callback: CallbackQuery, group_dao: GroupDAO):
     """Обновляет меню группы (inline keyboard) по кнопке 'Оновити'."""
     chat = callback.message.chat
@@ -224,7 +224,7 @@ async def refresh_group_menu_callback(callback: CallbackQuery, group_dao: GroupD
             logger.error(f"Error refreshing group menu: {e}")
             await callback.answer("❌ Помилка при оновленні меню", show_alert=True)
 
-@router.callback_query(lambda c: c.data == "open_group_settings_menu")
+@router.callback_query(F.data == "open_group_settings_menu")
 async def open_group_settings_menu_callback(callback: CallbackQuery, group_dao: GroupDAO, user: User):
     
     chat = callback.message.chat
@@ -242,7 +242,7 @@ async def open_group_settings_menu_callback(callback: CallbackQuery, group_dao: 
     )
     await callback.answer()
 
-@router.callback_query(lambda c: c.data == "back_to_user_settings")
+@router.callback_query(F.data == "back_to_user_settings")
 async def back_to_user_settings_callback(callback: CallbackQuery, user: User):
     
     keyboard = get_settings_keyboard(user)
