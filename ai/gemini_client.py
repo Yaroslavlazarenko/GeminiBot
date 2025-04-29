@@ -198,7 +198,6 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                     clean_text = json_text
 
                 # Парсим JSON ответ от модели
-                import json
                 response_json = json.loads(clean_text)
                 # Если результат строка ("{\"text\": ...}"), распарсим ещё раз
                 if isinstance(response_json, str):
