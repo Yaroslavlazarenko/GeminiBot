@@ -199,9 +199,7 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
 
                 # Парсим JSON ответ от модели
                 response_json = json.loads(clean_text)
-                # Если результат строка ("{\"text\": ...}"), распарсим ещё раз
-                if isinstance(response_json, str):
-                    response_json = json.loads(response_json)
+                
                 # Проверяем структуру
                 if not isinstance(response_json, dict):
                     raise ValueError("Response JSON must be an object")
