@@ -11,12 +11,10 @@ from ..utils import get_group_or_none, is_user_group_admin
 logger = logging.getLogger(__name__)
 router = Router()
 
-
-from .group_inline_menu import show_group_menu
-from .keyboards import get_settings_keyboard, get_group_settings_keyboard
+from .keyboards import get_settings_keyboard
 
 @router.message(filters.Command("menu"))
-async def show_menu(message: Message, user: User, group_dao: GroupDAO):
+async def show_menu(message: Message, user: User):
     """Handler for the /menu command."""
     if message.chat.type in ["group", "supergroup"]:
         is_admin = await is_user_group_admin(message.chat, user.telegram_id)
