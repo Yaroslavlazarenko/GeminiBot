@@ -121,7 +121,7 @@ def get_group_settings_keyboard(group, show_user_settings_button=False) -> Inlin
         [
             InlineKeyboardButton(
                 text="ℹ️ Довідка",
-                callback_data="show_group_help"
+                callback_data="show_help"
             ),
             InlineKeyboardButton(
                 text="🔄 Оновити",
