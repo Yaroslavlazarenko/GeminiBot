@@ -81,6 +81,57 @@ async def toggle_group_responds_to_photo_callback(callback: CallbackQuery, group
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
+@router.callback_query(lambda c: c.data == "toggle_group_responds_to_video_note")
+async def toggle_group_responds_to_video_note_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    chat = callback.message.chat
+    group = await get_group_or_none(group_dao, chat)
+    if not group:
+        await callback.answer("Групу не знайдено у базі", show_alert=True)
+        return
+    new_value = not group.responds_to_video_note
+    success = await group_dao.update_group_settings(group_id=group.id, responds_to_video_note=new_value)
+    if success:
+        group.responds_to_video_note = new_value
+        status = "увімкнено" if new_value else "вимкнено"
+        await callback.answer(f"✅ Відповіді на відео-повідомлення {status}")
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
+@router.callback_query(lambda c: c.data == "toggle_group_transcribe_voice_only")
+async def toggle_group_transcribe_voice_only_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    chat = callback.message.chat
+    group = await get_group_or_none(group_dao, chat)
+    if not group:
+        await callback.answer("Групу не знайдено у базі", show_alert=True)
+        return
+    new_value = not group.transcribe_voice_only
+    success = await group_dao.update_group_settings(group_id=group.id, transcribe_voice_only=new_value)
+    if success:
+        group.transcribe_voice_only = new_value
+        status = "увімкнено" if new_value else "вимкнено"
+        await callback.answer(f"✅ Транскрипція тільки голосових {status}")
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
+@router.callback_query(lambda c: c.data == "toggle_group_transcribe_video_note")
+async def toggle_group_transcribe_video_note_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    chat = callback.message.chat
+    group = await get_group_or_none(group_dao, chat)
+    if not group:
+        await callback.answer("Групу не знайдено у базі", show_alert=True)
+        return
+    new_value = not group.transcribe_video_note
+    success = await group_dao.update_group_settings(group_id=group.id, transcribe_video_note=new_value)
+    if success:
+        group.transcribe_video_note = new_value
+        status = "увімкнено" if new_value else "вимкнено"
+        await callback.answer(f"✅ Транскрипція відео-кружків {status}")
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
 def get_group_settings_keyboard(group) -> InlineKeyboardMarkup:
     """Создает клавиатуру с настройками для группы."""
     keyboard = [
@@ -106,6 +157,24 @@ def get_group_settings_keyboard(group) -> InlineKeyboardMarkup:
             InlineKeyboardButton(
                 text=f"{'✅' if group.responds_to_photo else '❌'} Відповідати на фото",
                 callback_data="toggle_group_responds_to_photo"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if group.responds_to_video_note else '❌'} Відповідати на відео-повідомлення",
+                callback_data="toggle_group_responds_to_video_note"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if group.transcribe_voice_only else '❌'} Транскрибувати тільки голосові",
+                callback_data="toggle_group_transcribe_voice_only"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text=f"{'✅' if group.transcribe_video_note else '❌'} Транскрибувати відео-кружки",
+                callback_data="toggle_group_transcribe_video_note"
             )
         ],
         [
