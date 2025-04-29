@@ -34,7 +34,7 @@ async def toggle_group_global_disabled_callback(callback: CallbackQuery, group_d
         group.is_global_disabled = new_value
         status = "увімкнено" if not new_value else "вимкнено"
         await callback.answer(f"✅ Глобальні відповіді {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -56,7 +56,7 @@ async def toggle_group_responds_to_text_callback(callback: CallbackQuery, group_
         group.responds_to_text = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Відповіді на текст {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -77,7 +77,7 @@ async def toggle_group_responds_to_voice_callback(callback: CallbackQuery, group
         group.responds_to_voice = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Відповіді на голосові {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -98,7 +98,7 @@ async def toggle_group_responds_to_photo_callback(callback: CallbackQuery, group
         group.responds_to_photo = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Відповіді на фото {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -119,7 +119,7 @@ async def toggle_group_responds_to_video_note_callback(callback: CallbackQuery, 
         group.responds_to_video_note = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Відповіді на відео-повідомлення {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -140,7 +140,7 @@ async def toggle_group_transcribe_voice_only_callback(callback: CallbackQuery, g
         group.transcribe_voice_only = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Транскрипція тільки голосових {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -161,7 +161,7 @@ async def toggle_group_transcribe_video_note_callback(callback: CallbackQuery, g
         group.transcribe_video_note = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Транскрипція відео-кружків {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group))
+        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
