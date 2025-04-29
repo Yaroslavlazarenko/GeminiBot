@@ -244,7 +244,7 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                 }
                 
             except json.JSONDecodeError as e:
-                logger.warning(f"Failed to parse response as JSON: {e}. Response: {raw_text[:200]}...")
+                logger.error(f"Failed to parse response as JSON: {e}. Response: {raw_text[:1000]}...")
                 return {
                     "type": "error",
                     "data": {
