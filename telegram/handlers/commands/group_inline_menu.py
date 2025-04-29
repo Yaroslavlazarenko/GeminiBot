@@ -9,6 +9,9 @@ from ..utils import is_user_group_admin
 from ..utils import get_group_or_none
 from .keyboards import get_settings_keyboard, get_group_settings_keyboard
 
+logger = logging.getLogger(__name__)
+router = Router()
+
 @router.callback_query(lambda c: c.data == "show_group_help")
 async def show_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO):
     """Показать справку по настройкам группы."""
