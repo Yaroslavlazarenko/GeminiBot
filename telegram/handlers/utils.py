@@ -192,7 +192,10 @@ async def handle_gemini_result(
             # reply_to_message обрабатывается выше, при отправке сообщения
 
     elif result_type == "error":
-        error_msg = result_data if isinstance(result_data, str) else "Unknown Gemini error"
+        if isinstance(result_data, dict):
+            error_msg = result_data.get("text", str(result_data))
+        else:
+            error_msg = str(result_data)
         logger.error(f"Gemini API error for user {user.telegram_id} in chat {chat.id}: {error_msg}")
         await send_error_message(message, "Помилка під час звернення до AI. Спробуйте пізніше.")
 
