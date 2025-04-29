@@ -212,8 +212,6 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                     len(text) >= 2 and
                     text[0] == '"' and text[-1] == '"'
                 ):
-                    # Заменяем двойной слэш перед кавычкой на один
-                    import re
                     inner = text[1:-1]
                     # Заменить \\" на \"
                     inner = re.sub(r'\\"', r'\"', inner)
