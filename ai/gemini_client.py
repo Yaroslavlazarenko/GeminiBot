@@ -257,7 +257,7 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                 return {
                     "type": "error",
                     "data": {
-                        "text": "Failed to process Gemini response",
+                        "text": f"Failed to process Gemini response: {e}",
                         "commands": []
                     }
                 }
@@ -269,7 +269,7 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                 return {
                     "type": "error",
                     "data": {
-                        "text": "Server error after multiple retries",
+                        "text": f"Server error after multiple retries: {e}",
                         "commands": []
                     }
                 }
@@ -284,7 +284,7 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
             return {
                 "type": "error",
                 "data": {
-                    "text": "Unexpected error occurred",
+                    "text": f"Unexpected error occurred: {e}",
                     "commands": []
                 }
             }
