@@ -1,7 +1,6 @@
 import logging
 from aiogram import Router, F, filters
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, Message
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest
 
 from database.models import User
@@ -69,9 +68,16 @@ def get_settings_keyboard(user: User) -> InlineKeyboardMarkup:
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
+from .group_inline_menu import show_group_menu
+
 @router.message(filters.Command("menu"))
-async def show_menu(message: Message, user: User):
+async def show_menu(message: Message, user: User, group_dao: GroupDAO):
     """Handler for the /menu command."""
+    if message.chat.type in ["group", "supergroup"]:
+        # Вызвать group inline menu для групп
+        await show_group_menu(message, group_dao)
+        return
+    # Для личных чатов — старое меню
     keyboard = get_settings_keyboard(user)
     await message.answer(
         "🎛 <b>Головне меню</b>\n\n"
