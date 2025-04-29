@@ -207,10 +207,10 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                     raise ValueError("Response JSON must be an object")
                 
                 text = response_json.get("text", "").strip()
-                logger.debug(f"[Gemini Debug] Parsed text before cleanup: {repr(text)}")
+                logger.critical(f"[Gemini Debug] Parsed text before cleanup: {repr(text)}")
                 # Remove all backslashes (aggressive cleanup)
                 text = text.replace('\\', '')
-                logger.debug(f"[Gemini Debug] Parsed text after cleanup: {repr(text)}")
+                logger.critical(f"[Gemini Debug] Parsed text after cleanup: {repr(text)}")
                 commands = response_json.get("commands", [])
 
                 # Validate commands structure
