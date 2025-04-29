@@ -69,13 +69,7 @@ def get_settings_keyboard(user: User, show_group_settings_button=False) -> Inlin
                 callback_data="open_group_settings_menu"
             )
         ])
-    # Добавляем справку и закрытие справки для группы
-    keyboard.append([
-        InlineKeyboardButton(
-            text="ℹ️ Довідка",
-            callback_data="show_group_help"
-        )
-    ])
+    
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 
@@ -125,6 +119,10 @@ def get_group_settings_keyboard(group, show_user_settings_button=False) -> Inlin
             )
         ],
         [
+            InlineKeyboardButton(
+                text="ℹ️ Довідка",
+                callback_data="show_group_help"
+            ),
             InlineKeyboardButton(
                 text="🔄 Оновити",
                 callback_data="refresh_group_menu"
