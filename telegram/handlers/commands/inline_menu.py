@@ -103,14 +103,15 @@ async def show_menu(message: Message, user: User, group_dao: GroupDAO):
 
 @router.callback_query(F.data == "open_group_settings_menu")
 async def open_group_settings_menu_callback(callback: CallbackQuery, group_dao: GroupDAO):
-    from ..utils import get_group_or_none
+    from ..utils import get_group_or_none, is_user_group_admin
     chat = callback.message.chat
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
     group = await get_group_or_none(group_dao, chat)
     if not group:
         await callback.answer("Групу не знайдено у базі", show_alert=True)
         return
     from .group_inline_menu import get_group_settings_keyboard
-    keyboard = get_group_settings_keyboard(group)
+    keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
     await callback.message.edit_text(
         "👥 <b>Налаштування групи</b>\n\nКеруйте груповими параметрами бота:",
         reply_markup=keyboard,
