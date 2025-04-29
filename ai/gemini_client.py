@@ -207,8 +207,8 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                     raise ValueError("Response JSON must be an object")
                 
                 text = response_json.get("text", "").strip()
-                # Remove unnecessary backslashes
-                text = text.replace('\\', '')
+                # Replace escaped quotes with real quotes
+                text = text.replace('\\"', '"')
                 commands = response_json.get("commands", [])
 
                 # Validate commands structure
