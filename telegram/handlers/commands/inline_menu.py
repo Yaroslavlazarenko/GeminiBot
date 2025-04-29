@@ -5,8 +5,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 from database.models import User
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
-from ..utils import get_group_or_none
-from ..utils import is_user_group_admin
+from ..utils import get_group_or_none, is_user_group_admin
 
 
 logger = logging.getLogger(__name__)
@@ -20,7 +19,6 @@ from .keyboards import get_settings_keyboard, get_group_settings_keyboard
 async def show_menu(message: Message, user: User, group_dao: GroupDAO):
     """Handler for the /menu command."""
     if message.chat.type in ["group", "supergroup"]:
-        from ..utils import is_user_group_admin
         is_admin = await is_user_group_admin(message.chat, user.telegram_id)
         keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
         await message.answer(
@@ -249,7 +247,7 @@ async def close_user_help_callback(callback: CallbackQuery, user: User):
     )
 
 @router.callback_query(F.data == "show_help")
-async def show_help_callback(callback: CallbackQuery, user: User):
+async def show_help_callback(callback: CallbackQuery):
     """Show help message."""
     help_text = (
         "📋 <b>Довідка по налаштуванням:</b>\n\n"
@@ -263,10 +261,6 @@ async def show_help_callback(callback: CallbackQuery, user: User):
         "\nНатисніть на кнопку, щоб змінити відповідне налаштування."
     )
     await callback.answer()
-    chat = callback.message.chat
-    is_admin = False
-    if chat.type in ["group", "supergroup"]:
-        is_admin = await is_user_group_admin(chat, user.telegram_id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="❌ Закрити довідку", callback_data="close_user_help")
     ]])

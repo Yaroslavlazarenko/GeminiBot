@@ -5,18 +5,15 @@ from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
 from database.models import User
 from database.dao import GroupDAO
-from ..utils import is_user_group_admin
-from ..utils import get_group_or_none
+from ..utils import get_group_or_none, is_user_group_admin
 from .keyboards import get_settings_keyboard, get_group_settings_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router()
 
 @router.callback_query(F.data == "show_group_help")
-async def show_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO):
+async def show_group_help_callback(callback: CallbackQuery):
     """Показать справку по настройкам группы."""
-    chat = callback.message.chat
-    group = await get_group_or_none(group_dao, chat)
     help_text = (
         "<b>Довідка по груповим налаштуванням:</b>\n\n"
         "• <b>Глобальні відповіді</b> — Увімкнення/вимкнення всіх відповідей бота у групі.\n\n"
@@ -31,7 +28,11 @@ async def show_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="❌ Закрити довідку", callback_data="close_group_help")
     ]])
-    await callback.message.edit_text(help_text, parse_mode="HTML", reply_markup=keyboard)
+    await callback.message.edit_text(
+        help_text,
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
 
 @router.callback_query(F.data == "close_group_help")
 async def close_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO):
