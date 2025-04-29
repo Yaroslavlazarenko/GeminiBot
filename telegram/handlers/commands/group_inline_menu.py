@@ -17,6 +17,11 @@ from aiogram.types import CallbackQuery
 @router.callback_query(lambda c: c.data == "toggle_group_global_disabled")
 async def toggle_group_global_disabled_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
+    from ..utils import is_user_group_admin
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    if not is_admin:
+        await callback.answer("Тільки адміністратор може змінювати налаштування групи", show_alert=True)
+        return
     group = await get_group_or_none(group_dao, chat)
     if not group:
         await callback.answer("Групу не знайдено у базі", show_alert=True)
@@ -34,6 +39,11 @@ async def toggle_group_global_disabled_callback(callback: CallbackQuery, group_d
 @router.callback_query(lambda c: c.data == "toggle_group_responds_to_text")
 async def toggle_group_responds_to_text_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
+    from ..utils import is_user_group_admin
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    if not is_admin:
+        await callback.answer("Тільки адміністратор може змінювати налаштування групи", show_alert=True)
+        return
     group = await get_group_or_none(group_dao, chat)
     if not group:
         await callback.answer("Групу не знайдено у базі", show_alert=True)
@@ -51,6 +61,11 @@ async def toggle_group_responds_to_text_callback(callback: CallbackQuery, group_
 @router.callback_query(lambda c: c.data == "toggle_group_responds_to_voice")
 async def toggle_group_responds_to_voice_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
+    from ..utils import is_user_group_admin
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    if not is_admin:
+        await callback.answer("Тільки адміністратор може змінювати налаштування групи", show_alert=True)
+        return
     group = await get_group_or_none(group_dao, chat)
     if not group:
         await callback.answer("Групу не знайдено у базі", show_alert=True)
@@ -68,6 +83,11 @@ async def toggle_group_responds_to_voice_callback(callback: CallbackQuery, group
 @router.callback_query(lambda c: c.data == "toggle_group_responds_to_photo")
 async def toggle_group_responds_to_photo_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
+    from ..utils import is_user_group_admin
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    if not is_admin:
+        await callback.answer("Тільки адміністратор може змінювати налаштування групи", show_alert=True)
+        return
     group = await get_group_or_none(group_dao, chat)
     if not group:
         await callback.answer("Групу не знайдено у базі", show_alert=True)
@@ -85,6 +105,11 @@ async def toggle_group_responds_to_photo_callback(callback: CallbackQuery, group
 @router.callback_query(lambda c: c.data == "toggle_group_responds_to_video_note")
 async def toggle_group_responds_to_video_note_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
+    from ..utils import is_user_group_admin
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    if not is_admin:
+        await callback.answer("Тільки адміністратор може змінювати налаштування групи", show_alert=True)
+        return
     group = await get_group_or_none(group_dao, chat)
     if not group:
         await callback.answer("Групу не знайдено у базі", show_alert=True)
@@ -102,6 +127,11 @@ async def toggle_group_responds_to_video_note_callback(callback: CallbackQuery, 
 @router.callback_query(lambda c: c.data == "toggle_group_transcribe_voice_only")
 async def toggle_group_transcribe_voice_only_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
+    from ..utils import is_user_group_admin
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    if not is_admin:
+        await callback.answer("Тільки адміністратор може змінювати налаштування групи", show_alert=True)
+        return
     group = await get_group_or_none(group_dao, chat)
     if not group:
         await callback.answer("Групу не знайдено у базі", show_alert=True)
@@ -119,6 +149,11 @@ async def toggle_group_transcribe_voice_only_callback(callback: CallbackQuery, g
 @router.callback_query(lambda c: c.data == "toggle_group_transcribe_video_note")
 async def toggle_group_transcribe_video_note_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
+    from ..utils import is_user_group_admin
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    if not is_admin:
+        await callback.answer("Тільки адміністратор може змінювати налаштування групи", show_alert=True)
+        return
     group = await get_group_or_none(group_dao, chat)
     if not group:
         await callback.answer("Групу не знайдено у базі", show_alert=True)
@@ -137,6 +172,11 @@ async def toggle_group_transcribe_video_note_callback(callback: CallbackQuery, g
 async def refresh_group_menu_callback(callback: CallbackQuery, group_dao: GroupDAO):
     """Обновляет меню группы (inline keyboard) по кнопке 'Оновити'."""
     chat = callback.message.chat
+    from ..utils import is_user_group_admin
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    if not is_admin:
+        await callback.answer("Тільки адміністратор може змінювати налаштування групи", show_alert=True)
+        return
     group = await get_group_or_none(group_dao, chat)
     if not group:
         await callback.answer("Групу не знайдено у базі", show_alert=True)

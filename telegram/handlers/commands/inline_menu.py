@@ -74,8 +74,23 @@ from .group_inline_menu import show_group_menu
 async def show_menu(message: Message, user: User, group_dao: GroupDAO):
     """Handler for the /menu command."""
     if message.chat.type in ["group", "supergroup"]:
-        # Вызвать group inline menu для групп
-        await show_group_menu(message, group_dao)
+        from ..utils import is_user_group_admin
+        is_admin = await is_user_group_admin(message.chat, user.telegram_id)
+        keyboard = get_settings_keyboard(user)
+        if is_admin:
+            # Добавить кнопку для открытия настроек группы
+            keyboard.inline_keyboard.append([
+                InlineKeyboardButton(
+                    text="⚙️ Налаштування групи",
+                    callback_data="open_group_settings_menu"
+                )
+            ])
+        await message.answer(
+            "🎛 <b>Головне меню</b>\n\n"
+            "Керуйте налаштуваннями бота за допомогою кнопок нижче:",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
         return
     # Для личных чатов — старое меню
     keyboard = get_settings_keyboard(user)
@@ -85,6 +100,24 @@ async def show_menu(message: Message, user: User, group_dao: GroupDAO):
         reply_markup=keyboard,
         parse_mode="HTML"
     )
+
+@router.callback_query(F.data == "open_group_settings_menu")
+async def open_group_settings_menu_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    from ..utils import get_group_or_none
+    chat = callback.message.chat
+    group = await get_group_or_none(group_dao, chat)
+    if not group:
+        await callback.answer("Групу не знайдено у базі", show_alert=True)
+        return
+    from .group_inline_menu import get_group_settings_keyboard
+    keyboard = get_group_settings_keyboard(group)
+    await callback.message.edit_text(
+        "👥 <b>Налаштування групи</b>\n\nКеруйте груповими параметрами бота:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
 
 @router.callback_query(F.data == "toggle_global_disabled")
 async def toggle_global_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
