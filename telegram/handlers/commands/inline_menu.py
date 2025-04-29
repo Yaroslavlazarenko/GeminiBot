@@ -6,6 +6,7 @@ from aiogram.exceptions import TelegramBadRequest
 from database.models import User
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
 from ..utils import get_group_or_none
+from ..utils import is_user_group_admin
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -145,7 +146,12 @@ async def toggle_global_callback(callback: CallbackQuery, user: User, user_dao: 
         user.is_global_disabled = new_value
         status = "увімкнено" if not new_value else "вимкнено"
         await callback.answer(f"✅ Глобальні відповіді {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+                
+        chat = callback.message.chat
+        is_admin = False
+        if chat.type in ["group", "supergroup"]:
+            is_admin = await is_user_group_admin(chat, user.telegram_id)
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user, show_group_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -159,7 +165,11 @@ async def toggle_text_callback(callback: CallbackQuery, user: User, user_dao: Us
         user.responds_to_text = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Відповіді на текст {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+        chat = callback.message.chat
+        is_admin = False
+        if chat.type in ["group", "supergroup"]:
+            is_admin = await is_user_group_admin(chat, user.telegram_id)
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user, show_group_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -173,7 +183,11 @@ async def toggle_voice_callback(callback: CallbackQuery, user: User, user_dao: U
         user.responds_to_voice = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Обробку голосу {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+        chat = callback.message.chat
+        is_admin = False
+        if chat.type in ["group", "supergroup"]:
+            is_admin = await is_user_group_admin(chat, user.telegram_id)
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user, show_group_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -187,7 +201,11 @@ async def toggle_photo_callback(callback: CallbackQuery, user: User, user_dao: U
         user.responds_to_photo = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Обробку фото {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+        chat = callback.message.chat
+        is_admin = False
+        if chat.type in ["group", "supergroup"]:
+            is_admin = await is_user_group_admin(chat, user.telegram_id)
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user, show_group_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -201,7 +219,11 @@ async def toggle_video_note_callback(callback: CallbackQuery, user: User, user_d
         user.responds_to_video_note = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Обробку відео-повідомлень {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+        chat = callback.message.chat
+        is_admin = False
+        if chat.type in ["group", "supergroup"]:
+            is_admin = await is_user_group_admin(chat, user.telegram_id)
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user, show_group_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -219,7 +241,11 @@ async def toggle_mode_callback(callback: CallbackQuery, user: User, user_dao: Us
         user.transcribe_voice_only = new_value
         mode = "транскрипція" if new_value else "відповідь"
         await callback.answer(f"✅ Режим голосу: {mode}")
-        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+        chat = callback.message.chat
+        is_admin = False
+        if chat.type in ["group", "supergroup"]:
+            is_admin = await is_user_group_admin(chat, user.telegram_id)
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user, show_group_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -237,7 +263,11 @@ async def toggle_transcribe_video_note_callback(callback: CallbackQuery, user: U
         user.transcribe_video_note = new_value
         mode = "транскрипція" if new_value else "відповідь"
         await callback.answer(f"✅ Режим відео: {mode}")
-        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+        chat = callback.message.chat
+        is_admin = False
+        if chat.type in ["group", "supergroup"]:
+            is_admin = await is_user_group_admin(chat, user.telegram_id)
+        await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user, show_group_settings_button=is_admin))
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -260,7 +290,11 @@ async def clear_messages_callback(callback: CallbackQuery, user: User, message_d
         
         # Only update the keyboard if messages were actually deleted
         if deleted_count > 0:
-            await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user))
+            chat = callback.message.chat
+            is_admin = False
+            if chat.type in ["group", "supergroup"]:
+                is_admin = await is_user_group_admin(chat, user.telegram_id)
+            await callback.message.edit_reply_markup(reply_markup=get_settings_keyboard(user, show_group_settings_button=is_admin))
 
     except Exception as e:
         logger.error(f"Error clearing messages for user {user.telegram_id} in chat {chat.id}: {e}", exc_info=True)
