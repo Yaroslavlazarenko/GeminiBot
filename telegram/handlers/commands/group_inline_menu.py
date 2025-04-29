@@ -11,27 +11,20 @@ from .keyboards import get_settings_keyboard, get_group_settings_keyboard
 logger = logging.getLogger(__name__)
 router = Router()
 
-@router.callback_query(F.data == "show_group_help")
-async def show_group_help_callback(callback: CallbackQuery):
-    """Показать справку по настройкам группы."""
-    help_text = (
-        "<b>Довідка по груповим налаштуванням:</b>\n\n"
-        "• <b>Глобальні відповіді</b> — Увімкнення/вимкнення всіх відповідей бота у групі.\n\n"
-        "• <b>Відповіді на текст</b> — Бот буде відповідати на текстові повідомлення у групі.\n\n"
-        "• <b>Відповіді на голосові</b> — Бот буде відповідати на голосові повідомлення у групі.\n\n"
-        "• <b>Відповіді на фото</b> — Бот буде відповідати на фото у групі.\n\n"
-        "• <b>Відповіді на відео-повідомлення</b> — Бот буде відповідати на відео-кружки у групі.\n\n"
-        "• <b>Транскрипція голосових</b> — Бот буде перетворювати голосові у текст.\n\n"
-        "• <b>Транскрипція відео-кружків</b> — Бот буде перетворювати відео-кружки у текст.\n\n"
-        "\nНатисніть на кнопку, щоб змінити відповідне налаштування."
-    )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="❌ Закрити довідку", callback_data="close_group_help")
-    ]])
-    await callback.message.edit_text(
-        help_text,
-        parse_mode="HTML",
-        reply_markup=keyboard
+@router.message(filters.Command("menu"))
+async def show_group_menu(message: Message, group_dao: GroupDAO):
+    """Обработчик /menu в группе: показывает настройки группы."""
+    if message.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        return
+    group = await get_group_or_none(group_dao, message.chat)
+    if not group:
+        await message.answer("Група не знайдена у базі. Відправте будь-яке повідомлення у групу, щоб зареєструвати її.")
+        return
+    keyboard = get_group_settings_keyboard(group)
+    await message.answer(
+        "👥 <b>Налаштування групи</b>\n\nКеруйте груповими параметрами бота:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
     )
 
 @router.callback_query(F.data == "close_group_help")
@@ -254,18 +247,28 @@ async def back_to_user_settings_callback(callback: CallbackQuery, user: User):
     )
     await callback.answer()
 
-@router.message(filters.Command("menu"))
-async def show_group_menu(message: Message, group_dao: GroupDAO):
-    """Обработчик /menu в группе: показывает настройки группы."""
-    if message.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
-        return
-    group = await get_group_or_none(group_dao, message.chat)
-    if not group:
-        await message.answer("Група не знайдена у базі. Відправте будь-яке повідомлення у групу, щоб зареєструвати її.")
-        return
-    keyboard = get_group_settings_keyboard(group)
-    await message.answer(
-        "👥 <b>Налаштування групи</b>\n\nКеруйте груповими параметрами бота:",
-        reply_markup=keyboard,
-        parse_mode="HTML"
+@router.callback_query(F.data == "show_group_help")
+async def show_group_help_callback(callback: CallbackQuery):
+    """Показать справку по настройкам группы."""
+    help_text = (
+        "<b>Довідка по груповим налаштуванням:</b>\n\n"
+        "• <b>Глобальні відповіді</b> — Увімкнення/вимкнення всіх відповідей бота у групі.\n\n"
+        "• <b>Відповіді на текст</b> — Бот буде відповідати на текстові повідомлення у групі.\n\n"
+        "• <b>Відповіді на голосові</b> — Бот буде відповідати на голосові повідомлення у групі.\n\n"
+        "• <b>Відповіді на фото</b> — Бот буде відповідати на фото у групі.\n\n"
+        "• <b>Відповіді на відео-повідомлення</b> — Бот буде відповідати на відео-кружки у групі.\n\n"
+        "• <b>Транскрипція голосових</b> — Бот буде перетворювати голосові у текст.\n\n"
+        "• <b>Транскрипція відео-кружків</b> — Бот буде перетворювати відео-кружки у текст.\n\n"
+        "\nНатисніть на кнопку, щоб змінити відповідне налаштування."
     )
+    await callback.answer()
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="❌ Закрити довідку", callback_data="close_group_help")
+    ]])
+    await callback.message.edit_text(
+        help_text,
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
+
+
