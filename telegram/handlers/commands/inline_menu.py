@@ -235,28 +235,41 @@ async def clear_messages_callback(callback: CallbackQuery, user: User, message_d
         logger.error(f"Error clearing messages for user {user.telegram_id} in chat {chat.id}: {e}", exc_info=True)
         await callback.answer("❌ Помилка при очищенні історії", show_alert=True)
 
+@router.callback_query(F.data == "close_user_help")
+async def close_user_help_callback(callback: CallbackQuery, user: User):
+    chat = callback.message.chat
+    is_admin = False
+    if chat.type in ["group", "supergroup"]:
+        is_admin = await is_user_group_admin(chat, user.telegram_id)
+    keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+    await callback.message.edit_text(
+        "🎛 <b>Головне меню</b>\n\nКеруйте налаштуваннями бота за допомогою кнопок нижче:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+
 @router.callback_query(F.data == "show_help")
 async def show_help_callback(callback: CallbackQuery, user: User):
     """Show help message."""
     help_text = (
         "📋 <b>Довідка по налаштуванням:</b>\n\n"
-        "• <b>Глобальні відповіді</b> - Увімкнення/вимкнення всіх відповідей бота\n\n"
-        "• <b>Відповіді на текст</b> - Бот буде відповідати на ваші текстові повідомлення\n\n"
-        "• <b>Обробка голосу</b> - Бот буде обробляти ваші голосові повідомлення\n\n"
-        "• <b>Обробка фото</b> - Бот буде аналізувати та відповідати на фото\n\n"
-        "• <b>Обробка відео</b> - Бот буде аналізувати та відповідати на відео-повідомлення\n\n"
-        "• <b>Режим голосу</b>:\n"
-        "  - 📝 <i>Тільки транскрипція</i> - Бот лише перетворить голос у текст\n"
-        "  - 💬 <i>Відповідь на голос</i> - Бот відповість на зміст голосового\n\n"
-        "• <b>Очистити історію</b> - Видалити всю історію спілкування з ботом у поточному чаті\n\n"
-        "Натисніть на кнопку, щоб змінити відповідне налаштування"
+        "• <b>Глобальні відповіді</b> — Увімкнення/вимкнення всіх відповідей бота.\n\n"
+        "• <b>Відповіді на текст</b> — Бот буде відповідати на ваші текстові повідомлення.\n\n"
+        "• <b>Відповіді на голосові</b> — Бот буде відповідати на ваші голосові повідомлення.\n\n"
+        "• <b>Відповіді на фото</b> — Бот буде відповідати на фото.\n\n"
+        "• <b>Відповіді на відео-кружки</b> — Бот буде відповідати на відео-кружки.\n\n"
+        "• <b>Транскрипція голосових</b> — Бот буде перетворювати голосові у текст.\n\n"
+        "• <b>Транскрипція відео-кружків</b> — Бот буде перетворювати відео-кружки у текст.\n\n"
+        "\nНатисніть на кнопку, щоб змінити відповідне налаштування."
     )
     await callback.answer()
     chat = callback.message.chat
     is_admin = False
     if chat.type in ["group", "supergroup"]:
         is_admin = await is_user_group_admin(chat, user.telegram_id)
-    keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="❌ Закрити довідку", callback_data="close_user_help")
+    ]])
     await callback.message.edit_text(
         help_text,
         parse_mode="HTML",

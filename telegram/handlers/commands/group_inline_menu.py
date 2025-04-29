@@ -9,6 +9,39 @@ from ..utils import is_user_group_admin
 from ..utils import get_group_or_none
 from .keyboards import get_settings_keyboard, get_group_settings_keyboard
 
+@router.callback_query(lambda c: c.data == "show_group_help")
+async def show_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    """Показать справку по настройкам группы."""
+    chat = callback.message.chat
+    group = await get_group_or_none(group_dao, chat)
+    help_text = (
+        "<b>Довідка по груповим налаштуванням:</b>\n\n"
+        "• <b>Глобальні відповіді</b> — Увімкнення/вимкнення всіх відповідей бота у групі.\n\n"
+        "• <b>Відповіді на текст</b> — Бот буде відповідати на текстові повідомлення у групі.\n\n"
+        "• <b>Відповіді на голосові</b> — Бот буде відповідати на голосові повідомлення у групі.\n\n"
+        "• <b>Відповіді на фото</b> — Бот буде відповідати на фото у групі.\n\n"
+        "• <b>Відповіді на відео-повідомлення</b> — Бот буде відповідати на відео-кружки у групі.\n\n"
+        "• <b>Транскрипція голосових</b> — Бот буде перетворювати голосові у текст.\n\n"
+        "• <b>Транскрипція відео-кружків</b> — Бот буде перетворювати відео-кружки у текст.\n\n"
+        "\nНатисніть на кнопку, щоб змінити відповідне налаштування."
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="❌ Закрити довідку", callback_data="close_group_help")
+    ]])
+    await callback.message.edit_text(help_text, parse_mode="HTML", reply_markup=keyboard)
+
+@router.callback_query(lambda c: c.data == "close_group_help")
+async def close_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    chat = callback.message.chat
+    group = await get_group_or_none(group_dao, chat)
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+    await callback.message.edit_text(
+        "<b>Налаштування групи</b>\n\nКеруйте налаштуваннями групи за допомогою кнопок нижче:",
+        parse_mode="HTML",
+        reply_markup=keyboard
+    )
+
 logger = logging.getLogger(__name__)
 router = Router()
 
