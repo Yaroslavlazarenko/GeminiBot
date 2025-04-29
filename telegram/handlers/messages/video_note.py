@@ -173,7 +173,8 @@ async def video_note_handler(
     if not user.responds_to_video_note:  # Using video note specific setting
         logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to USER settings.")
         return
-    if group and not group.responds_to_voice:  # Using the same setting as voice messages for groups
+    # Use correct group setting for video notes
+    if group and not getattr(group, 'responds_to_video_note', True):
         logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} (DB ID: {group.id}) due to GROUP settings.")
         return
 
@@ -288,8 +289,12 @@ async def video_note_handler(
             await send_error_message(message, "Помилка: не вдалося отримати історію повідомлень.")
             return
 
-        generate_full_response = not user.transcribe_video_note  # Using video note specific setting
-        logger.info(f"Calling AI for video note. Generate response based on user setting: {generate_full_response} (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
+        # Use group-level control if available, otherwise fallback to user
+        transcribe_video_note = user.transcribe_video_note
+        if group and hasattr(group, 'transcribe_video_note'):
+            transcribe_video_note = transcribe_video_note or group.transcribe_video_note
+        generate_full_response = not transcribe_video_note
+        logger.info(f"Calling AI for video note. Generate response based on user/group setting: {generate_full_response} (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
 
         try:
             gemini_result = await get_video_response(

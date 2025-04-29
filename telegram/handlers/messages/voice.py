@@ -111,8 +111,12 @@ async def voice_handler(
         if not message_history:
              logger.warning(f"Message history is empty before calling Gemini for user {user.telegram_id}, group_id {group_db_id} (voice).")
 
-        generate_full_response = not user.transcribe_voice_only
-        logger.debug(f"Calling AI for voice. Generate response based on user setting: {generate_full_response} (user {user.telegram_id}, group_id {group_db_id})")
+        # Use group-level control if available, otherwise fallback to user
+        transcribe_voice_only = user.transcribe_voice_only
+        if group and hasattr(group, 'transcribe_voice_only'):
+            transcribe_voice_only = transcribe_voice_only or group.transcribe_voice_only
+        generate_full_response = not transcribe_voice_only
+        logger.debug(f"Calling AI for voice. Generate response based on user/group setting: {generate_full_response} (user {user.telegram_id}, group_id {group_db_id})")
 
         gemini_result = await get_audio_response(
             message_history=message_history,
