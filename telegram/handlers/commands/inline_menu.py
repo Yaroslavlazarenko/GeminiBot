@@ -77,6 +77,7 @@ def get_settings_keyboard(user: User, show_group_settings_button=False) -> Inlin
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 from .group_inline_menu import show_group_menu
+from .keyboards import get_settings_keyboard, get_group_settings_keyboard
 
 @router.message(filters.Command("menu"))
 async def show_menu(message: Message, user: User, group_dao: GroupDAO):
