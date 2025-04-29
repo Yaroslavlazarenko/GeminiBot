@@ -27,25 +27,6 @@ async def show_group_menu(message: Message, group_dao: GroupDAO):
         parse_mode="HTML"
     )
 
-@router.callback_query(F.data == "close_group_help")
-async def close_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO):
-    chat = callback.message.chat
-    group = await get_group_or_none(group_dao, chat)
-    is_admin = await is_user_group_admin(chat, callback.from_user.id)
-    keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
-    await callback.message.edit_text(
-        "<b>Налаштування групи</b>\n\nКеруйте налаштуваннями групи за допомогою кнопок нижче:",
-        parse_mode="HTML",
-        reply_markup=keyboard
-    )
-
-logger = logging.getLogger(__name__)
-router = Router()
-
-from aiogram.types import CallbackQuery
-
-# Ensure get_group_settings_keyboard is defined before usage in callbacks
-
 @router.callback_query(F.data == "toggle_group_global_disabled")
 async def toggle_group_global_disabled_callback(callback: CallbackQuery, group_dao: GroupDAO):
     chat = callback.message.chat
@@ -271,4 +252,14 @@ async def show_group_help_callback(callback: CallbackQuery):
         reply_markup=keyboard
     )
 
-
+@router.callback_query(F.data == "close_group_help")
+async def close_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    chat = callback.message.chat
+    group = await get_group_or_none(group_dao, chat)
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+    await callback.message.edit_text(
+        "<b>Налаштування групи</b>\n\nКеруйте налаштуваннями групи за допомогою кнопок нижче:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )

@@ -119,7 +119,10 @@ def get_group_settings_keyboard(group, show_user_settings_button=False) -> Inlin
             )
         ],
         [
-            
+            InlineKeyboardButton(
+                text="ℹ️ Довідка",
+                callback_data="show_group_help"
+            ),
             InlineKeyboardButton(
                 text="🔄 Оновити",
                 callback_data="refresh_group_menu"
@@ -128,12 +131,6 @@ def get_group_settings_keyboard(group, show_user_settings_button=False) -> Inlin
                 text="❌ Закрити",
                 callback_data="close_menu"
             )
-        ],
-        [
-            InlineKeyboardButton(
-                text="ℹ️ Довідка",
-                callback_data="show_group_help"
-            ),
         ]
     ]
     # Кнопка перехода к пользовательским настройкам для админов и владельцев
