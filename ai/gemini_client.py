@@ -184,16 +184,6 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                 text = response_json.get("text", "").strip()
                 commands = response_json.get("commands", [])
 
-                # Убираем лишние экранирующие слэши перед кавычками, если они есть
-                if (
-                    len(text) >= 2 and
-                    text[0] == '"' and text[-1] == '"'
-                ):
-                    inner = text[1:-1]
-                    # Заменить \\" на \"
-                    inner = re.sub(r'\\"', r'\"', inner)
-                    text = inner
-
                 # Validate commands structure
                 for command in commands:
                     if not isinstance(command, dict):
