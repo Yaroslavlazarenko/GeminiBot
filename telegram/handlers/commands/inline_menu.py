@@ -10,7 +10,7 @@ from ..utils import get_group_or_none
 logger = logging.getLogger(__name__)
 router = Router()
 
-def get_settings_keyboard(user: User) -> InlineKeyboardMarkup:
+def get_settings_keyboard(user: User, show_group_settings_button=False) -> InlineKeyboardMarkup:
     """Creates an inline keyboard with user settings."""
     keyboard = [
         [
@@ -66,6 +66,14 @@ def get_settings_keyboard(user: User) -> InlineKeyboardMarkup:
             )
         ]
     ]
+    # Кнопка перехода к настройкам группы для админов
+    if show_group_settings_button:
+        keyboard.append([
+            InlineKeyboardButton(
+                text="⚙️ Налаштування групи",
+                callback_data="open_group_settings_menu"
+            )
+        ])
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
 from .group_inline_menu import show_group_menu
@@ -76,15 +84,7 @@ async def show_menu(message: Message, user: User, group_dao: GroupDAO):
     if message.chat.type in ["group", "supergroup"]:
         from ..utils import is_user_group_admin
         is_admin = await is_user_group_admin(message.chat, user.telegram_id)
-        keyboard = get_settings_keyboard(user)
-        if is_admin:
-            # Добавить кнопку для открытия настроек группы
-            keyboard.inline_keyboard.append([
-                InlineKeyboardButton(
-                    text="⚙️ Налаштування групи",
-                    callback_data="open_group_settings_menu"
-                )
-            ])
+        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
         await message.answer(
             "🎛 <b>Головне меню</b>\n\n"
             "Керуйте налаштуваннями бота за допомогою кнопок нижче:",
@@ -100,6 +100,20 @@ async def show_menu(message: Message, user: User, group_dao: GroupDAO):
         reply_markup=keyboard,
         parse_mode="HTML"
     )
+
+@router.callback_query(F.data == "back_to_user_settings")
+async def back_to_user_settings_callback(callback: CallbackQuery, user: User):
+    from .inline_menu import get_settings_keyboard
+    from ..utils import is_user_group_admin
+    chat = callback.message.chat
+    is_admin = await is_user_group_admin(chat, user.telegram_id)
+    keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+    await callback.message.edit_text(
+        "🎛 <b>Головне меню</b>\n\nКеруйте налаштуваннями бота за допомогою кнопок нижче:",
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+    await callback.answer()
 
 @router.callback_query(F.data == "open_group_settings_menu")
 async def open_group_settings_menu_callback(callback: CallbackQuery, group_dao: GroupDAO):
