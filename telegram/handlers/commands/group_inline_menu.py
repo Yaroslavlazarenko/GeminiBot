@@ -12,7 +12,7 @@ from .keyboards import get_settings_keyboard, get_group_settings_keyboard
 logger = logging.getLogger(__name__)
 router = Router()
 
-@router.callback_query(lambda c: c.data == "show_group_help")
+@router.callback_query(F.data == "show_group_help")
 async def show_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO):
     """Показать справку по настройкам группы."""
     chat = callback.message.chat
