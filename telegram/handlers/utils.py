@@ -86,7 +86,7 @@ async def handle_gemini_result(
         # Отправляем текст, если он есть
         if "text" in result_data and result_data["text"].strip():
             # Update response_data with the text
-            response_data["text"] = result_data["text"].strip().replace('"', '\\"')
+            response_data["text"] = result_data["text"].strip()
             response_text = response_data["text"]
             logger.info(f"Gemini returned text for user {user.telegram_id} in chat {chat.id}.")
             
