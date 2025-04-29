@@ -1,6 +1,6 @@
 import logging
 from aiogram import Router, filters
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
 from database.models import User
