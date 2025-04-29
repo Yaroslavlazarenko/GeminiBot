@@ -249,6 +249,7 @@ def get_group_settings_keyboard(group, show_user_settings_button=False) -> Inlin
             )
         ]
     ]
+    # Кнопка перехода к пользовательским настройкам для админов и владельцев
     if show_user_settings_button:
         keyboard.append([
             InlineKeyboardButton(
