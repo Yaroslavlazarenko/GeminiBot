@@ -3,7 +3,7 @@ from aiogram import Router, filters
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
-
+from .group_inline_menu import get_group_settings_keyboard
 from database.models import User
 from database.dao import GroupDAO
 from ..utils import get_group_or_none
@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 from aiogram.types import CallbackQuery
+
+# Ensure get_group_settings_keyboard is defined before usage in callbacks
 
 @router.callback_query(lambda c: c.data == "toggle_group_global_disabled")
 async def toggle_group_global_disabled_callback(callback: CallbackQuery, group_dao: GroupDAO):
