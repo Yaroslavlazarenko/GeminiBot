@@ -25,12 +25,21 @@ async def text_handler(
     group = await get_group_or_none(group_dao, chat)
     group_db_id = group.id if group else None
 
+    # Check global response setting first
+    if user.is_global_disabled:
+        logger.debug(f"Ignoring text message from user {user.telegram_id} in chat {chat.id} due to global USER disable.")
+        return
+    if group and group.is_global_disabled:
+        logger.debug(f"Ignoring text message from user {user.telegram_id} in group chat {chat.id} due to global GROUP disable.")
+        return
+
+    # Then check text-specific setting
     if not user.responds_to_text:
-        logger.debug(f"Ignoring text message from user {user.telegram_id} in chat {chat.id} due to USER settings.")
+        logger.debug(f"Ignoring text message from user {user.telegram_id} in chat {chat.id} due to USER text setting.")
         return
     if group and not group.responds_to_text:
-         logger.debug(f"Ignoring text message from user {user.telegram_id} in group chat {chat.id} (DB ID: {group.id}) due to GROUP settings.")
-         return
+        logger.debug(f"Ignoring text message from user {user.telegram_id} in group chat {chat.id} due to GROUP text setting.")
+        return
 
     if not message.text:
         logger.debug(f"Ignoring message without text content from user {user.telegram_id} in chat {chat.id}")

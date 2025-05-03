@@ -282,52 +282,52 @@ async def process_media_group_after_timeout(
 @router.message(F.photo)
 async def photo_handler(
     message: Message,
-    # Зависимости из Middleware: ИМЕНА АРГУМЕНТОВ ТЕПЕРЬ СОВПАДАЮТ С КЛЮЧАМИ В data
-    session_factory: async_sessionmaker[AsyncSession], # Фабрика для создания НОВЫХ сессий
-    user_dao: UserDAO,          # DAO с сессией, управляемой Middleware (для этого сообщения)
-    group_dao: GroupDAO,        # DAO с сессией, управляемой Middleware
-    message_dao: MessageHistoryDAO # DAO с сессией, управляемой Middleware
+    session_factory: async_sessionmaker[AsyncSession], 
+    user_dao: UserDAO,          
+    group_dao: GroupDAO,        
+    message_dao: MessageHistoryDAO 
 ) -> None:
     """
-    Обрабатывает входящие фотографии.
-    Для одиночных фото: использует сессию и DAO из middleware (commit/rollback в middleware).
-    Для медиагрупп: собирает фото в кэш и планирует отложенную обработку (process_media_group),
-                    передавая ФАБРИКУ СЕССИЙ (`session_factory`), чтобы та задача
-                    могла создать свою собственную, независимую сессию БД.
+    Обрабатывает фото-сообщения, проверяя настройки пользователя и группы.
     """
     if not message.from_user:
          logger.warning("Received photo message without 'from_user'. Ignoring.")
          return
 
-    # Получаем пользователя БД через DAO из middleware (сессия middleware)
+    # Get user from database
     user = await user_dao.get_user_by_telegram_id(message.from_user.id)
     if not user:
-         logger.warning(f"User {message.from_user.id} not found via middleware DAO. Attempting get_or_create.")
-         user = await user_dao.get_or_create_user(
-                telegram_id=message.from_user.id,
-                username=message.from_user.username or str(message.from_user.id),
-                first_name=message.from_user.first_name,
-                last_name=message.from_user.last_name,
-            )
-         if not user:
-              logger.error(f"Failed to get or create user {message.from_user.id} in photo_handler.")
-              await send_error_message(message, "Не вдалося знайти або створити ваші дані користувача.")
-              return
+        logger.warning(f"User {message.from_user.id} not found via middleware DAO. Attempting get_or_create.")
+        user = await user_dao.get_or_create_user(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username or str(message.from_user.id),
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name,
+        )
+        if not user:
+            logger.error(f"Failed to get or create user {message.from_user.id} in photo_handler.")
+            await send_error_message(message, "Не вдалося знайти або створити ваші дані користувача.")
+            return
 
     chat = message.chat
-    # Получаем группу БД через DAO из middleware (сессия middleware)
-    group = await get_group_or_none(group_dao, chat) # Используем group_dao
+    group = await get_group_or_none(group_dao, chat)
     group_db_id = group.id if group else None
 
-    # Проверка настроек
-    if not getattr(user, 'responds_to_photo', True):
-        logger.debug(f"Ignoring photo from user {user.telegram_id} in chat {chat.id} due to USER settings.")
+    # Check global response setting first
+    if user.is_global_disabled:
+        logger.debug(f"Ignoring photo from user {user.telegram_id} in chat {chat.id} due to global USER disable.")
         return
-    if group and not getattr(group, 'responds_to_photo', True):
-        logger.debug(f"Ignoring photo from user {user.telegram_id} in group chat {chat.id} due to GROUP settings.")
+    if group and group.is_global_disabled:
+        logger.debug(f"Ignoring photo from user {user.telegram_id} in group chat {chat.id} due to global GROUP disable.")
         return
 
-    logger.info(f"Processing photo from user {user.telegram_id} in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
+    # Then check photo-specific setting
+    if not getattr(user, 'responds_to_photo', True):
+        logger.debug(f"Ignoring photo from user {user.telegram_id} in chat {chat.id} due to USER photo setting.")
+        return
+    if group and not getattr(group, 'responds_to_photo', True):
+        logger.debug(f"Ignoring photo from user {user.telegram_id} in group chat {chat.id} due to GROUP photo setting.")
+        return
 
     media_group_id = message.media_group_id
     photo_result = await get_best_photo_data(message)

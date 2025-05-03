@@ -170,12 +170,20 @@ async def video_note_handler(
         else:
             logger.debug(f"Processing forwarded video note from unknown original sender")
 
-    if not user.responds_to_video_note:  # Using video note specific setting
-        logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to USER settings.")
+    # Check global response setting first
+    if user.is_global_disabled:
+        logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to global USER disable.")
         return
-    # Use correct group setting for video notes
+    if group and group.is_global_disabled:
+        logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to global GROUP disable.")
+        return
+
+    # Then check video note-specific setting
+    if not user.responds_to_video_note:
+        logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to USER video note setting.")
+        return
     if group and not getattr(group, 'responds_to_video_note', True):
-        logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} (DB ID: {group.id}) due to GROUP settings.")
+        logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to GROUP video note setting.")
         return
 
     if not message.video_note:

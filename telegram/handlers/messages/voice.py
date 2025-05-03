@@ -52,12 +52,20 @@ async def voice_handler(
         else:
             logger.debug(f"Processing forwarded voice message from unknown original sender")
 
-    if not user.responds_to_voice:
-        logger.debug(f"Voice messages disabled for user {user_display_name} (ID: {user.telegram_id})")
+    # Check global response setting first
+    if user.is_global_disabled:
+        logger.debug(f"Ignoring voice message from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to global USER disable.")
+        return
+    if group and group.is_global_disabled:
+        logger.debug(f"Ignoring voice message from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to global GROUP disable.")
         return
 
+    # Then check voice-specific setting
+    if not user.responds_to_voice:
+        logger.debug(f"Ignoring voice message from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to USER voice setting.")
+        return
     if group and not group.responds_to_voice:
-        logger.debug(f"Voice messages disabled for group {group.name} (ID: {group.telegram_chat_id})")
+        logger.debug(f"Ignoring voice message from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to GROUP voice setting.")
         return
 
     voice = message.voice
