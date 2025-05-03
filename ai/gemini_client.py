@@ -95,7 +95,7 @@ async def get_gemini_response(
     critical_instruction = types.Content(
         parts=[types.Part(text="""CRITICAL: YOU MUST RETURN ONLY A SINGLE JSON OBJECT AS YOUR COMPLETE RESPONSE.
 DO NOT FORMAT IT AS CODE. DO NOT ADD ANY MARKDOWN. NO BACKTICKS. NO EXPLANATION TEXT.
-JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
+JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON. """)],
         role="user"
     )
     
@@ -183,7 +183,8 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                     text = re.sub(r'```[^`]*```', '', text)  # Remove any remaining code blocks
                     start_idx = text.find('{')
                     if start_idx == -1:
-                        return text  # No JSON found, return original text
+                        # If no JSON found, wrap the text in a valid JSON structure
+                        return json.dumps({"text": text, "commands": []})
                         
                     # Track nested braces to find complete JSON object
                     count = 0
@@ -195,17 +196,20 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                             if count == 0:
                                 return text[start_idx:i+1]
                     
-                    return text  # No complete JSON found
+                    # If no complete JSON found, wrap the text in a valid JSON structure
+                    return json.dumps({"text": text, "commands": []})
                 
                 # Try to extract and parse JSON
                 clean_text = extract_json(raw_text)
                 try:
                     response_json = json.loads(clean_text)
                 except json.JSONDecodeError:
-                    # If direct parsing fails, try to clean the text further
-                    clean_text = re.sub(r'[\u200b-\u200f\ufeff]', '', clean_text)  # Remove zero-width chars
-                    clean_text = clean_text.replace('\\"', '"').replace('\\n', '\n')  # Fix escaped quotes
-                    response_json = json.loads(clean_text)
+                    # If direct parsing fails, wrap the raw text in proper JSON structure
+                    logger.warning(f"Failed to parse response as JSON, wrapping raw text. Response: {raw_text[:200]}...")
+                    response_json = {
+                        "text": raw_text,
+                        "commands": []
+                    }
                 
                 # Validate response structure
                 if not isinstance(response_json, dict):
