@@ -20,9 +20,22 @@ async def show_group_menu(message: Message, group_dao: GroupDAO):
     if not group:
         await message.answer("Група не знайдена у базі. Відправте будь-яке повідомлення у групу, щоб зареєструвати її.")
         return
+
+    # Count active settings
+    active_settings = sum([
+        not group.is_global_disabled,
+        group.responds_to_text,
+        group.responds_to_voice,
+        group.responds_to_photo,
+        group.responds_to_video_note
+    ])
+    
     keyboard = get_group_settings_keyboard(group)
     await message.answer(
-        "👥 <b>Налаштування групи</b>\n\nКеруйте груповими параметрами бота:",
+        f"👥 <b>Налаштування групи</b>\n"
+        f"{'🟢' if not group.is_global_disabled else '🔴'} Загальний статус: {'увімкнено' if not group.is_global_disabled else 'вимкнено'}\n"
+        f"📊 Активно налаштувань: {active_settings}/5\n\n"
+        "Керуйте груповими параметрами бота:",
         reply_markup=keyboard,
         parse_mode="HTML"
     )
@@ -201,17 +214,28 @@ async def refresh_group_menu_callback(callback: CallbackQuery, group_dao: GroupD
 
 @router.callback_query(F.data == "open_group_settings_menu")
 async def open_group_settings_menu_callback(callback: CallbackQuery, group_dao: GroupDAO, user: User):
-    
     chat = callback.message.chat
     is_admin = await is_user_group_admin(chat, callback.from_user.id)
     group = await get_group_or_none(group_dao, chat)
     if not group:
         await callback.answer("Групу не знайдено у базі", show_alert=True)
         return
+
+    # Count active settings
+    active_settings = sum([
+        not group.is_global_disabled,
+        group.responds_to_text,
+        group.responds_to_voice,
+        group.responds_to_photo,
+        group.responds_to_video_note
+    ])
     
     keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
     await callback.message.edit_text(
-        "👥 <b>Налаштування групи</b>\n\nКеруйте груповими параметрами бота:",
+        f"👥 <b>Налаштування групи</b>\n"
+        f"{'🟢' if not group.is_global_disabled else '🔴'} Загальний статус: {'увімкнено' if not group.is_global_disabled else 'вимкнено'}\n"
+        f"📊 Активно налаштувань: {active_settings}/5\n\n"
+        "Керуйте груповими параметрами бота:",
         reply_markup=keyboard,
         parse_mode="HTML"
     )

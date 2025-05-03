@@ -6,44 +6,50 @@ def get_settings_keyboard(user: User, show_group_settings_button=False) -> Inlin
     keyboard = [
         [
             InlineKeyboardButton(
-                text=f"{'✅' if not user.is_global_disabled else '❌'} Відповідати на повідомлення",
+                text=f"{'🟢' if not user.is_global_disabled else '🔴'} Глобальні відповіді {'(Увімк)' if not user.is_global_disabled else '(Вимк)'}",
                 callback_data="toggle_global_disabled"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{'✅' if user.responds_to_text else '❌'} Відповідати на текст",
+                text=f"{'✅' if user.responds_to_text else '❌'} Текстові повідомлення {'(Увімк)' if user.responds_to_text else '(Вимк)'}",
                 callback_data="toggle_responds_to_text"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{'✅' if user.responds_to_voice else '❌'} Відповідати на голосові",
+                text=f"{'✅' if user.responds_to_voice else '❌'} Голосові повідомлення {'(Увімк)' if user.responds_to_voice else '(Вимк)'}",
                 callback_data="toggle_responds_to_voice"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{'✅' if user.responds_to_photo else '❌'} Відповідати на фото",
+                text=f"{'✅' if user.responds_to_photo else '❌'} Фотографії {'(Увімк)' if user.responds_to_photo else '(Вимк)'}",
                 callback_data="toggle_responds_to_photo"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{'✅' if user.responds_to_video_note else '❌'} Відповідати на відео-кружки",
+                text=f"{'✅' if user.responds_to_video_note else '❌'} Відео-кружки {'(Увімк)' if user.responds_to_video_note else '(Вимк)'}",
                 callback_data="toggle_responds_to_video_note"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{'✅' if user.transcribe_voice_only else '❌'} Транскрибувати голосові",
+                text=f"{'🎤' if not user.transcribe_voice_only else '📝'} Режим голосових: {'Відповідь' if not user.transcribe_voice_only else 'Транскрипція'}",
                 callback_data="toggle_transcribe_voice_only"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{'✅' if user.transcribe_video_note else '❌'} Транскрибувати відео-кружки",
+                text=f"{'🎥' if not user.transcribe_video_note else '📝'} Режим відео: {'Відповідь' if not user.transcribe_video_note else 'Транскрипція'}",
                 callback_data="toggle_transcribe_video_note"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🗑 Очистити історію",
+                callback_data="clear_messages"
             )
         ],
         [
@@ -61,6 +67,7 @@ def get_settings_keyboard(user: User, show_group_settings_button=False) -> Inlin
             )
         ]
     ]
+    
     # Кнопка перехода к настройкам группы для админов
     if show_group_settings_button:
         keyboard.append([
@@ -72,49 +79,48 @@ def get_settings_keyboard(user: User, show_group_settings_button=False) -> Inlin
     
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
 
-
 def get_group_settings_keyboard(group, show_user_settings_button=False) -> InlineKeyboardMarkup:
     """Создает клавиатуру с настройками для группы."""
     keyboard = [
         [
             InlineKeyboardButton(
-                text=f"{'✅' if not group.is_global_disabled else '❌'} Відповідати на повідомлення",
+                text=f"{'🟢' if not group.is_global_disabled else '🔴'} Глобальні відповіді {'(Увімк)' if not group.is_global_disabled else '(Вимк)'}",
                 callback_data="toggle_group_global_disabled"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{'✅' if group.responds_to_text else '❌'} Відповідати на текст",
+                text=f"{'✅' if group.responds_to_text else '❌'} Текстові повідомлення {'(Увімк)' if group.responds_to_text else '(Вимк)'}",
                 callback_data="toggle_group_responds_to_text"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{'✅' if group.responds_to_voice else '❌'} Відповідати на голосові",
+                text=f"{'✅' if group.responds_to_voice else '❌'} Голосові повідомлення {'(Увімк)' if group.responds_to_voice else '(Вимк)'}",
                 callback_data="toggle_group_responds_to_voice"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{'✅' if group.responds_to_photo else '❌'} Відповідати на фото",
+                text=f"{'✅' if group.responds_to_photo else '❌'} Фотографії {'(Увімк)' if group.responds_to_photo else '(Вимк)'}",
                 callback_data="toggle_group_responds_to_photo"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{'✅' if group.responds_to_video_note else '❌'} Відповідати на відео-повідомлення",
+                text=f"{'✅' if group.responds_to_video_note else '❌'} Відео-кружки {'(Увімк)' if group.responds_to_video_note else '(Вимк)'}",
                 callback_data="toggle_group_responds_to_video_note"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{'✅' if group.transcribe_voice_only else '❌'} Транскрибувати тільки голосові",
+                text=f"{'🎤' if not group.transcribe_voice_only else '📝'} Режим голосових: {'Відповідь' if not group.transcribe_voice_only else 'Транскрипція'}",
                 callback_data="toggle_group_transcribe_voice_only"
             )
         ],
         [
             InlineKeyboardButton(
-                text=f"{'✅' if group.transcribe_video_note else '❌'} Транскрибувати відео-кружки",
+                text=f"{'🎥' if not group.transcribe_video_note else '📝'} Режим відео: {'Відповідь' if not group.transcribe_video_note else 'Транскрипція'}",
                 callback_data="toggle_group_transcribe_video_note"
             )
         ],
@@ -133,6 +139,7 @@ def get_group_settings_keyboard(group, show_user_settings_button=False) -> Inlin
             )
         ]
     ]
+    
     # Кнопка перехода к пользовательским настройкам для админов и владельцев
     if show_user_settings_button:
         keyboard.append([
@@ -141,4 +148,5 @@ def get_group_settings_keyboard(group, show_user_settings_button=False) -> Inlin
                 callback_data="back_to_user_settings"
             )
         ])
+    
     return InlineKeyboardMarkup(inline_keyboard=keyboard)

@@ -19,18 +19,43 @@ async def show_menu(message: Message, user: User):
     if message.chat.type in ["group", "supergroup"]:
         is_admin = await is_user_group_admin(message.chat, user.telegram_id)
         keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+        
+        # Get active settings count
+        active_settings = sum([
+            not user.is_global_disabled,
+            user.responds_to_text,
+            user.responds_to_voice,
+            user.responds_to_photo,
+            user.responds_to_video_note
+        ])
+        
         await message.answer(
-            "🎛 <b>Головне меню</b>\n\n"
-            "Керуйте налаштуваннями бота за допомогою кнопок нижче:",
+            f"🎛 <b>Особисті налаштування</b>\n"
+            f"{'🟢' if not user.is_global_disabled else '🔴'} Загальний статус: {'увімкнено' if not user.is_global_disabled else 'вимкнено'}\n"
+            f"📊 Активно налаштувань: {active_settings}/5\n\n"
+            "Використовуйте кнопки нижче для керування:",
             reply_markup=keyboard,
             parse_mode="HTML"
         )
         return
-    # Для личных чатов — старое меню
+        
+    # Для личных чатов
     keyboard = get_settings_keyboard(user)
+    
+    # Get active settings count
+    active_settings = sum([
+        not user.is_global_disabled,
+        user.responds_to_text,
+        user.responds_to_voice,
+        user.responds_to_photo,
+        user.responds_to_video_note
+    ])
+    
     await message.answer(
-        "🎛 <b>Головне меню</b>\n\n"
-        "Керуйте налаштуваннями бота за допомогою кнопок нижче:",
+        f"🎛 <b>Налаштування бота</b>\n"
+        f"{'🟢' if not user.is_global_disabled else '🔴'} Загальний статус: {'увімкнено' if not user.is_global_disabled else 'вимкнено'}\n"
+        f"📊 Активно налаштувань: {active_settings}/5\n\n"
+        "Використовуйте кнопки нижче для керування:",
         reply_markup=keyboard,
         parse_mode="HTML"
     )
