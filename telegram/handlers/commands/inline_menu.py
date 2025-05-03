@@ -6,7 +6,7 @@ from aiogram.exceptions import TelegramBadRequest
 from database.models import User
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
 from ..utils import get_group_or_none, is_user_group_admin, rate_limited_edit
-
+from .group_inline_menu import get_group_settings_keyboard, get_group_menu_text
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -14,7 +14,7 @@ router = Router()
 from .keyboards import get_settings_keyboard, get_clear_menu_keyboard
 
 def get_user_menu_text(user: User) -> str:
-    """Формирует текст меню пользователя с актуальным статусом и количеством активных настроек."""
+    """Формує текст меню користувача з актуальним статусом і кількістю активних налаштувань."""
     active_settings = sum([
         not user.is_global_disabled,
         user.responds_to_text,
@@ -24,14 +24,14 @@ def get_user_menu_text(user: User) -> str:
     ])
     
     return (
-        f"🎛 <b>Головне меню</b>\n"
+        f"👤 <b>Мої налаштування</b>\n"
         f"{'🟢' if not user.is_global_disabled else '🔴'} Загальний статус: {'увімкнено' if not user.is_global_disabled else 'вимкнено'}\n"
         f"📊 Активно налаштувань: {active_settings}/5\n\n"
         "Використовуйте кнопки нижче для керування:"
     )
 
 async def refresh_user_menu(message: Message, user: User, is_admin: bool = False):
-    """Обновляет текст и клавиатуру меню пользователя."""
+    """Оновлює текст і клавіатуру меню користувача."""
     keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
     await rate_limited_edit(
         message,
@@ -49,7 +49,7 @@ async def show_menu(message: Message, user: User):
         await message.answer(get_user_menu_text(user), reply_markup=keyboard, parse_mode="HTML")
         return
     
-    # Для личных чатов
+    # Для особистих чатів
     keyboard = get_settings_keyboard(user)
     await message.answer(get_user_menu_text(user), reply_markup=keyboard, parse_mode="HTML")
 
@@ -63,18 +63,16 @@ async def back_to_user_settings_callback(callback: CallbackQuery, user: User):
 
 @router.callback_query(F.data == "open_group_settings_menu")
 async def open_group_settings_menu_callback(callback: CallbackQuery, group_dao: GroupDAO):
-    from ..utils import get_group_or_none, is_user_group_admin
     chat = callback.message.chat
     is_admin = await is_user_group_admin(chat, callback.from_user.id)
     group = await get_group_or_none(group_dao, chat)
     if not group:
         await callback.answer("Групу не знайдено у базі", show_alert=True)
         return
-    from .group_inline_menu import get_group_settings_keyboard
     keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
     await rate_limited_edit(
         callback.message,
-        text="👥 <b>Налаштування групи</b>\n\nКеруйте груповими параметрами бота:",
+        text=get_group_menu_text(group),
         reply_markup=keyboard,
         parse_mode="HTML"
     )

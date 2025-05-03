@@ -7,6 +7,7 @@ from database.models import User
 from database.dao import GroupDAO, MessageHistoryDAO
 from ..utils import get_group_or_none, is_user_group_admin
 from .keyboards import get_settings_keyboard, get_group_settings_keyboard, get_group_clear_menu_keyboard
+from .inline_menu import refresh_user_menu
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -25,7 +26,7 @@ def get_group_menu_text(group) -> str:
         f"👥 <b>Налаштування групи</b>\n"
         f"{'🟢' if not group.is_global_disabled else '🔴'} Загальний статус: {'увімкнено' if not group.is_global_disabled else 'вимкнено'}\n"
         f"📊 Активно налаштувань: {active_settings}/5\n\n"
-        "Керуйте груповими параметрами бота:"
+        "Використовуйте кнопки нижче для керування:"
     )
 
 async def refresh_group_menu(message: Message, group, is_admin: bool = False):
@@ -235,12 +236,9 @@ async def open_group_settings_menu_callback(callback: CallbackQuery, group_dao: 
 
 @router.callback_query(F.data == "back_to_user_settings")
 async def back_to_user_settings_callback(callback: CallbackQuery, user: User):
-    keyboard = get_settings_keyboard(user)
-    await callback.message.edit_text(
-        "🎛 <b>Головне меню</b>\n\nКеруйте налаштуваннями бота за допомогою кнопок нижче:",
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
+    chat = callback.message.chat
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    await refresh_user_menu(callback.message, user, is_admin)
     await callback.answer()
 
 @router.callback_query(F.data == "show_group_help")
