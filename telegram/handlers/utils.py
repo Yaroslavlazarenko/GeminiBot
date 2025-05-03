@@ -2,10 +2,11 @@ import logging
 from typing import Optional, Dict, Any
 import asyncio
 import html  # Added missing import
-
+import time
+from collections import defaultdict
 from aiogram.types import Message, Chat
 from aiogram.enums import ChatType, ChatMemberStatus
-from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
+from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError, TelegramRetryAfter
 
 from database.models import User, Group, MessageRole
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
@@ -14,6 +15,45 @@ logger = logging.getLogger(__name__)
 
 # Define Telegram's approximate message length limit
 TELEGRAM_MAX_MESSAGE_LENGTH = 4000 # Use a safe limit slightly below 4096
+
+# Rate limiting configuration
+_last_edit_time = defaultdict(float)  # {chat_id: last_edit_timestamp}
+_edit_intervals = defaultdict(float)  # {chat_id: current_interval}
+BASE_INTERVAL = 1.0  # Base interval between edits in seconds
+MAX_INTERVAL = 5.0   # Maximum interval between edits
+
+async def rate_limited_edit(message, **kwargs):
+    """
+    Edits a message with rate limiting and exponential backoff.
+    Handles TelegramRetryAfter exceptions automatically.
+    """
+    chat_id = message.chat.id
+    current_time = time.time()
+    
+    # Calculate wait time based on previous edit
+    elapsed = current_time - _last_edit_time[chat_id]
+    if elapsed < _edit_intervals[chat_id]:
+        wait_time = _edit_intervals[chat_id] - elapsed
+        await asyncio.sleep(wait_time)
+    
+    while True:
+        try:
+            result = await message.edit_text(**kwargs)
+            # Success - reduce interval for next time
+            _edit_intervals[chat_id] = max(BASE_INTERVAL, _edit_intervals[chat_id] * 0.75)
+            _last_edit_time[chat_id] = time.time()
+            return result
+            
+        except TelegramRetryAfter as e:
+            # Increase interval for this chat
+            _edit_intervals[chat_id] = min(MAX_INTERVAL, _edit_intervals[chat_id] * 2.0)
+            logger.warning(f"Rate limit hit for chat {chat_id}, waiting {e.retry_after} seconds")
+            await asyncio.sleep(e.retry_after)
+            continue
+            
+        except Exception as e:
+            # Other errors - pass through
+            raise
 
 def escape_quotes(text: str) -> str:
     """

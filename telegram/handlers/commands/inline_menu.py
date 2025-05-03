@@ -5,7 +5,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 from database.models import User
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
-from ..utils import get_group_or_none, is_user_group_admin
+from ..utils import get_group_or_none, is_user_group_admin, rate_limited_edit
 
 
 logger = logging.getLogger(__name__)
@@ -41,8 +41,9 @@ async def back_to_user_settings_callback(callback: CallbackQuery, user: User):
     chat = callback.message.chat
     is_admin = await is_user_group_admin(chat, user.telegram_id)
     keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
-    await callback.message.edit_text(
-        "🎛 <b>Головне меню</b>\n\nКеруйте налаштуваннями бота за допомогою кнопок нижче:",
+    await rate_limited_edit(
+        callback.message,
+        text="🎛 <b>Головне меню</b>\n\nКеруйте налаштуваннями бота за допомогою кнопок нижче:",
         reply_markup=keyboard,
         parse_mode="HTML"
     )
@@ -59,8 +60,9 @@ async def open_group_settings_menu_callback(callback: CallbackQuery, group_dao: 
         return
     from .group_inline_menu import get_group_settings_keyboard
     keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
-    await callback.message.edit_text(
-        "👥 <b>Налаштування групи</b>\n\nКеруйте груповими параметрами бота:",
+    await rate_limited_edit(
+        callback.message,
+        text="👥 <b>Налаштування групи</b>\n\nКеруйте груповими параметрами бота:",
         reply_markup=keyboard,
         parse_mode="HTML"
     )
@@ -238,8 +240,9 @@ async def close_user_help_callback(callback: CallbackQuery, user: User):
     if chat.type in ["group", "supergroup"]:
         is_admin = await is_user_group_admin(chat, user.telegram_id)
     keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
-    await callback.message.edit_text(
-        "🎛 <b>Головне меню</b>\n\nКеруйте налаштуваннями бота за допомогою кнопок нижче:",
+    await rate_limited_edit(
+        callback.message,
+        text="🎛 <b>Головне меню</b>\n\nКеруйте налаштуваннями бота за допомогою кнопок нижче:",
         reply_markup=keyboard,
         parse_mode="HTML"
     )
@@ -262,8 +265,9 @@ async def show_help_callback(callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="❌ Закрити довідку", callback_data="close_user_help")
     ]])
-    await callback.message.edit_text(
-        help_text,
+    await rate_limited_edit(
+        callback.message,
+        text=help_text,
         parse_mode="HTML",
         reply_markup=keyboard
     )
