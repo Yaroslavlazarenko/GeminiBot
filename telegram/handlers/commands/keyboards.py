@@ -162,6 +162,12 @@ def get_group_settings_keyboard(group, show_user_settings_button=False) -> Inlin
     keyboard.extend([
         [
             InlineKeyboardButton(
+                text="🗑 Очистити історію",
+                callback_data="clear_group_messages"
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 text="ℹ️ Довідка",
                 callback_data="show_group_help"
             ),
@@ -185,4 +191,76 @@ def get_group_settings_keyboard(group, show_user_settings_button=False) -> Inlin
             )
         ])
     
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+def get_clear_menu_keyboard() -> InlineKeyboardMarkup:
+    """Creates a keyboard for message clearing options."""
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text="🗑 Останні 2 повідомлення",
+                callback_data="clear_messages_2"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🗑 Останні 4 повідомлення",
+                callback_data="clear_messages_4"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🗑 Останні 16 повідомлень",
+                callback_data="clear_messages_16"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🗑 Всі повідомлення",
+                callback_data="clear_messages_all"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="↩️ Назад",
+                callback_data="back_to_main_menu"
+            )
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+def get_group_clear_menu_keyboard() -> InlineKeyboardMarkup:
+    """Creates a keyboard for group message clearing options."""
+    keyboard = [
+        [
+            InlineKeyboardButton(
+                text="🗑 Останні 2 повідомлення",
+                callback_data="clear_group_messages_2"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🗑 Останні 4 повідомлення",
+                callback_data="clear_group_messages_4"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🗑 Останні 16 повідомлень",
+                callback_data="clear_group_messages_16"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="🗑 Всі повідомлення",
+                callback_data="clear_group_messages_all"
+            )
+        ],
+        [
+            InlineKeyboardButton(
+                text="↩️ Назад",
+                callback_data="back_to_group_menu"
+            )
+        ]
+    ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)

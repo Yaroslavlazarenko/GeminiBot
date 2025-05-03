@@ -11,7 +11,7 @@ from ..utils import get_group_or_none, is_user_group_admin, rate_limited_edit
 logger = logging.getLogger(__name__)
 router = Router()
 
-from .keyboards import get_settings_keyboard
+from .keyboards import get_settings_keyboard, get_clear_menu_keyboard
 
 def get_user_menu_text(user: User) -> str:
     """Формирует текст меню пользователя с актуальным статусом и количеством активных настроек."""
@@ -217,33 +217,54 @@ async def toggle_transcribe_video_note_callback(callback: CallbackQuery, user: U
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
 @router.callback_query(F.data == "clear_messages")
-async def clear_messages_callback(callback: CallbackQuery, user: User, message_dao: MessageHistoryDAO, group_dao: GroupDAO):
-    """Handle message history clearing."""
+async def clear_messages_callback(callback: CallbackQuery):
+    """Show clear messages submenu."""
+    await callback.message.edit_text(
+        "🗑 <b>Очищення історії</b>\n\nОберіть кількість повідомлень для видалення:",
+        reply_markup=get_clear_menu_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("clear_messages_"))
+async def handle_clear_messages(callback: CallbackQuery, user: User, message_dao: MessageHistoryDAO, group_dao: GroupDAO):
+    """Handle specific message clearing options."""
+    option = callback.data.split("_")[-1]
     chat = callback.message.chat
     group = await get_group_or_none(group_dao, chat)
     group_db_id = group.id if group else None
-
+    
     try:
+        limit = None if option == "all" else int(option)
         deleted_count = await message_dao.clear_history(
             user_id=user.id,
             group_id=group_db_id,
-            clear_group_wide=False
+            clear_group_wide=False,
+            limit=limit
         )
-
+        
         target_description = "особисту історію" if not group else f"вашу історію у групі '{group.name}'"
+        count_description = f"останні {limit} повідомлень" if limit else "всі повідомлення"
         await callback.answer(f"✅ Видалено {deleted_count} повідомлень", show_alert=True)
         
-        # Only update the keyboard if messages were actually deleted
-        if deleted_count > 0:
-            chat = callback.message.chat
-            is_admin = False
-            if chat.type in ["group", "supergroup"]:
-                is_admin = await is_user_group_admin(chat, user.telegram_id)
-            await refresh_user_menu(callback.message, user, is_admin)
+        # Return to main menu
+        is_admin = False
+        if chat.type in ["group", "supergroup"]:
+            is_admin = await is_user_group_admin(chat, user.telegram_id)
+        await refresh_user_menu(callback.message, user, is_admin)
 
     except Exception as e:
         logger.error(f"Error clearing messages for user {user.telegram_id} in chat {chat.id}: {e}", exc_info=True)
         await callback.answer("❌ Помилка при очищенні історії", show_alert=True)
+
+@router.callback_query(F.data == "back_to_main_menu")
+async def back_to_main_menu_callback(callback: CallbackQuery, user: User):
+    """Return to the main menu."""
+    chat = callback.message.chat
+    is_admin = False
+    if chat.type in ["group", "supergroup"]:
+        is_admin = await is_user_group_admin(chat, user.telegram_id)
+    await refresh_user_menu(callback.message, user, is_admin)
 
 @router.callback_query(F.data == "close_user_help")
 async def close_user_help_callback(callback: CallbackQuery, user: User):

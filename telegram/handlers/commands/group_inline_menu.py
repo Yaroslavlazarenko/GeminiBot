@@ -4,9 +4,9 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, C
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest
 from database.models import User
-from database.dao import GroupDAO
+from database.dao import GroupDAO, MessageHistoryDAO
 from ..utils import get_group_or_none, is_user_group_admin
-from .keyboards import get_settings_keyboard, get_group_settings_keyboard
+from .keyboards import get_settings_keyboard, get_group_settings_keyboard, get_group_clear_menu_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -272,4 +272,68 @@ async def close_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO
     chat = callback.message.chat
     group = await get_group_or_none(group_dao, chat)
     is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    await refresh_group_menu(callback.message, group, is_admin)
+
+@router.callback_query(F.data == "clear_group_messages")
+async def clear_group_messages_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    """Show group clear messages submenu."""
+    chat = callback.message.chat
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    if not is_admin:
+        await callback.answer("Тільки адміністратор може очищати історію групи", show_alert=True)
+        return
+
+    group = await get_group_or_none(group_dao, chat)
+    if not group:
+        await callback.answer("Групу не знайдено у базі", show_alert=True)
+        return
+
+    await callback.message.edit_text(
+        "🗑 <b>Очищення історії групи</b>\n\nОберіть кількість повідомлень для видалення:",
+        reply_markup=get_group_clear_menu_keyboard(),
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+@router.callback_query(F.data.startswith("clear_group_messages_"))
+async def handle_clear_group_messages(callback: CallbackQuery, group_dao: GroupDAO, message_dao: MessageHistoryDAO):
+    """Handle specific group message clearing options."""
+    chat = callback.message.chat
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    if not is_admin:
+        await callback.answer("Тільки адміністратор може очищати історію групи", show_alert=True)
+        return
+
+    group = await get_group_or_none(group_dao, chat)
+    if not group:
+        await callback.answer("Групу не знайдено у базі", show_alert=True)
+        return
+    
+    try:
+        option = callback.data.split("_")[-1]
+        limit = None if option == "all" else int(option)
+        deleted_count = await message_dao.clear_history(
+            group_id=group.id,
+            clear_group_wide=True,
+            limit=limit
+        )
+        
+        count_description = "всі повідомлення" if limit is None else f"останні {limit} повідомлень"
+        await callback.answer(f"✅ Видалено {deleted_count} повідомлень", show_alert=True)
+        await refresh_group_menu(callback.message, group, is_admin)
+
+    except Exception as e:
+        logger.error(f"Error clearing group messages in chat {chat.id}: {e}", exc_info=True)
+        await callback.answer("❌ Помилка при очищенні історії", show_alert=True)
+
+@router.callback_query(F.data == "back_to_group_menu")
+async def back_to_group_menu_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    """Return to the group menu."""
+    chat = callback.message.chat
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    group = await get_group_or_none(group_dao, chat)
+    if not group:
+        await callback.answer("Групу не знайдено у базі", show_alert=True)
+        return
+
     await refresh_group_menu(callback.message, group, is_admin)
