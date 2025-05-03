@@ -11,6 +11,32 @@ from .keyboards import get_settings_keyboard, get_group_settings_keyboard
 logger = logging.getLogger(__name__)
 router = Router()
 
+def get_group_menu_text(group) -> str:
+    """Формирует текст меню группы с актуальным статусом и количеством активных настроек."""
+    active_settings = sum([
+        not group.is_global_disabled,
+        group.responds_to_text,
+        group.responds_to_voice,
+        group.responds_to_photo,
+        group.responds_to_video_note
+    ])
+    
+    return (
+        f"👥 <b>Налаштування групи</b>\n"
+        f"{'🟢' if not group.is_global_disabled else '🔴'} Загальний статус: {'увімкнено' if not group.is_global_disabled else 'вимкнено'}\n"
+        f"📊 Активно налаштувань: {active_settings}/5\n\n"
+        "Керуйте груповими параметрами бота:"
+    )
+
+async def refresh_group_menu(message: Message, group, is_admin: bool = False):
+    """Обновляет текст и клавиатуру меню группы."""
+    keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+    await message.edit_text(
+        text=get_group_menu_text(group),
+        reply_markup=keyboard,
+        parse_mode="HTML"
+    )
+
 @router.message(filters.Command("menu"))
 async def show_group_menu(message: Message, group_dao: GroupDAO):
     """Обработчик /menu в группе: показывает настройки группы."""
@@ -21,24 +47,8 @@ async def show_group_menu(message: Message, group_dao: GroupDAO):
         await message.answer("Група не знайдена у базі. Відправте будь-яке повідомлення у групу, щоб зареєструвати її.")
         return
 
-    # Count active settings
-    active_settings = sum([
-        not group.is_global_disabled,
-        group.responds_to_text,
-        group.responds_to_voice,
-        group.responds_to_photo,
-        group.responds_to_video_note
-    ])
-    
     keyboard = get_group_settings_keyboard(group)
-    await message.answer(
-        f"👥 <b>Налаштування групи</b>\n"
-        f"{'🟢' if not group.is_global_disabled else '🔴'} Загальний статус: {'увімкнено' if not group.is_global_disabled else 'вимкнено'}\n"
-        f"📊 Активно налаштувань: {active_settings}/5\n\n"
-        "Керуйте груповими параметрами бота:",
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
+    await message.answer(get_group_menu_text(group), reply_markup=keyboard, parse_mode="HTML")
 
 @router.callback_query(F.data == "toggle_group_global_disabled")
 async def toggle_group_global_disabled_callback(callback: CallbackQuery, group_dao: GroupDAO):
@@ -58,7 +68,7 @@ async def toggle_group_global_disabled_callback(callback: CallbackQuery, group_d
         group.is_global_disabled = new_value
         status = "увімкнено" if not new_value else "вимкнено"
         await callback.answer(f"✅ Глобальні відповіді {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
+        await refresh_group_menu(callback.message, group, is_admin)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -80,7 +90,7 @@ async def toggle_group_responds_to_text_callback(callback: CallbackQuery, group_
         group.responds_to_text = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Відповіді на текст {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
+        await refresh_group_menu(callback.message, group, is_admin)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -101,7 +111,7 @@ async def toggle_group_responds_to_voice_callback(callback: CallbackQuery, group
         group.responds_to_voice = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Відповіді на голосові {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
+        await refresh_group_menu(callback.message, group, is_admin)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -122,7 +132,7 @@ async def toggle_group_responds_to_photo_callback(callback: CallbackQuery, group
         group.responds_to_photo = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Відповіді на фото {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
+        await refresh_group_menu(callback.message, group, is_admin)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -143,7 +153,7 @@ async def toggle_group_responds_to_video_note_callback(callback: CallbackQuery, 
         group.responds_to_video_note = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Відповіді на відео-повідомлення {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
+        await refresh_group_menu(callback.message, group, is_admin)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -164,7 +174,7 @@ async def toggle_group_transcribe_voice_only_callback(callback: CallbackQuery, g
         group.transcribe_voice_only = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Транскрипція тільки голосових {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
+        await refresh_group_menu(callback.message, group, is_admin)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -185,7 +195,7 @@ async def toggle_group_transcribe_video_note_callback(callback: CallbackQuery, g
         group.transcribe_video_note = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Транскрипція відео-кружків {status}")
-        await callback.message.edit_reply_markup(reply_markup=get_group_settings_keyboard(group, show_user_settings_button=is_admin))
+        await refresh_group_menu(callback.message, group, is_admin)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -202,8 +212,7 @@ async def refresh_group_menu_callback(callback: CallbackQuery, group_dao: GroupD
         await callback.answer("Групу не знайдено у базі", show_alert=True)
         return
     try:
-        keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
-        await callback.message.edit_reply_markup(reply_markup=keyboard)
+        await refresh_group_menu(callback.message, group, is_admin)
         await callback.answer("Меню оновлено")
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
@@ -221,29 +230,11 @@ async def open_group_settings_menu_callback(callback: CallbackQuery, group_dao: 
         await callback.answer("Групу не знайдено у базі", show_alert=True)
         return
 
-    # Count active settings
-    active_settings = sum([
-        not group.is_global_disabled,
-        group.responds_to_text,
-        group.responds_to_voice,
-        group.responds_to_photo,
-        group.responds_to_video_note
-    ])
-    
-    keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
-    await callback.message.edit_text(
-        f"👥 <b>Налаштування групи</b>\n"
-        f"{'🟢' if not group.is_global_disabled else '🔴'} Загальний статус: {'увімкнено' if not group.is_global_disabled else 'вимкнено'}\n"
-        f"📊 Активно налаштувань: {active_settings}/5\n\n"
-        "Керуйте груповими параметрами бота:",
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
+    await refresh_group_menu(callback.message, group, is_admin)
     await callback.answer()
 
 @router.callback_query(F.data == "back_to_user_settings")
 async def back_to_user_settings_callback(callback: CallbackQuery, user: User):
-    
     keyboard = get_settings_keyboard(user)
     await callback.message.edit_text(
         "🎛 <b>Головне меню</b>\n\nКеруйте налаштуваннями бота за допомогою кнопок нижче:",
@@ -281,9 +272,4 @@ async def close_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO
     chat = callback.message.chat
     group = await get_group_or_none(group_dao, chat)
     is_admin = await is_user_group_admin(chat, callback.from_user.id)
-    keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
-    await callback.message.edit_text(
-        "<b>Налаштування групи</b>\n\nКеруйте налаштуваннями групи за допомогою кнопок нижче:",
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
+    await refresh_group_menu(callback.message, group, is_admin)
