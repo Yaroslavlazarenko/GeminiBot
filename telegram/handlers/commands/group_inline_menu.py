@@ -7,36 +7,10 @@ from database.models import User
 from database.dao import GroupDAO, MessageHistoryDAO
 from ..utils import get_group_or_none, is_user_group_admin
 from .keyboards import get_settings_keyboard, get_group_settings_keyboard, get_group_clear_menu_keyboard
-from .inline_menu import refresh_user_menu
+from .menu_utils import refresh_user_menu, refresh_group_menu, get_group_menu_text
 
 logger = logging.getLogger(__name__)
 router = Router()
-
-def get_group_menu_text(group) -> str:
-    """Формирует текст меню группы с актуальным статусом и количеством активных настроек."""
-    active_settings = sum([
-        not group.is_global_disabled,
-        group.responds_to_text,
-        group.responds_to_voice,
-        group.responds_to_photo,
-        group.responds_to_video_note
-    ])
-    
-    return (
-        f"👥 <b>Налаштування групи</b>\n"
-        f"{'🟢' if not group.is_global_disabled else '🔴'} Загальний статус: {'увімкнено' if not group.is_global_disabled else 'вимкнено'}\n"
-        f"📊 Активно налаштувань: {active_settings}/5\n\n"
-        "Використовуйте кнопки нижче для керування:"
-    )
-
-async def refresh_group_menu(message: Message, group, is_admin: bool = False):
-    """Обновляет текст и клавиатуру меню группы."""
-    keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
-    await message.edit_text(
-        text=get_group_menu_text(group),
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
 
 @router.message(filters.Command("menu"))
 async def show_group_menu(message: Message, group_dao: GroupDAO):
@@ -69,7 +43,8 @@ async def toggle_group_global_disabled_callback(callback: CallbackQuery, group_d
         group.is_global_disabled = new_value
         status = "увімкнено" if not new_value else "вимкнено"
         await callback.answer(f"✅ Глобальні відповіді {status}")
-        await refresh_group_menu(callback.message, group, is_admin)
+        keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+        await refresh_group_menu(callback.message, group, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -91,7 +66,8 @@ async def toggle_group_responds_to_text_callback(callback: CallbackQuery, group_
         group.responds_to_text = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Відповіді на текст {status}")
-        await refresh_group_menu(callback.message, group, is_admin)
+        keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+        await refresh_group_menu(callback.message, group, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -112,7 +88,8 @@ async def toggle_group_responds_to_voice_callback(callback: CallbackQuery, group
         group.responds_to_voice = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Відповіді на голосові {status}")
-        await refresh_group_menu(callback.message, group, is_admin)
+        keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+        await refresh_group_menu(callback.message, group, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -133,7 +110,8 @@ async def toggle_group_responds_to_photo_callback(callback: CallbackQuery, group
         group.responds_to_photo = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Відповіді на фото {status}")
-        await refresh_group_menu(callback.message, group, is_admin)
+        keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+        await refresh_group_menu(callback.message, group, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -154,7 +132,8 @@ async def toggle_group_responds_to_video_note_callback(callback: CallbackQuery, 
         group.responds_to_video_note = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Відповіді на відео-повідомлення {status}")
-        await refresh_group_menu(callback.message, group, is_admin)
+        keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+        await refresh_group_menu(callback.message, group, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -175,7 +154,8 @@ async def toggle_group_transcribe_voice_only_callback(callback: CallbackQuery, g
         group.transcribe_voice_only = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Транскрипція тільки голосових {status}")
-        await refresh_group_menu(callback.message, group, is_admin)
+        keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+        await refresh_group_menu(callback.message, group, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -196,7 +176,8 @@ async def toggle_group_transcribe_video_note_callback(callback: CallbackQuery, g
         group.transcribe_video_note = new_value
         status = "увімкнено" if new_value else "вимкнено"
         await callback.answer(f"✅ Транскрипція відео-кружків {status}")
-        await refresh_group_menu(callback.message, group, is_admin)
+        keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+        await refresh_group_menu(callback.message, group, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -213,7 +194,8 @@ async def refresh_group_menu_callback(callback: CallbackQuery, group_dao: GroupD
         await callback.answer("Групу не знайдено у базі", show_alert=True)
         return
     try:
-        await refresh_group_menu(callback.message, group, is_admin)
+        keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+        await refresh_group_menu(callback.message, group, keyboard)
         await callback.answer("Меню оновлено")
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
@@ -231,7 +213,8 @@ async def open_group_settings_menu_callback(callback: CallbackQuery, group_dao: 
         await callback.answer("Групу не знайдено у базі", show_alert=True)
         return
 
-    await refresh_group_menu(callback.message, group, is_admin)
+    keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+    await refresh_group_menu(callback.message, group, keyboard)
     await callback.answer()
 
 @router.callback_query(F.data == "back_to_user_settings")
@@ -270,7 +253,8 @@ async def close_group_help_callback(callback: CallbackQuery, group_dao: GroupDAO
     chat = callback.message.chat
     group = await get_group_or_none(group_dao, chat)
     is_admin = await is_user_group_admin(chat, callback.from_user.id)
-    await refresh_group_menu(callback.message, group, is_admin)
+    keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+    await refresh_group_menu(callback.message, group, keyboard)
 
 @router.callback_query(F.data == "clear_group_messages")
 async def clear_group_messages_callback(callback: CallbackQuery, group_dao: GroupDAO):
@@ -318,7 +302,8 @@ async def handle_clear_group_messages(callback: CallbackQuery, group_dao: GroupD
         
         count_description = "всі повідомлення" if limit is None else f"останні {limit} повідомлень"
         await callback.answer(f"✅ Видалено {deleted_count} повідомлень", show_alert=True)
-        await refresh_group_menu(callback.message, group, is_admin)
+        keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+        await refresh_group_menu(callback.message, group, keyboard)
 
     except Exception as e:
         logger.error(f"Error clearing group messages in chat {chat.id}: {e}", exc_info=True)
@@ -334,4 +319,5 @@ async def back_to_group_menu_callback(callback: CallbackQuery, group_dao: GroupD
         await callback.answer("Групу не знайдено у базі", show_alert=True)
         return
 
-    await refresh_group_menu(callback.message, group, is_admin)
+    keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+    await refresh_group_menu(callback.message, group, keyboard)

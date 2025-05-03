@@ -5,40 +5,12 @@ from aiogram.exceptions import TelegramBadRequest
 
 from database.models import User
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
-from ..utils import get_group_or_none, is_user_group_admin, rate_limited_edit
-from .group_inline_menu import get_group_settings_keyboard, get_group_menu_text
+from ..utils import get_group_or_none, is_user_group_admin
+from .keyboards import get_settings_keyboard, get_clear_menu_keyboard, get_group_settings_keyboard
+from .menu_utils import get_user_menu_text, refresh_user_menu, get_group_menu_text, refresh_group_menu
 
 logger = logging.getLogger(__name__)
 router = Router()
-
-from .keyboards import get_settings_keyboard, get_clear_menu_keyboard
-
-def get_user_menu_text(user: User) -> str:
-    """Формує текст меню користувача з актуальним статусом і кількістю активних налаштувань."""
-    active_settings = sum([
-        not user.is_global_disabled,
-        user.responds_to_text,
-        user.responds_to_voice,
-        user.responds_to_photo,
-        user.responds_to_video_note
-    ])
-    
-    return (
-        f"👤 <b>Мої налаштування</b>\n"
-        f"{'🟢' if not user.is_global_disabled else '🔴'} Загальний статус: {'увімкнено' if not user.is_global_disabled else 'вимкнено'}\n"
-        f"📊 Активно налаштувань: {active_settings}/5\n\n"
-        "Використовуйте кнопки нижче для керування:"
-    )
-
-async def refresh_user_menu(message: Message, user: User, is_admin: bool = False):
-    """Оновлює текст і клавіатуру меню користувача."""
-    keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
-    await rate_limited_edit(
-        message,
-        text=get_user_menu_text(user),
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
 
 @router.message(filters.Command("menu"))
 async def show_menu(message: Message, user: User):
@@ -55,10 +27,10 @@ async def show_menu(message: Message, user: User):
 
 @router.callback_query(F.data == "back_to_user_settings")
 async def back_to_user_settings_callback(callback: CallbackQuery, user: User):
-
     chat = callback.message.chat
     is_admin = await is_user_group_admin(chat, user.telegram_id)
-    await refresh_user_menu(callback.message, user, is_admin)
+    keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+    await refresh_user_menu(callback.message, user, is_admin, keyboard)
     await callback.answer()
 
 @router.callback_query(F.data == "open_group_settings_menu")
@@ -70,12 +42,7 @@ async def open_group_settings_menu_callback(callback: CallbackQuery, group_dao: 
         await callback.answer("Групу не знайдено у базі", show_alert=True)
         return
     keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
-    await rate_limited_edit(
-        callback.message,
-        text=get_group_menu_text(group),
-        reply_markup=keyboard,
-        parse_mode="HTML"
-    )
+    await refresh_group_menu(callback.message, group, keyboard)
     await callback.answer()
 
 @router.callback_query(F.data == "toggle_global_disabled")
@@ -94,7 +61,8 @@ async def toggle_global_callback(callback: CallbackQuery, user: User, user_dao: 
         if chat.type in ["group", "supergroup"]:
             is_admin = await is_user_group_admin(chat, user.telegram_id)
         
-        await refresh_user_menu(callback.message, user, is_admin)
+        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+        await refresh_user_menu(callback.message, user, is_admin, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -112,7 +80,8 @@ async def toggle_text_callback(callback: CallbackQuery, user: User, user_dao: Us
         is_admin = False
         if chat.type in ["group", "supergroup"]:
             is_admin = await is_user_group_admin(chat, user.telegram_id)
-        await refresh_user_menu(callback.message, user, is_admin)
+        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+        await refresh_user_menu(callback.message, user, is_admin, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -130,7 +99,8 @@ async def toggle_voice_callback(callback: CallbackQuery, user: User, user_dao: U
         is_admin = False
         if chat.type in ["group", "supergroup"]:
             is_admin = await is_user_group_admin(chat, user.telegram_id)
-        await refresh_user_menu(callback.message, user, is_admin)
+        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+        await refresh_user_menu(callback.message, user, is_admin, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -148,7 +118,8 @@ async def toggle_photo_callback(callback: CallbackQuery, user: User, user_dao: U
         is_admin = False
         if chat.type in ["group", "supergroup"]:
             is_admin = await is_user_group_admin(chat, user.telegram_id)
-        await refresh_user_menu(callback.message, user, is_admin)
+        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+        await refresh_user_menu(callback.message, user, is_admin, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -166,7 +137,8 @@ async def toggle_video_note_callback(callback: CallbackQuery, user: User, user_d
         is_admin = False
         if chat.type in ["group", "supergroup"]:
             is_admin = await is_user_group_admin(chat, user.telegram_id)
-        await refresh_user_menu(callback.message, user, is_admin)
+        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+        await refresh_user_menu(callback.message, user, is_admin, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -188,7 +160,8 @@ async def toggle_mode_callback(callback: CallbackQuery, user: User, user_dao: Us
         is_admin = False
         if chat.type in ["group", "supergroup"]:
             is_admin = await is_user_group_admin(chat, user.telegram_id)
-        await refresh_user_menu(callback.message, user, is_admin)
+        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+        await refresh_user_menu(callback.message, user, is_admin, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -210,7 +183,8 @@ async def toggle_transcribe_video_note_callback(callback: CallbackQuery, user: U
         is_admin = False
         if chat.type in ["group", "supergroup"]:
             is_admin = await is_user_group_admin(chat, user.telegram_id)
-        await refresh_user_menu(callback.message, user, is_admin)
+        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+        await refresh_user_menu(callback.message, user, is_admin, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -249,7 +223,8 @@ async def handle_clear_messages(callback: CallbackQuery, user: User, message_dao
         is_admin = False
         if chat.type in ["group", "supergroup"]:
             is_admin = await is_user_group_admin(chat, user.telegram_id)
-        await refresh_user_menu(callback.message, user, is_admin)
+        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+        await refresh_user_menu(callback.message, user, is_admin, keyboard)
 
     except Exception as e:
         logger.error(f"Error clearing messages for user {user.telegram_id} in chat {chat.id}: {e}", exc_info=True)
@@ -262,7 +237,8 @@ async def back_to_main_menu_callback(callback: CallbackQuery, user: User):
     is_admin = False
     if chat.type in ["group", "supergroup"]:
         is_admin = await is_user_group_admin(chat, user.telegram_id)
-    await refresh_user_menu(callback.message, user, is_admin)
+    keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+    await refresh_user_menu(callback.message, user, is_admin, keyboard)
 
 @router.callback_query(F.data == "close_user_help")
 async def close_user_help_callback(callback: CallbackQuery, user: User):
@@ -270,7 +246,8 @@ async def close_user_help_callback(callback: CallbackQuery, user: User):
     is_admin = False
     if chat.type in ["group", "supergroup"]:
         is_admin = await is_user_group_admin(chat, user.telegram_id)
-    await refresh_user_menu(callback.message, user, is_admin)
+    keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+    await refresh_user_menu(callback.message, user, is_admin, keyboard)
 
 @router.callback_query(F.data == "show_help")
 async def show_help_callback(callback: CallbackQuery):
@@ -290,8 +267,7 @@ async def show_help_callback(callback: CallbackQuery):
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="❌ Закрити довідку", callback_data="close_user_help")
     ]])
-    await rate_limited_edit(
-        callback.message,
+    await callback.message.edit_text(
         text=help_text,
         parse_mode="HTML",
         reply_markup=keyboard
@@ -311,7 +287,8 @@ async def refresh_menu_callback(callback: CallbackQuery, user: User):
         is_admin = False
         if chat.type in ["group", "supergroup"]:
             is_admin = await is_user_group_admin(chat, user.telegram_id)
-        await refresh_user_menu(callback.message, user, is_admin)
+        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+        await refresh_user_menu(callback.message, user, is_admin, keyboard)
         await callback.answer("Меню оновлено")
     except TelegramBadRequest as e:
         if "message is not modified" in str(e):
