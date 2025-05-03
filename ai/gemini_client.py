@@ -169,57 +169,73 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                 }
 
             try:
-                # Clean the response and process JSON as before
+                # Clean the response text
                 raw_text = response.text.strip()
-                clean_text = re.sub(r'```(?:json)?\n?', '', raw_text)
-                clean_text = clean_text.strip()
-
-                # Try parsing JSON as a single object
+                
+                # Function to find and extract JSON object from text
+                def extract_json(text):
+                    # First try to find JSON between triple backticks
+                    json_match = re.search(r'```(?:json)?\s*({[\s\S]*?})\s*```', text)
+                    if json_match:
+                        return json_match.group(1).strip()
+                    
+                    # If no JSON in code blocks, try to find first valid JSON object
+                    text = re.sub(r'```[^`]*```', '', text)  # Remove any remaining code blocks
+                    start_idx = text.find('{')
+                    if start_idx == -1:
+                        return text  # No JSON found, return original text
+                        
+                    # Track nested braces to find complete JSON object
+                    count = 0
+                    for i in range(start_idx, len(text)):
+                        if text[i] == '{':
+                            count += 1
+                        elif text[i] == '}':
+                            count -= 1
+                            if count == 0:
+                                return text[start_idx:i+1]
+                    
+                    return text  # No complete JSON found
+                
+                # Try to extract and parse JSON
+                clean_text = extract_json(raw_text)
                 try:
                     response_json = json.loads(clean_text)
-                    multiple_json = False
-                except json.JSONDecodeError as e:
-                    # Try to split if multiple objects are concatenated
-                    from json import JSONDecoder
-                    decoder = JSONDecoder()
-                    objs = []
-                    s = clean_text.lstrip()
-                    idx = 0
-                    while idx < len(s):
-                        try:
-                            obj, end = decoder.raw_decode(s, idx)
-                            objs.append(obj)
-                            idx = end
-                            # skip whitespace
-                            while idx < len(s) and s[idx].isspace():
-                                idx += 1
-                        except json.JSONDecodeError:
-                            break
-                    if objs:
-                        if len(objs) > 1:
-                            logger.warning(f"Multiple JSON objects found in Gemini response. Using the first one.")
-                        response_json = objs[0]
-                        multiple_json = True
-                    else:
-                        raise e
-                # Проверяем структуру
-                if not isinstance(response_json, dict):
-                    raise ValueError("Response JSON must be an object")
+                except json.JSONDecodeError:
+                    # If direct parsing fails, try to clean the text further
+                    clean_text = re.sub(r'[\u200b-\u200f\ufeff]', '', clean_text)  # Remove zero-width chars
+                    clean_text = clean_text.replace('\\"', '"').replace('\\n', '\n')  # Fix escaped quotes
+                    response_json = json.loads(clean_text)
                 
+                # Validate response structure
+                if not isinstance(response_json, dict):
+                    if isinstance(response_json, str):
+                        response_json = {"text": response_json, "commands": []}
+                    else:
+                        raise ValueError("Response JSON must be an object or string")
+                
+                # Extract and clean text
                 text = response_json.get("text", "").strip()
-                logger.critical(f"[Gemini Debug] Parsed text before cleanup: {repr(text)}")
-                # Remove all backslashes (aggressive cleanup)
-                text = text.replace('\\', '')
-                logger.critical(f"[Gemini Debug] Parsed text after cleanup: {repr(text)}")
+                logger.debug(f"[Gemini Debug] Parsed text before cleanup: {repr(text)}")
+                
+                # Careful cleanup of text while preserving important characters
+                text = re.sub(r'\\(?!["\\/])', '', text)  # Remove unnecessary backslashes
+                text = text.replace('\\n', '\n').replace('\\"', '"')  # Handle common escapes
+                logger.debug(f"[Gemini Debug] Parsed text after cleanup: {repr(text)}")
+                
+                # Handle commands with validation
                 commands = response_json.get("commands", [])
-
-                # Validate commands structure
+                if not isinstance(commands, list):
+                    commands = []
+                    
+                # Validate each command structure
+                validated_commands = []
                 for command in commands:
                     if not isinstance(command, dict):
                         continue
                     if "name" not in command or "args" not in command:
                         continue
-                    
+                        
                     # Special validation for add_reaction command
                     if command["name"] == "add_reaction":
                         args = command["args"]
@@ -228,14 +244,14 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON.""")],
                         if "emoji" not in args or not args["emoji"]:
                             continue
                         if "message_ids" not in args or not isinstance(args["message_ids"], list):
-                            command["args"]["message_ids"] = []
-
-                # Даже если нет текста, могут быть команды
+                            args["message_ids"] = []
+                    validated_commands.append(command)
+                
                 return {
                     "type": "json_response",
                     "data": {
                         "text": text,
-                        "commands": commands
+                        "commands": validated_commands
                     }
                 }
                 
