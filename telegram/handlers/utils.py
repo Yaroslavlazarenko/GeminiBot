@@ -1,6 +1,7 @@
 import logging
 from typing import Optional, Dict, Any
 import asyncio
+import html  # Added missing import
 
 from aiogram.types import Message, Chat
 from aiogram.enums import ChatType, ChatMemberStatus
@@ -124,14 +125,21 @@ async def handle_gemini_result(
                 await message_dao.add_message(
                     user_id=user.id,
                     role=MessageRole.MODEL,
-                    text=response_data["text"], # Save the ORIGINAL, unescaped text
+                    text=response_data["text"],
                     group_id=group_db_id,
                     telegram_message_id=sent_message.message_id
                 )
-                sent_text_successfully = True # Mark as successful
+                sent_text_successfully = True
                 logger.debug(f"Successfully sent message ({method_name}, HTML) to chat {chat.id}. Length: {len(text_for_html_sending)}")
 
             except TelegramBadRequest as e:
+                error_text = str(e).lower()
+                if "message is not modified" in error_text:
+                    # Message content hasn't changed, treat as success
+                    logger.info(f"Message content unchanged for chat {chat.id}")
+                    sent_text_successfully = True
+                    return  # Exit early since no modification needed
+                
                 logger.warning(f"Failed to send message ({method_name}, HTML) to {chat.id}: {e}. Content (raw): '{response_data['text'][:50]}...'. Retrying without HTML.")
                 try:
                     # Prepare arguments for retry without HTML
