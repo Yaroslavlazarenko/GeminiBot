@@ -132,13 +132,42 @@ async def get_gemini_response(
     if message and hasattr(message, 'chat') and message.chat.type in ['group', 'supergroup']:
         system_prompt_parts.append(f"\nCurrent chat type: {message.chat.type}")
         system_prompt_parts.append(f"\nCurrent group title: {getattr(message.chat, 'title', 'Unknown Group')}")
+
+        # Add group information
         try:
-            # Note: get_member_count might require bot permissions and can be slow
-            # member_count = await message.chat.get_member_count()
-            # system_prompt_parts.append(f"\nGroup members: {member_count}")
-            pass # Temporarily disable get_member_count if causing issues
+            # Get member count
+            member_count = await message.chat.get_member_count()
+            system_prompt_parts.append(f"\nGroup members count: {member_count}")
+
+            # Get chat administrators
+            admins = await message.chat.get_administrators()
+            admin_info = []
+            for admin in admins:
+                admin_user = admin.user
+                status = admin.status
+                is_owner = "(Owner)" if status == "creator" else ""
+                admin_name = f"{admin_user.full_name or admin_user.username or f'User {admin_user.id}'} {is_owner}"
+                admin_info.append(admin_name)
+
+            if admin_info:
+                system_prompt_parts.append(f"\nGroup administrators: {', '.join(admin_info)}")
+
+            # Get information about the current message sender
+            sender = message.from_user
+            if sender:
+                # Check if sender is admin
+                is_admin = any(admin.user.id == sender.id for admin in admins)
+                admin_status = "(Administrator)" if is_admin else ""
+                system_prompt_parts.append(f"\nCurrent message sender: {sender.full_name or sender.username or f'User {sender.id}'} {admin_status}")
+
+            # Note: Getting all members would be too resource-intensive and might hit rate limits
+            # Instead, we'll just mention a few recent active members if available
+            system_prompt_parts.append("\nNote: The bot can see all messages in the group and has access to member information.")
+
         except Exception as e:
-             logger.warning(f"Failed to get member count: {e}") # Keep logging just in case
+            logger.warning(f"Failed to get group information: {e}", exc_info=True)
+            system_prompt_parts.append("\nNote: Some group information could not be retrieved.")
+
         system_prompt_parts.append("\nIMPORTANT: You are in a group chat. Keep your responses concise and relevant to the current user's message. Avoid lengthy explanations or complex multi-turn interactions unless explicitly needed.")
 
     # Add user-specific interaction rule
