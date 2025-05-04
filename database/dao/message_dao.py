@@ -219,7 +219,7 @@ class MessageHistoryDAO:
 
                 # Only add username and timestamp prefix for user messages, not bot responses
                 if role_str == "user":
-                    formatted_text = f"[{time_str}] {display_name}: {message.text}"
+                    formatted_text = f"Message Id: {message.telegram_message_id} [{time_str}] {display_name}: {message.text}"
                 else:
                     formatted_text = message.text
 

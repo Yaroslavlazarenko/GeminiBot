@@ -128,7 +128,7 @@ async def process_media_group(
 
             await message_dao.add_message(
                 user_id=user.id, role=MessageRole.USER,
-                text=f"Message info: next message contains {len(photos)} photos in a media group",
+                text=f"Message info: next message contains {len(photos)} photos in a media group, Message ID: {first_message.message_id}, Message Time: {first_message.date}",
                 group_id=group_db_id,
                 telegram_message_id=first_message.message_id
             )
@@ -308,7 +308,7 @@ async def document_handler(
 
         await message_dao.add_message(
             user_id=user.id, role=MessageRole.USER,
-            text=f"Message info: next message is a {SUPPORTED_IMAGE_TYPES[mime_type]} image",
+            text=f"Message info: next message is a {SUPPORTED_IMAGE_TYPES[mime_type]} image, Message ID: {message.message_id}, Message Time: {message.date}",
             group_id=group_db_id,
             telegram_message_id=message.message_id
         )

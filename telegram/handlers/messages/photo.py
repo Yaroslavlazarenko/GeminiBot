@@ -156,7 +156,7 @@ async def process_media_group(
             # Инфо-сообщение (одно на всю группу)
             await message_dao.add_message(
                 user_id=user.id, role=MessageRole.USER,
-                text=f"Message info: next message contains {len(photos)} photos in a media group",
+                text=f"Message info: next message contains {len(photos)} photos in a media group, Message ID: {first_message.message_id}, Message Time: {first_message.date}",
                 group_id=group_db_id,
                 telegram_message_id=first_message.message_id # ID первого сообщения группы как идентификатор
             )
@@ -372,7 +372,7 @@ async def photo_handler(
 
         # Используем DAO из middleware (сессия middleware)
         await message_dao.add_message( # Используем message_dao
-            user_id=user.id, role=MessageRole.USER, text="Message info: next message is a photo",
+            user_id=user.id, role=MessageRole.USER, text=f"Message info: next message is a photo, Message ID: {message.message_id}, Message Time: {message.date}",
             group_id=group_db_id, telegram_message_id=message.message_id
         )
         await message_dao.add_message( # Используем message_dao

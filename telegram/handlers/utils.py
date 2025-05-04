@@ -282,16 +282,22 @@ async def handle_gemini_result(
                          logger.warning(f"Skipping invalid message ID '{msg_id}' in add_reaction command.")
                          continue
                     try:
+                        logger.info(f"Attempting to add reaction '{emoji}' to message {msg_id} in chat {chat.id} (original message ID: {message.message_id})")
                         await message.bot.set_message_reaction(
                             chat_id=chat.id,
                             message_id=msg_id,
                             reaction=reaction_payload,
-                            # is_big=False # Optional: for small reaction
                         )
-                        logger.info(f"Added reaction '{emoji}' to message {msg_id} in chat {chat.id}")
+                        logger.info(f"Successfully added reaction '{emoji}' to message {msg_id} in chat {chat.id}")
                     except Exception as e:
                         # Common errors: message not found, chat admin rights needed, user blocked bot, reaction not allowed
-                        logger.error(f"Failed to add reaction '{emoji}' to message {msg_id} in chat {chat.id}: {e}")
+                        error_text = str(e).lower()
+                        if "message to react not found" in error_text:
+                            logger.error(f"Message {msg_id} not found in chat {chat.id} - message may be deleted or too old")
+                        elif "not enough rights" in error_text:
+                            logger.error(f"Bot lacks permission to add reaction in chat {chat.id}")
+                        else:
+                            logger.error(f"Failed to add reaction '{emoji}' to message {msg_id} in chat {chat.id}: {e}")
 
             elif command_name == "reply_to_message":
                 # This command is primarily handled during the text sending phase.

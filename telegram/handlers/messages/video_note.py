@@ -233,7 +233,7 @@ async def video_note_handler(
         # Add message info first
         message_info = f"Message info: next message is video note from {user_display_name}"
         if is_forwarded and original_sender:
-            message_info += f" (forwarded from {original_sender.full_name})"
+            message_info += f" (forwarded from {original_sender.full_name}, message ID: {message.message_id}, message Time: {message.date})"
         elif is_forwarded:
             message_info += " (forwarded from unknown user)"
             

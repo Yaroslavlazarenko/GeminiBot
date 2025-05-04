@@ -101,7 +101,7 @@ async def voice_handler(
 
     try:
         await message_dao.add_message(
-            user_id=user.id, role=MessageRole.USER, text="Message info: next message is audio message", group_id=group_db_id,
+            user_id=user.id, role=MessageRole.USER, text=f"Message info: next message is audio message, Message ID: {message.message_id}, Message Time: {message.date}", group_id=group_db_id,
             telegram_message_id=message.message_id
         )
         await message_dao.add_message(
