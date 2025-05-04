@@ -1,7 +1,8 @@
 import logging
 
 from aiogram import F, Router, types
-from aiogram.types import Message, ChatType
+from aiogram.types import Message
+from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
