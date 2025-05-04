@@ -1,6 +1,6 @@
 import logging
-
-from aiogram import F, Router, types
+import io
+from aiogram import F, Router
 from aiogram.types import Message
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
@@ -11,6 +11,7 @@ from ai.gemini_client import get_audio_response, get_text_response
 from database.models import User, MessageRole
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
 from ..utils import send_error_message, get_group_or_none, handle_gemini_result
+from ..message_batcher import message_batcher
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -135,7 +136,17 @@ async def voice_handler(
             voice_data=voice_data  # Save voice data
         )
         logger.debug(f"Voice message queued for save (user {user.telegram_id}, group_id {group_db_id})")
-
+        
+        # Check if we should process this message or wait for more messages
+        user_telegram_id = user.telegram_id
+        should_process = await message_batcher.register_message(user_telegram_id)
+        
+        if not should_process:
+            # This message is part of a batch, don't respond yet
+            logger.info(f"Batching voice message from user {user_telegram_id} - waiting for more messages")
+            return
+        
+        # If we get here, either this is the first message in a batch or the batching period has ended
         # Get message history for context
         if group_db_id is not None:
             message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id)
@@ -152,7 +163,7 @@ async def voice_handler(
         except Exception as e:
             logger.warning(f"Failed to send chat action 'typing' to {chat.id}: {e}")
 
-        gemini_result = await get_text_response(
+        gemini_result = await get_audio_response(
             message_history=message_history,
             user=user,
             message=message

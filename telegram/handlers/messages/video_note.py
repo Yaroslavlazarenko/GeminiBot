@@ -16,6 +16,7 @@ from ai.gemini_client import get_video_response, get_text_response
 from database.models import User, MessageRole
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
 from ..utils import send_error_message, get_group_or_none, handle_gemini_result
+from ..message_batcher import message_batcher
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -255,7 +256,17 @@ async def video_note_handler(
             video_data=video_data  # Save video note data
         )
         logger.debug(f"Video note message queued for save (user {user.telegram_id}, group_id {group_db_id})")
-
+        
+        # Check if we should process this message or wait for more messages
+        user_telegram_id = user.telegram_id
+        should_process = await message_batcher.register_message(user_telegram_id)
+        
+        if not should_process:
+            # This message is part of a batch, don't respond yet
+            logger.info(f"Batching video note message from user {user_telegram_id} - waiting for more messages")
+            return
+        
+        # If we get here, either this is the first message in a batch or the batching period has ended
         # Get message history for context
         if group_db_id is not None:
             message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id)
