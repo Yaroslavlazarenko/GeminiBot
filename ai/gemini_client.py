@@ -155,7 +155,7 @@ JUST THE RAW JSON OBJECT. YOUR ENTIRE RESPONSE MUST BE PARSEABLE AS JSON. """)],
     )
     
     # Add instruction to the start of the context
-    contents = [critical_instruction] + contents
+    contents = contents + [critical_instruction]
 
     retries = 0
     while retries < MAX_RETRIES:
