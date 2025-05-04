@@ -93,12 +93,37 @@ async def sticker_handler(
 
         # Формируем метаданные для стикера с более четким описанием
         metadata_parts = []
-        metadata_parts.append(f"Message info: sticker from {user_display_name} (ID: {user.telegram_id})")
-        if message.forward_from:
-            metadata_parts.append(f"forwarded from {message.forward_from.full_name}")
-        elif message.forward_from_chat:
-            metadata_parts.append(f"forwarded from channel/group {message.forward_from_chat.title}")
-        metadata_parts.append(f"Message ID: {message.message_id}")
+        
+        is_forwarded = bool(message.forward_from or message.forward_from_chat or message.forward_sender_name or message.forward_date)
+        
+        if is_forwarded:
+            # This is a forwarded sticker
+            metadata_parts.append(f"Message info: FORWARDED sticker shared by {user_display_name} (User ID: {user.telegram_id})")
+            
+            # Add detailed forwarding information
+            if message.forward_from:
+                # Forwarded from a user who hasn't restricted forwarding privacy
+                forward_name = message.forward_from.full_name or message.forward_from.username or f"User {message.forward_from.id}"
+                is_bot = "(Bot)" if message.forward_from.is_bot else ""
+                metadata_parts.append(f"Original sender: {forward_name} {is_bot} (ID: {message.forward_from.id})")
+            elif message.forward_sender_name:
+                # Forwarded from a user who restricted forwarding privacy
+                metadata_parts.append(f"Original sender: {message.forward_sender_name} (forwarding privacy enabled)")
+            elif message.forward_from_chat:
+                # Forwarded from a channel or group
+                chat_type = message.forward_from_chat.type.capitalize()
+                metadata_parts.append(f"Original source: {chat_type} '{message.forward_from_chat.title}' (ID: {message.forward_from_chat.id})")
+                if message.forward_signature:
+                    metadata_parts.append(f"Post author: {message.forward_signature}")
+            
+            # Add original message date if available
+            if message.forward_date:
+                metadata_parts.append(f"Original message time: {message.forward_date}")
+        else:
+            # Regular non-forwarded sticker
+            metadata_parts.append(f"Message info: sticker from {user_display_name} (User ID: {user.telegram_id})")
+        
+        metadata_parts.append(f"Message ID: {message.message_id}, Current time: {message.date}")
         metadata_parts.append(f"Message Time: {message.date}")
 
         sticker_info_parts = []
