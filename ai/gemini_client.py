@@ -160,8 +160,31 @@ async def get_gemini_response(
                 admin_status = "(Administrator)" if is_admin else ""
                 system_prompt_parts.append(f"\nCurrent message sender: {sender.full_name or sender.username or f'User {sender.id}'} {admin_status}")
 
-            # Note: Getting all members would be too resource-intensive and might hit rate limits
-            # Instead, we'll just mention a few recent active members if available
+            # Get regular members (non-admins) if there are fewer than 10 of them
+            if member_count < 20:  # Only attempt if the group is reasonably small
+                try:
+                    # Get all members
+                    regular_members = []
+                    admin_ids = [admin.user.id for admin in admins]  # List of admin IDs for quick lookup
+                    
+                    # Get chat members (this might be limited by API)
+                    chat_members = await message.chat.get_members()
+                    
+                    # Filter out admins and collect regular members
+                    for member in chat_members:
+                        if member.user.id not in admin_ids:
+                            member_name = member.user.full_name or member.user.username or f'User {member.user.id}'
+                            regular_members.append(member_name)
+                    
+                    # Only include if there are fewer than 10 regular members
+                    if len(regular_members) > 0 and len(regular_members) < 10:
+                        system_prompt_parts.append(f"\nRegular members: {', '.join(regular_members)}")
+                    else:
+                        system_prompt_parts.append(f"\nThere are {len(regular_members)} regular members in this group.")
+                        
+                except Exception as e:
+                    logger.warning(f"Failed to get regular members: {e}", exc_info=True)
+            
             system_prompt_parts.append("\nNote: The bot can see all messages in the group and has access to member information.")
 
         except Exception as e:
