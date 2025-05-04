@@ -306,7 +306,20 @@ async def get_gemini_response(
                 # --- Start Response Processing and Parsing ---
                 raw_text = api_response.text.strip()
                 logger.debug(f"[Gemini Debug] Raw response text: {raw_text[:500]}...")
-
+                
+                # Проверяем, похож ли ответ на JSON
+                if not raw_text.strip().startswith('{') or not '}' in raw_text:
+                    # Если это не JSON, сразу возвращаем обычный текст
+                    logger.info(f"[Gemini Debug] Response doesn't look like JSON. Treating as plain text: {raw_text[:100]}...")
+                    return {
+                        "type": "json_response",
+                        "data": {
+                            "text": raw_text,
+                            "commands": []
+                        }
+                    }
+                
+                # Если похоже на JSON, продолжаем обработку
                 # 1. Extraction: Find the most likely JSON string in the response
                 def extract_json_string(text):
                     # Look for JSON inside code blocks first
@@ -348,7 +361,6 @@ async def get_gemini_response(
                 extracted_text = extract_json_string(raw_text)
                 logger.debug(f"[Gemini Debug] Extracted text for parsing: {extracted_text[:500]}...")
 
-
                 # 2. Pre-processing/Repair: Fix common LLM JSON errors BEFORE parsing
                 # Specifically target "message_ids": followed immediately by } or ] (missing value)
                 # Example: "message_ids":} -> "message_ids":[]}
@@ -362,13 +374,12 @@ async def get_gemini_response(
                     response_json = json.loads(repaired_text)
                     logger.debug("[Gemini Debug] Successfully parsed JSON.")
                 except json.JSONDecodeError as e:
-                    # If parsing fails even after repair, log the issue
-                    logger.error(f"Failed to parse response as JSON AFTER REPAIR: {e}. Raw: {raw_text[:500]}... Extracted: {extracted_text[:500]}... Repaired: {repaired_text[:500]}...", exc_info=True)
-                    # Fallback: return an error response with the raw text in case parsing failed
+                    # If parsing fails, treat as plain text
+                    logger.info(f"Failed to parse response as JSON: {e}. Treating as plain text.")
                     return {
-                        "type": "error",
+                        "type": "json_response",
                         "data": {
-                            "text": f"AI model returned invalid JSON data. Raw response:\n{raw_text}",
+                            "text": raw_text.strip(),
                             "commands": []
                         }
                     }
