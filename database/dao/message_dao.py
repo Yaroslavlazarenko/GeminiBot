@@ -221,11 +221,24 @@ class MessageHistoryDAO:
 
         parts = []
 
+        # Format message metadata to include time and telegram_message_id
+        metadata_parts = []
+        if message.message_metadata:
+            metadata_parts.append(message.message_metadata)
+        if message.telegram_message_id:
+            metadata_parts.append(f"Telegram Message ID: {message.telegram_message_id}")
+        if message.timestamp:
+            # Format timestamp in readable format
+            formatted_time = message.timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
+            metadata_parts.append(f"Time: {formatted_time}")
+        
+        message_metadata = ", ".join(metadata_parts)
+
         # Add text if present
         if message.text:
             try:
-                # Текст уже содержит в себе метаданные благодаря новому формату
-                parts.append(types.Part.from_text(text=message.message_metadata + message.text))
+                final_text = message_metadata + "\n" + message.text if message_metadata else message.text
+                parts.append(types.Part.from_text(text=final_text))
                 logger.debug(f"Added text part to message {message.id}")
             except Exception as e:
                 logger.error(f"Error creating text part for message {message.id}: {e}")
@@ -234,7 +247,8 @@ class MessageHistoryDAO:
         # Add sticker data if present
         if message.sticker and message.sticker.image_data:
             try:
-                parts.append(types.Part.from_text(text=message.message_metadata))
+                if message_metadata:
+                    parts.append(types.Part.from_text(text=message_metadata))
                 parts.append(types.Part.from_bytes(data=message.sticker.image_data, mime_type="image/webp"))
                 logger.debug(f"Added sticker part to message {message.id}")
             except Exception as e:
@@ -244,7 +258,8 @@ class MessageHistoryDAO:
         # Add audio if present
         if message.voice_data:
             try:
-                parts.append(types.Part.from_text(text=message.message_metadata))
+                if message_metadata:
+                    parts.append(types.Part.from_text(text=message_metadata))
                 parts.append(types.Part.from_bytes(data=message.voice_data, mime_type="audio/ogg"))
                 logger.debug(f"Added audio part to message {message.id}")
             except Exception as e:
@@ -254,7 +269,8 @@ class MessageHistoryDAO:
         # Add image if present
         if message.image_data:
             try:
-                parts.append(types.Part.from_text(text=message.message_metadata))
+                if message_metadata:
+                    parts.append(types.Part.from_text(text=message_metadata))
                 parts.append(types.Part.from_bytes(data=message.image_data, mime_type="image/jpeg"))
                 logger.debug(f"Added image part to message {message.id}")
             except Exception as e:
@@ -264,7 +280,8 @@ class MessageHistoryDAO:
         # Add video if present
         if message.video_data:
             try:
-                parts.append(types.Part.from_text(text=message.message_metadata))
+                if message_metadata:
+                    parts.append(types.Part.from_text(text=message_metadata))
                 parts.append(types.Part.from_bytes(data=message.video_data, mime_type="video/mp4"))
                 logger.debug(f"Added video part to message {message.id}")
             except Exception as e:

@@ -69,18 +69,11 @@ async def sticker_handler(
 
             # Save or update sticker in database
             sticker_db = await sticker_dao.get_or_create_sticker(
-                file_id=sticker.file_id,
-                set_name=sticker.set_name,
+                telegram_sticker_id=sticker.file_unique_id,  # Use file_unique_id as the permanent identifier
+                telegram_message_id=message.message_id,
+                name=sticker.set_name,
                 emoji=sticker.emoji,
-                file_unique_id=sticker.file_unique_id,
-                is_animated=sticker.is_animated,
-                is_video=sticker.is_video,
-                type=sticker.type,
-                custom_emoji_id=sticker.custom_emoji_id,
-                needs_repainting=sticker.needs_repainting,
-                premium_animation=sticker.premium_animation,
-                mask_position=sticker.mask_position,
-                sticker_data=sticker_data
+                image_data=sticker_data
             )
 
         except Exception as e:

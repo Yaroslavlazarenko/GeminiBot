@@ -132,6 +132,15 @@ async def handle_gemini_result(
             response_data["text"] = raw_text_from_gemini # Store raw text
             logger.info(f"Gemini returned text for user {user.telegram_id} in chat {chat.id}. Length: {len(raw_text_from_gemini)}")
 
+            # Save model response to database first
+            db_message = await message_dao.add_message(
+                user_id=user.id,
+                role=MessageRole.MODEL,
+                text=response_data["text"],
+                group_id=group_db_id
+            )
+            logger.debug(f"Saved model response to database with id={db_message.id}")
+
             # Escape text specifically for HTML sending
             # This handles < > & correctly. Quotes " are usually fine in HTML content.
             text_for_html_sending = html.escape(raw_text_from_gemini)
@@ -142,8 +151,6 @@ async def handle_gemini_result(
             for command in response_data.get("commands", []):
                 if command.get("name") == "reply_to_message":
                     reply_to_id = command.get("args", {}).get("message_id")
-                    # Remove the command after processing it for sending
-                    # response_data["commands"].remove(command) # Optional: remove if it shouldn't be processed again
                     break
 
             # Определяем метод отправки
@@ -159,27 +166,15 @@ async def handle_gemini_result(
                 method_name = "reply_to_specific"
                 logger.info(f"Attempting to reply to specific message {reply_to_id} in chat {chat.id}")
 
-
             try:
                 sent_message = await send_method(**method_kwargs)
-                await message_dao.add_message(
-                    user_id=user.id,
-                    role=MessageRole.MODEL,
-                    text=response_data["text"],
-                    group_id=group_db_id,
-                    telegram_message_id=sent_message.message_id
-                )
+                # Update telegram_message_id after successful sending
+                if sent_message and db_message:
+                    db_message.telegram_message_id = sent_message.message_id
                 sent_text_successfully = True
                 logger.debug(f"Successfully sent message ({method_name}, HTML) to chat {chat.id}. Length: {len(text_for_html_sending)}")
 
-            except TelegramBadRequest as e:
-                error_text = str(e).lower()
-                if "message is not modified" in error_text:
-                    # Message content hasn't changed, treat as success
-                    logger.info(f"Message content unchanged for chat {chat.id}")
-                    sent_text_successfully = True
-                    return  # Exit early since no modification needed
-                
+            except (TelegramBadRequest, TelegramNetworkError) as e:
                 logger.warning(f"Failed to send message ({method_name}, HTML) to {chat.id}: {e}. Content (raw): '{response_data['text'][:50]}...'. Retrying without HTML.")
                 try:
                     # Prepare arguments for retry without HTML
@@ -202,14 +197,10 @@ async def handle_gemini_result(
                     retry_method_name = f"{method_name}_fallback_no_html"
 
                     sent_message = await retry_send_method(**retry_kwargs)
-                    await message_dao.add_message(
-                        user_id=user.id,
-                        role=MessageRole.MODEL,
-                        text=response_data["text"], # Save the ORIGINAL, unescaped text
-                        group_id=group_db_id,
-                        telegram_message_id=sent_message.message_id
-                    )
-                    sent_text_successfully = True # Mark as successful
+                    # Update telegram_message_id after successful sending
+                    if sent_message and db_message:
+                        db_message.telegram_message_id = sent_message.message_id
+                    sent_text_successfully = True
                     logger.debug(f"Successfully sent message ({retry_method_name}) to chat {chat.id}. Length: {len(response_data['text'])}")
 
                 except Exception as inner_e:
