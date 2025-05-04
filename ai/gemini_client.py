@@ -133,7 +133,7 @@ async def get_gemini_response(
     )
     
     # Add instruction to the beginning of the context
-    contents = [contents] + critical_instruction
+    contents = contents + [critical_instruction]
 
     retries = 0
     while retries < MAX_RETRIES:
