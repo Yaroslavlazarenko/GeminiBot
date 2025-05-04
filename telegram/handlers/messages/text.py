@@ -68,6 +68,11 @@ async def text_handler(
         if not message_history:
             logger.warning(f"Message history is empty before calling Gemini for user {user.telegram_id}, group_id {group_db_id}. This might happen after /clear.")
 
+        try:
+            await message.bot.send_chat_action(chat_id=chat.id, action="typing")
+        except Exception as e:
+            logger.warning(f"Failed to send chat action 'typing' to {chat.id}: {e}")
+
         gemini_result = await get_text_response(
             message_history=message_history, 
             user=user,
