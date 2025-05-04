@@ -1,7 +1,7 @@
 import logging
 
 from aiogram import F, Router
-from aiogram.types import Message
+from aiogram.types import Message, ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
 
 from ai.gemini_client import get_text_response
@@ -22,54 +22,37 @@ async def text_handler(
 ) -> None:
     """Обрабатывает текстовые сообщения, проверяя настройки пользователя и группы."""
     chat = message.chat
-    group = await get_group_or_none(group_dao, chat)
-    group_db_id = group.id if group else None
-
-    # Check global response setting first
-    if user.is_global_disabled:
-        logger.debug(f"Ignoring text message from user {user.telegram_id} in chat {chat.id} due to global USER disable.")
-        return
-    if group and group.is_global_disabled:
-        logger.debug(f"Ignoring text message from user {user.telegram_id} in group chat {chat.id} due to global GROUP disable.")
-        return
-
-    # Then check text-specific setting
-    if not user.responds_to_text:
-        logger.debug(f"Ignoring text message from user {user.telegram_id} in chat {chat.id} due to USER text setting.")
-        return
-    if group and not group.responds_to_text:
-        logger.debug(f"Ignoring text message from user {user.telegram_id} in group chat {chat.id} due to GROUP text setting.")
-        return
-
-    if not message.text:
-        logger.debug(f"Ignoring message without text content from user {user.telegram_id} in chat {chat.id}")
-        return
-
-    logger.info(f"Processing text message from user {user.telegram_id} in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
     try:
-        await message.bot.send_chat_action(chat_id=chat.id, action="typing")
-    except (TelegramNetworkError, TelegramBadRequest, TelegramForbiddenError) as e:
-         logger.warning(f"Failed to send chat action 'typing' to {chat.id}: {e}")
+        # Get group context if message is from group
+        group = await get_group_or_none(group_dao, chat) if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP] else None
+        group_db_id = group.id if group else None
 
-    try:
-        text_to_save = message.text
-        if (message.reply_to_message
-                and message.reply_to_message.from_user
-                and not message.reply_to_message.from_user.is_bot
-                and message.reply_to_message.text
-                and not message.reply_to_message.audio
-                and not message.reply_to_message.voice
-                and not message.reply_to_message.photo):
-            original_sender = message.reply_to_message.from_user.first_name or f"User_{message.reply_to_message.from_user.id}"
-            original_text = message.reply_to_message.text
-            reply_text = message.text
-            text_to_save = f"User replied: '{reply_text}'\nTo the message from {original_sender}: '{original_text}'"
-            logger.debug(f"Formatted reply text for saving: {text_to_save[:100]}...")
+        # Get user display name for better identification
+        user_display_name = message.from_user.full_name
+        if not user_display_name:
+            user_display_name = f"User {user.telegram_id}"
 
+        # Check global response setting first
+        if user.is_global_disabled:
+            logger.debug(f"Ignoring text message from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to global USER disable.")
+            return
+        if group and group.is_global_disabled:
+            logger.debug(f"Ignoring text message from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to global GROUP disable.")
+            return
+
+        # Then check text-specific setting
+        if not getattr(user, 'responds_to_text', True):
+            logger.debug(f"Ignoring text message from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to USER text setting.")
+            return
+        if group and not getattr(group, 'responds_to_text', True):
+            logger.debug(f"Ignoring text message from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to GROUP text setting.")
+            return
+
+        # Add message to history
         await message_dao.add_message(
             user_id=user.id,
             role=MessageRole.USER,
-            text=text_to_save,
+            text=message.text,
             group_id=group_db_id,
             telegram_message_id=message.message_id
         )
@@ -84,7 +67,11 @@ async def text_handler(
         if not message_history:
             logger.warning(f"Message history is empty before calling Gemini for user {user.telegram_id}, group_id {group_db_id}. This might happen after /clear.")
 
-        gemini_result = await get_text_response(message_history=message_history, user=user)
+        gemini_result = await get_text_response(
+            message_history=message_history, 
+            user=user,
+            message=message
+        )
 
         await handle_gemini_result(
             gemini_result,

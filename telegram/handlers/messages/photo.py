@@ -394,7 +394,11 @@ async def photo_handler(
         if not message_history:
             logger.warning(f"Message history is empty before calling Gemini for single photo.")
 
-        gemini_result = await get_text_response(message_history=message_history, user=user)
+        gemini_result = await get_text_response(
+            message_history=message_history, 
+            user=user,
+            message=message
+        )
 
         # Обрабатываем результат от AI (передаем DAO из middleware)
         # Ответ модели будет добавлен в ТУ ЖЕ сессию middleware

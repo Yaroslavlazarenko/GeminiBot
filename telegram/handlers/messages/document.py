@@ -157,7 +157,11 @@ async def process_media_group(
             if not message_history:
                 logger.warning(f"Message history is empty before calling Gemini for media group {media_group_id}")
 
-            gemini_result = await get_text_response(message_history=message_history, user=user)
+            gemini_result = await get_text_response(
+                message_history=message_history,
+                user=user,
+                message=first_message
+            )
 
             await handle_gemini_result(
                 gemini_result, first_message,
@@ -329,7 +333,11 @@ async def document_handler(
         if not message_history:
             logger.warning(f"Message history is empty before calling Gemini for single document.")
 
-        gemini_result = await get_text_response(message_history=message_history, user=user)
+        gemini_result = await get_text_response(
+            message_history=message_history,
+            user=user,
+            message=message
+        )
 
         await handle_gemini_result(
             gemini_result, message,
@@ -337,4 +345,4 @@ async def document_handler(
             user_dao=user_dao,
             user=user,
             group_db_id=group_db_id
-        ) 
+        )

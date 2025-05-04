@@ -308,7 +308,8 @@ async def video_note_handler(
             gemini_result = await get_video_response(
                 message_history=message_history,
                 user=user,
-                response=generate_full_response
+                response=generate_full_response,
+                message=message
             )
 
             if isinstance(gemini_result, str):

@@ -129,7 +129,8 @@ async def voice_handler(
         gemini_result = await get_audio_response(
             message_history=message_history,
             user=user,
-            response=generate_full_response
+            response=generate_full_response,
+            message=message
         )
 
         await handle_gemini_result(

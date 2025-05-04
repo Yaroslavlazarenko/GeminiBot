@@ -56,7 +56,8 @@ def get_current_time_str(timezone_str: str = "Europe/Kiev") -> str:
 async def get_gemini_response(
     contents: List[types.Content],
     user: User,
-    task_hint: str | None = None
+    task_hint: str | None = None,
+    message: Any | None = None  # Replace group parameters with message
 ) -> Dict[str, Any]:
     """
     Gets a response from the Gemini model with retry logic for server errors.
@@ -65,6 +66,7 @@ async def get_gemini_response(
         contents: Conversation history.
         user: The user object.
         task_hint: Specific instruction for the current turn.
+        message: The message object that contains group and other context info.
 
     Returns:
         A dictionary with the response type and data:
@@ -99,21 +101,15 @@ async def get_gemini_response(
     system_prompt_parts.append(f"\nCurrent time: {current_time}")
     system_prompt_parts.append(f"\nCurrent user ID: {user.telegram_id}")
     
-    # Add group context if available
-    try:
-        is_group_chat = False
-        for c in contents:
-            if c.role == "user" and c.parts:
-                try:
-                    if c.parts[0].text and "group chat" in c.parts[0].text:
-                        is_group_chat = True
-                        break
-                except (IndexError, AttributeError):
-                    continue
-        if is_group_chat:
-            system_prompt_parts.append("\nIMPORTANT: You are in a group chat. Keep your responses concise and relevant to the current user's message. Avoid long conversations or complex interactions.")
-    except Exception as e:
-        logger.warning(f"Error checking for group chat context: {e}")
+    # Add group context if message is from group
+    if message and message.chat.type in ['group', 'supergroup']:
+        system_prompt_parts.append(f"\nCurrent group: {message.chat.title}")
+        try:
+            member_count = await message.chat.get_member_count()
+            system_prompt_parts.append(f"\nGroup members: {member_count}")
+        except Exception as e:
+            logger.warning(f"Failed to get member count: {e}")
+        system_prompt_parts.append("\nIMPORTANT: You are in a group chat. Keep your responses concise and relevant to the current user's message. Avoid long conversations or complex interactions.")
     
     system_prompt_parts.append("\nIMPORTANT: Your responses and reactions should be specific to the current user. If you choose to disable responses or react negatively, it should only affect this specific user. Previous negative interactions with other users should not influence your response to the current user.")
     
@@ -303,16 +299,22 @@ async def get_gemini_response(
 
 async def get_text_response(
     message_history: List[types.Content],
-    user: User
+    user: User,
+    message: Any | None = None
 ) -> Dict[str, Any]:
     """Gets a text response from the Gemini model for general conversation."""
     logger.debug(f"Getting text response for user {user.telegram_id}")
-    return await get_gemini_response(contents=message_history, user=user)
+    return await get_gemini_response(
+        contents=message_history,
+        user=user,
+        message=message
+    )
 
 async def get_audio_response(
     message_history: List[types.Content],
     user: User,
-    response: bool = False # Флаг: True=ответить, False=транскрибировать
+    response: bool = False, # Flag: True=respond, False=transcribe
+    message: Any | None = None
 ) -> Dict[str, Any]:
     """Gets a response/transcription for audio from the Gemini model."""
     if response:
@@ -325,13 +327,15 @@ async def get_audio_response(
     return await get_gemini_response(
         contents=message_history,
         user=user,
-        task_hint=task
+        task_hint=task,
+        message=message
     )
 
 async def get_video_response(
     message_history: List[types.Content],
     user: User,
-    response: bool = True
+    response: bool = True,
+    message: Any | None = None
 ) -> Dict[str, Any]:
     """
     Gets a response from Gemini for a video note.
@@ -340,6 +344,7 @@ async def get_video_response(
         message_history: List of message contents including the video note
         user: The user object
         response: Whether to generate a response (True) or just transcribe (False)
+        message: The message object that contains group and other context info
     
     Returns:
         Dict with response type and data
@@ -399,22 +404,16 @@ async def get_video_response(
     system_prompt_parts.append(f"\nCurrent time: {current_time}")
     system_prompt_parts.append(f"\nCurrent user ID: {user.telegram_id}")
     
-    # Add group context if available
-    try:
-        is_group_chat = False
-        for c in message_history:
-            if c.role == "user" and c.parts:
-                try:
-                    if c.parts[0].text and "group chat" in c.parts[0].text:
-                        is_group_chat = True
-                        break
-                except (IndexError, AttributeError):
-                    continue
-        if is_group_chat:
-            system_prompt_parts.append("\nIMPORTANT: You are in a group chat. Keep your responses concise and relevant to the current user's message. Avoid long conversations or complex interactions.")
-            system_prompt_parts.append("\nFor video notes in group chats, provide a brief analysis of the video content and any relevant reactions.")
-    except Exception as e:
-        logger.warning(f"Error checking for group chat context: {e}")
+    # Add group context if message is from group chat
+    if message and message.chat.type in ['group', 'supergroup']:
+        system_prompt_parts.append(f"\nCurrent group: {message.chat.title}")
+        try:
+            member_count = await message.chat.get_member_count()
+            system_prompt_parts.append(f"\nGroup members: {member_count}")
+        except Exception as e:
+            logger.warning(f"Failed to get member count: {e}")
+        system_prompt_parts.append("\nIMPORTANT: You are in a group chat. Keep your responses concise and relevant to the current user's message. Avoid long conversations or complex interactions.")
+        system_prompt_parts.append("\nFor video notes in group chats, provide a brief analysis of the video content and any relevant reactions.")
     
     system_prompt_parts.append("\nIMPORTANT: Your responses and reactions should be specific to the current user. If you choose to disable responses or react negatively, it should only affect this specific user. Previous negative interactions with other users should not influence your response to the current user.")
     
