@@ -160,30 +160,48 @@ async def get_gemini_response(
                 admin_status = "(Administrator)" if is_admin else ""
                 system_prompt_parts.append(f"\nCurrent message sender: {sender.full_name or sender.username or f'User {sender.id}'} {admin_status}")
 
-            # Get regular members (non-admins) if there are fewer than 10 of them
+            # Get regular members (non-admins) and bots if there are fewer than 10 of them
             if member_count < 20:  # Only attempt if the group is reasonably small
                 try:
                     # Get all members
                     regular_members = []
+                    bot_members = []
                     admin_ids = [admin.user.id for admin in admins]  # List of admin IDs for quick lookup
+                    bot_id = message.bot.id  # Get the current bot's ID to exclude it
                     
                     # Get chat members (this might be limited by API)
                     chat_members = await message.chat.get_members()
                     
-                    # Filter out admins and collect regular members
+                    # Filter out admins and collect regular members and bots
                     for member in chat_members:
-                        if member.user.id not in admin_ids:
-                            member_name = member.user.full_name or member.user.username or f'User {member.user.id}'
+                        user = member.user
+                        
+                        # Skip the current bot
+                        if user.id == bot_id:
+                            continue
+                            
+                        # Get member name
+                        member_name = user.full_name or user.username or f'User {user.id}'
+                        
+                        if user.is_bot:
+                            # It's a bot
+                            bot_members.append(f"{member_name} (Bot)")
+                        elif user.id not in admin_ids:
+                            # Regular member (not admin, not bot)
                             regular_members.append(member_name)
                     
-                    # Only include if there are fewer than 10 regular members
+                    # Only include regular members if there are fewer than 10
                     if len(regular_members) > 0 and len(regular_members) < 10:
                         system_prompt_parts.append(f"\nRegular members: {', '.join(regular_members)}")
                     else:
                         system_prompt_parts.append(f"\nThere are {len(regular_members)} regular members in this group.")
+                    
+                    # Always include bots as they're usually few
+                    if bot_members:
+                        system_prompt_parts.append(f"\nOther bots in the group: {', '.join(bot_members)}")
                         
                 except Exception as e:
-                    logger.warning(f"Failed to get regular members: {e}", exc_info=True)
+                    logger.warning(f"Failed to get members info: {e}", exc_info=True)
             
             system_prompt_parts.append("\nNote: The bot can see all messages in the group and has access to member information.")
 
