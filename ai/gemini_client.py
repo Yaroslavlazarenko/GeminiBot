@@ -300,13 +300,15 @@ async def get_gemini_response(
 async def get_text_response(
     message_history: List[types.Content],
     user: User,
-    message: Any | None = None
+    message: Any | None = None,
+    task_hint: str | None = None
 ) -> Dict[str, Any]:
     """Gets a text response from the Gemini model for general conversation."""
     logger.debug(f"Getting text response for user {user.telegram_id}")
     return await get_gemini_response(
         contents=message_history,
         user=user,
+        task_hint=task_hint,
         message=message
     )
 
