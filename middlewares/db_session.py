@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
 import logging
 
-from database.dao import UserDAO, GroupDAO, MessageHistoryDAO, User as DBUser
+from database.dao import UserDAO, GroupDAO, MessageHistoryDAO, StickerDAO, User as DBUser
 
 logger = logging.getLogger(__name__)
 
@@ -35,10 +35,12 @@ class DAOMiddleware(BaseMiddleware):
             user_dao = UserDAO(session)
             group_dao = GroupDAO(session)
             message_dao = MessageHistoryDAO(session)
+            sticker_dao = StickerDAO(session)
 
             data["user_dao"] = user_dao
             data["group_dao"] = group_dao
             data["message_dao"] = message_dao
+            data["sticker_dao"] = sticker_dao
             data["session_factory"] = self.session_factory
 
             db_user: Optional[DBUser] = None

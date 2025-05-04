@@ -159,7 +159,7 @@ class MessageHistoryDAO:
                     .order_by(MessageHistory.timestamp.desc())
                     .limit(limit))
             result = await self.session.execute(stmt)
-            messages: List[MessageHistory] = list(reversed(result.scalars().all()))
+            messages: List[MessageHistory] = result.scalars().all()  # Remove reversed()
             logger.debug(f"Retrieved {len(messages)} private messages for user_id={user_id} to build contents")
             
             for message in messages:
@@ -184,7 +184,7 @@ class MessageHistoryDAO:
                     .order_by(MessageHistory.timestamp.desc())
                     .limit(limit))
             result = await self.session.execute(stmt)
-            messages = list(reversed(result.scalars().all()))
+            messages = result.scalars().all()  # Remove reversed()
             logger.debug(f"Retrieved {len(messages)} messages for group_id={group_id}")
             return messages
         except SQLAlchemyError as e:
