@@ -342,14 +342,11 @@ async def document_handler(
         )
         logger.debug(f"Document message queued for save (user {user.telegram_id}, group_id {group_db_id})")
         
-        # Register this message with the batcher
+        # Проверяем, нужно ли обрабатывать это сообщение сейчас
         user_telegram_id = user.telegram_id
-        await message_batcher.register_message(user_telegram_id)
+        should_process = await message_batcher.should_process_message(user_telegram_id)
         
-        # Check if we should process this message now (after batching period)
-        should_process_now = await message_batcher.should_process_now(user_telegram_id)
-        
-        if not should_process_now:
+        if not should_process:
             # Either still in batching period or not the last message
             logger.info(f"Document message from user {user_telegram_id} - waiting for batching period to end")
             return
