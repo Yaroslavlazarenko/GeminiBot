@@ -12,7 +12,7 @@ from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from ai.gemini_client import get_image_response
+from ai.gemini_client import get_text_response
 from database.models import User, MessageRole
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
 from ..utils import send_error_message, get_group_or_none, handle_gemini_result
@@ -420,7 +420,7 @@ async def photo_handler(
         except Exception as e:
             logger.warning(f"Failed to send chat action 'typing' to {chat.id}: {e}")
 
-        gemini_result = await get_image_response(
+        gemini_result = await get_text_response(
             message_history=message_history,
             user=user,
             message=message

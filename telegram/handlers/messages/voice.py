@@ -163,7 +163,7 @@ async def voice_handler(
         except Exception as e:
             logger.warning(f"Failed to send chat action 'typing' to {chat.id}: {e}")
 
-        gemini_result = await get_audio_response(
+        gemini_result = await get_text_response(
             message_history=message_history,
             user=user,
             message=message

@@ -12,7 +12,7 @@ from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from google.genai import types as gemini_types
 
-from ai.gemini_client import get_video_response, get_text_response
+from ai.gemini_client import get_text_response
 from database.models import User, MessageRole
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
 from ..utils import send_error_message, get_group_or_none, handle_gemini_result
