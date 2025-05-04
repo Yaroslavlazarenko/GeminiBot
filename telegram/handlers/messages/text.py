@@ -50,12 +50,36 @@ async def text_handler(
             return
 
         # Формируем метаданные для текстового сообщения
-        metadata = f"Message info: text message from {user_display_name} (User ID: {user.telegram_id})"
-        if message.forward_from:
-            metadata += f" (forwarded from {message.forward_from.first_name + ' ' + message.forward_from.last_name if message.forward_from.last_name else ''})"
-        elif message.forward_from_chat:
-            metadata += f" (forwarded from channel/group {message.forward_from_chat.title})"
-        metadata += f", Message ID: {message.message_id}, Message Time: {message.date}"
+        is_forwarded = bool(message.forward_from or message.forward_from_chat or message.forward_sender_name or message.forward_date)
+        
+        if is_forwarded:
+            # This is a forwarded message
+            metadata = f"Message info: FORWARDED text message shared by {user_display_name} (User ID: {user.telegram_id})"
+            
+            # Add detailed forwarding information
+            if message.forward_from:
+                # Forwarded from a user who hasn't restricted forwarding privacy
+                forward_name = message.forward_from.full_name or message.forward_from.username or f"User {message.forward_from.id}"
+                is_bot = "(Bot)" if message.forward_from.is_bot else ""
+                metadata += f"\nOriginal sender: {forward_name} {is_bot} (ID: {message.forward_from.id})"
+            elif message.forward_sender_name:
+                # Forwarded from a user who restricted forwarding privacy
+                metadata += f"\nOriginal sender: {message.forward_sender_name} (forwarding privacy enabled)"
+            elif message.forward_from_chat:
+                # Forwarded from a channel or group
+                chat_type = message.forward_from_chat.type.capitalize()
+                metadata += f"\nOriginal source: {chat_type} '{message.forward_from_chat.title}' (ID: {message.forward_from_chat.id})"
+                if message.forward_signature:
+                    metadata += f"\nPost author: {message.forward_signature}"
+            
+            # Add original message date if available
+            if message.forward_date:
+                metadata += f"\nOriginal message time: {message.forward_date}"
+        else:
+            # Regular non-forwarded message
+            metadata = f"Message info: text message from {user_display_name} (User ID: {user.telegram_id})"
+        
+        metadata += f", Message ID: {message.message_id}, Current time: {message.date}"
 
         # Add message to history with metadata
         await message_dao.add_message(
