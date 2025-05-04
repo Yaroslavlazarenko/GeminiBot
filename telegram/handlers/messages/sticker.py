@@ -40,8 +40,18 @@ async def sticker_handler(
         if user.is_global_disabled:
             logger.debug(f"Ignoring sticker from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to global USER disable.")
             return
+
         if group and group.is_global_disabled:
             logger.debug(f"Ignoring sticker from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to global GROUP disable.")
+            return
+
+        # Check sticker-specific settings
+        if not user.responds_to_sticker:
+            logger.debug(f"Ignoring sticker from user {user_display_name} (ID: {user.telegram_id}) due to user sticker setting.")
+            return
+
+        if group and not group.responds_to_sticker:
+            logger.debug(f"Ignoring sticker from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to group sticker setting.")
             return
 
         sticker = message.sticker
@@ -81,20 +91,27 @@ async def sticker_handler(
             await send_error_message(message, "Помилка: не вдалося обробити стікер.")
             return
 
-        # Формируем метаданные для стикера
-        metadata = f"Message info: sticker from {user_display_name} (ID: {user.telegram_id})"
+        # Формируем метаданные для стикера с более четким описанием
+        metadata_parts = []
+        metadata_parts.append(f"Message info: sticker from {user_display_name} (ID: {user.telegram_id})")
         if message.forward_from:
-            metadata += f" (forwarded from {message.forward_from.full_name})"
+            metadata_parts.append(f"forwarded from {message.forward_from.full_name}")
         elif message.forward_from_chat:
-            metadata += f" (forwarded from channel/group {message.forward_from_chat.title})"
-        metadata += f", Message ID: {message.message_id}, Message Time: {message.date}"
-        metadata += f"\nSticker info: emoji={sticker.emoji}, set_name={sticker.set_name}"
+            metadata_parts.append(f"forwarded from channel/group {message.forward_from_chat.title}")
+        metadata_parts.append(f"Message ID: {message.message_id}")
+        metadata_parts.append(f"Message Time: {message.date}")
+
+        sticker_info_parts = []
+        sticker_info_parts.append(f"emoji: {sticker.emoji}")
+        sticker_info_parts.append(f"set_name: {sticker.set_name}")
         if sticker.is_animated:
-            metadata += ", animated=true"
+            sticker_info_parts.append("animated=true")
         if sticker.is_video:
-            metadata += ", video=true"
+            sticker_info_parts.append("video=true")
         if sticker.custom_emoji_id:
-            metadata += f", custom_emoji_id={sticker.custom_emoji_id}"
+            sticker_info_parts.append(f"custom_emoji_id={sticker.custom_emoji_id}")
+
+        metadata = f"{', '.join(metadata_parts)}\nSticker info: {', '.join(sticker_info_parts)}"
 
         # Add message to history with metadata
         await message_dao.add_message(
@@ -124,10 +141,12 @@ async def sticker_handler(
         except Exception as e:
             logger.warning(f"Failed to send chat action 'typing' to {chat.id}: {e}")
 
+        # Add specific task hint for sticker responses
         gemini_result = await get_text_response(
             message_history=message_history,
             user=user,
-            message=message
+            message=message,
+            task_hint="A user has sent a sticker. Understand the sticker's visual content, emoji, and context. Provide a natural, contextually appropriate response that acknowledges the sticker. You can use reactions (emoji) to respond. Keep the response concise and engaging."
         )
 
         await handle_gemini_result(
