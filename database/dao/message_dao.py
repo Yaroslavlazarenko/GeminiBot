@@ -419,8 +419,13 @@ class MessageHistoryDAO:
         # Добавляем информацию о пользователе в групповых чатах
         if is_group:
             user_info = f"User ID: {message.user_id}"
-            if message.user and message.user.full_name:
-                 user_info = f"User: {message.user.full_name} (ID: {message.user_id})"
+            if message.user:
+                # Construct full name from first_name and last_name
+                full_name = message.user.first_name or ""
+                if message.user.last_name:
+                    full_name = f"{full_name} {message.user.last_name}".strip()
+                if full_name:
+                    user_info = f"User: {full_name} (ID: {message.user_id})"
             metadata_parts_list.append(user_info)
 
         # Объединяем все метаданные в одну строку, если они есть
