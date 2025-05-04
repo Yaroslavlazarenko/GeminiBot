@@ -199,7 +199,25 @@ class MessageHistoryDAO:
         # Add text if present
         if message.text:
             try:
-                parts.append(types.Part.from_text(text=message.text))
+                # Get user's display name
+                display_name = ""
+                if message.user:
+                    if message.user.first_name:
+                        display_name = message.user.first_name
+                        if message.user.last_name:
+                            display_name += f" {message.user.last_name}"
+                    elif message.user.username:
+                        display_name = message.user.username
+                    else:
+                        display_name = f"User {message.user.telegram_id}"
+
+                # Only add username prefix for user messages, not bot responses
+                if role_str == "user":
+                    formatted_text = f"{display_name}: {message.text}"
+                else:
+                    formatted_text = message.text
+
+                parts.append(types.Part.from_text(text=formatted_text))
                 logger.debug(f"Added text part to message {message.id}")
             except Exception as e:
                 logger.error(f"Error creating text part for message {message.id}: {e}")
