@@ -120,11 +120,26 @@ async def sticker_handler(
         logger.warning(f"Failed to send chat action 'typing' to {chat.id}: {e}")
 
     try:
-        
+        # Create or get existing sticker first
+        db_sticker = await sticker_dao.get_or_create_sticker(
+            telegram_sticker_id=sticker.file_id,
+            telegram_message_id=message.message_id,
+            name=sticker.set_name,
+            emoji=sticker.emoji,
+            image_data=sticker_data
+        )
+
+        # Add message info first
+        message_info = f"Message info: next message is a sticker from {user_display_name}"
+        if is_forwarded and original_sender:
+            message_info += f" (forwarded from {original_sender.full_name}, message ID: {message.message_id}, message Time: {message.date})"
+        elif is_forwarded:
+            message_info += " (forwarded from unknown user)"
 
         await message_dao.add_message(
             user_id=user.id,
             role=MessageRole.USER,
+            text=message_info,
             group_id=group_db_id,
             telegram_message_id=message.message_id,
             sticker_id=db_sticker.id
