@@ -776,15 +776,17 @@ async def video_note_handler(
 
         # Save the message metadata and basic info. Video data is not saved here.
         # Your message_dao.add_message needs to support saving video_note_file_id and video_note_duration.
+        # Сохраняем информацию о видео-заметке в метаданных, так как специальных полей для этого нет
+        # Добавляем file_id и duration в метаданные
+        metadata += f"\nVideo note file_id: {video_note.file_id}, duration: {video_note.duration}s"
+        
         await message_dao.add_message(
             user_id=user.id, # Use internal DB user ID from middleware
             role=MessageRole.USER,
             text=None, # Transcription text is not available yet
             group_id=group_db_id,
             telegram_message_id=message.message_id,
-            message_metadata=metadata, # Initial metadata without transcription
-            video_note_file_id=video_note.file_id, # Save file ID
-            video_note_duration=video_note.duration # Save duration
+            message_metadata=metadata # Initial metadata with file_id and duration
             # Do NOT save video_data here
         )
         logger.debug(f"User video note message {message.message_id} saved to DB (user {user_telegram_id}, group_id {group_db_id}) with file_id.")

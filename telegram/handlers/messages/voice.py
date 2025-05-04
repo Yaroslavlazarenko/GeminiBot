@@ -260,15 +260,17 @@ async def voice_handler(
         # For simplicity, let's assume add_message stores relevant voice info (like file_id) and metadata,
         # and actual_voice_processing_logic downloads the file again using file_id from the message object.
 
+        # Сохраняем информацию о голосовом сообщении в метаданных
+        # Добавляем file_id и duration в метаданные
+        metadata += f"\nVoice file_id: {voice.file_id}, duration: {voice.duration}s"
+        
         await message_dao.add_message(
             user_id=user.id, # Use internal DB user ID from middleware
             role=MessageRole.USER,
             text=None, # Transcription text is not available yet
             group_id=group_db_id,
             telegram_message_id=message.message_id,
-            message_metadata=metadata, # Initial metadata without transcription
-            voice_file_id=voice.file_id, # Save file ID
-            voice_duration=voice.duration # Save duration
+            message_metadata=metadata # Initial metadata with file_id and duration
             # Do NOT save voice_data here - it's large and processed later
         )
         logger.debug(f"User voice message {message.message_id} saved to DB (user {user_telegram_id}, group_id {group_db_id}) with file_id.")
