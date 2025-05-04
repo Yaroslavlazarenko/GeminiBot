@@ -205,15 +205,15 @@ def process_video_data(video_data: bytes) -> bytes:
                         stream = ffmpeg.output(video_stream, output_file_path, **output_args)
 
                     logger.debug(f"Running ffmpeg command: {ffmpeg.compile(stream, cmd=FFMPEG_PATH)}")
-                    # ffmpeg.run() возвращает кортеж (stdout, stderr), а не объект с returncode
-                    stdout, stderr = ffmpeg.run(stream, cmd=FFMPEG_PATH, overwrite_output=True, capture_stdout=True, capture_stderr=True)
-                    
-                    if stdout:
-                        logger.info(f"ffmpeg stdout: {stdout.decode()}")
+                    process = ffmpeg.run(stream, cmd=FFMPEG_PATH, overwrite_output=True, capture_stdout=True, capture_stderr=True)
+                    stdout, stderr = process
+                    logger.info(f"ffmpeg stdout: {stdout.decode()}")
                     if stderr:
-                        # В этой версии ffmpeg-python мы не можем получить код возврата
-                        # Поэтому просто логируем stderr как предупреждение
-                        logger.warning(f"ffmpeg stderr: {stderr.decode()}")
+                         # Log stderr as error only if return code is non-zero
+                         if process.returncode != 0:
+                             logger.error(f"ffmpeg stderr (error {process.returncode}): {stderr.decode()}")
+                         else:
+                             logger.warning(f"ffmpeg stderr (non-error output): {stderr.decode()}")
 
 
                     logger.info("Successfully processed video with ffmpeg")
