@@ -6,7 +6,7 @@ import os
 import io
 from typing import Dict, Set, List, Optional, Tuple, Any
 
-from aiogram import F, Router
+from aiogram import F, Router, Bot
 from aiogram.types import Message, PhotoSize
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
@@ -16,7 +16,7 @@ from ai.gemini_client import get_text_response
 from database.models import User, MessageRole
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
 from ..utils import send_error_message, get_group_or_none, handle_gemini_result
-from ..message_batcher import message_batcher
+from ..message_batcher import message_batcher, ProcessingCallback
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -278,6 +278,92 @@ async def process_media_group_after_timeout(
             del media_group_timers[media_group_id]
 
 
+# --- Функция обратного вызова для батчера фотографий ---
+async def actual_photo_processing_logic(
+    bot: Bot,
+    message: Message,
+    user_dao: UserDAO,
+    group_dao: GroupDAO,
+    message_dao: MessageHistoryDAO,
+) -> None:
+    """
+    Выполняет фактическую обработку фотографии после батчинга.
+    Получает историю сообщений, вызывает AI, сохраняет и отправляет ответ.
+    """
+    chat = message.chat
+    user_telegram_id = message.from_user.id
+    chat_id = chat.id
+
+    logger.info(f"Starting batched photo processing for user {user_telegram_id} in chat {chat_id} (last message ID: {message.message_id})")
+
+    try:
+        # Получаем актуальные данные пользователя и группы
+        user = await user_dao.get_user_by_telegram_id(user_telegram_id)
+        if not user:
+            logger.error(f"User {user_telegram_id} not found in DB during batched photo processing. Cannot proceed.")
+            try:
+                await bot.send_message(chat_id=chat_id, text="🤯 Не можу знайти ваші дані для обробки фотографії. Спробуйте написати знову.")
+            except Exception as send_e:
+                logger.error(f"Failed to send user data error message to {chat_id}: {send_e}")
+            return
+
+        group = await get_group_or_none(group_dao, chat)
+        group_db_id = group.id if group else None
+
+        # Проверяем настройки ответов на фотографии
+        if user.is_global_disabled or not getattr(user, 'responds_to_photo', True):
+            logger.debug(f"Ignoring batched photo processing for user {user_telegram_id} due to updated user settings.")
+            return
+
+        if group and (group.is_global_disabled or not getattr(group, 'responds_to_photo', True)):
+            logger.debug(f"Ignoring batched photo processing for user {user_telegram_id} in group {chat_id} due to updated group settings.")
+            return
+
+        # Получаем историю сообщений
+        if group_db_id is not None:
+            message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id)
+            logger.debug(f"Retrieved {len(message_history)} messages from group chat history for AI.")
+        else:
+            message_history = await message_dao.get_user_private_messages_as_contents(user_id=user.id)
+            logger.debug(f"Retrieved {len(message_history)} messages from private chat history for AI.")
+
+        if not message_history:
+            logger.warning(f"Message history is unexpectedly empty for user {user_telegram_id} / chat {chat_id} before AI call after batching.")
+            return
+
+        # Отправляем индикатор набора текста
+        try:
+            await bot.send_chat_action(chat_id=chat_id, action="typing")
+        except Exception as e:
+            logger.warning(f"Failed to send chat action to {chat_id} during batched photo processing: {e}")
+
+        # Вызываем AI модель
+        gemini_result = await get_text_response(
+            message_history=message_history,
+            user=user,
+            message=message
+        )
+
+        # Обрабатываем результат AI
+        await handle_gemini_result(
+            gemini_result,
+            message,
+            message_dao=message_dao,
+            user_dao=user_dao,
+            user=user,
+            group_db_id=group_db_id
+        )
+
+        logger.info(f"Successfully processed batched photo message for user {user_telegram_id} in chat {chat_id}")
+
+    except Exception as e:
+        logger.error(f"Error in batched photo processing logic for user {user_telegram_id} in chat {chat_id} (last message ID: {message.message_id}): {e}", exc_info=True)
+        try:
+            await send_error_message(message, "🤯 Ой! Сталася неочікувана помилка під час обробки фотографії після батчинга.")
+        except Exception as send_e:
+            logger.error(f"Failed to send error message after batched photo processing failure for user {user_telegram_id}: {send_e}")
+
+
 # --- Основной Хендлер ---
 
 @router.message(F.photo)
@@ -394,46 +480,24 @@ async def photo_handler(
         )
         logger.debug(f"Photo message queued for save (user {user.telegram_id}, group_id {group_db_id})")
         
-        # Проверяем, нужно ли обрабатывать это сообщение сейчас
-        user_telegram_id = user.telegram_id
-        should_process = await message_batcher.should_process_message(user_telegram_id)
-        
-        if not should_process:
-            # Either still in batching period or not the last message
-            logger.info(f"Photo message from user {user_telegram_id} - waiting for batching period to end")
-            return
-        
-        # If we get here, the batching period has ended and this is the last message
-        # Get message history for context
-        if group_db_id is not None:
-            message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id)
-            logger.info(f"Retrieved {len(message_history)} messages from group chat history")
-        else:
-            message_history = await message_dao.get_user_private_messages_as_contents(user_id=user.id)
-            logger.info(f"Retrieved {len(message_history)} messages from private chat history")
-
-        if not message_history:
-            logger.warning(f"Message history is empty before calling Gemini for user {user.telegram_id}")
-
+        # --- Pass to Batcher ---
+        # Pass the message and the specific processing function for photo messages,
+        # along with the DAOs the batcher might need to set for lazy initialization.
         try:
-            await message.bot.send_chat_action(chat_id=chat.id, action="typing")
+            await message_batcher.handle_message(
+                message=message,
+                processing_callback=actual_photo_processing_logic, # Pass the reference to the photo processing function
+                user_dao=user_dao, # Pass dependencies
+                group_dao=group_dao,
+                message_dao=message_dao
+            )
+            logger.debug(f"Photo message {message.message_id} from user {user.telegram_id} passed to batcher.")
         except Exception as e:
-            logger.warning(f"Failed to send chat action 'typing' to {chat.id}: {e}")
-
-        gemini_result = await get_text_response(
-            message_history=message_history,
-            user=user,
-            message=message
-        )
-
-        await handle_gemini_result(
-            gemini_result,
-            message,
-            message_dao=message_dao,
-            user_dao=user_dao,
-            user=user,
-            group_db_id=group_db_id
-        )
+            # If batcher fails (e.g., internal error, couldn't start timer), processing won't happen.
+            logger.error(f"Error passing photo message {message.message_id} to batcher for user {user.telegram_id}: {e}", exc_info=True)
+            await send_error_message(message, "Виникла проблема з системою обробки фотографій. Спробуйте знову.")
+            
+        # The handler's job is done. The batcher will trigger the actual_photo_processing_logic later.
 
     except Exception as e:
         logger.error(f"Handler error processing photo message for user {user.telegram_id} in chat {chat.id}: {e}", exc_info=True)
