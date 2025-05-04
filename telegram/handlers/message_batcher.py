@@ -40,7 +40,7 @@ class MessageBatcher:
         """
         current_time = time.time()
         
-        # Если это первое сообщение от пользователя или прошло достаточно времени с последнего сообщения
+        # Если это первое сообщение от пользователя
         if user_id not in self.last_message_time:
             self.last_message_time[user_id] = current_time
             logger.debug(f"First message from user {user_id}, processing immediately")
@@ -48,20 +48,32 @@ class MessageBatcher:
         
         # Проверяем, прошло ли достаточно времени с момента последнего сообщения
         time_since_last = current_time - self.last_message_time[user_id]
-        self.last_message_time[user_id] = current_time  # Обновляем время последнего сообщения
         
         # Если прошло достаточно времени, обрабатываем сообщение
         if time_since_last >= self.wait_time:
+            # Только теперь обновляем время последнего сообщения
+            self.last_message_time[user_id] = current_time
             logger.debug(f"Sufficient time ({time_since_last:.2f}s) since last message from user {user_id}, processing")
             return True
         
         # Если сообщение пришло слишком быстро после предыдущего, игнорируем его
-        logger.debug(f"Message from user {user_id} came too soon ({time_since_last:.2f}s), ignoring")
+        logger.info(f"Message from user {user_id} came too soon ({time_since_last:.2f}s < {self.wait_time}s), ignoring")
+        
+        # Обновляем время последнего сообщения, чтобы отсчитывать время от него
+        self.last_message_time[user_id] = current_time
         
         # Запускаем таймер для обработки последнего сообщения через wait_time секунд
-        if user_id not in self.processing_lock:
+        # Отменяем предыдущий таймер и создаем новый
+        if user_id in self.processing_lock:
+            # Уже есть таймер, но пришло новое сообщение, поэтому мы не удаляем из блокировки
+            logger.debug(f"User {user_id} already has a timer, resetting it")
+        else:
+            # Нет активного таймера, создаем новый
             self.processing_lock.add(user_id)
-            asyncio.create_task(self._process_after_timeout(user_id))
+            logger.debug(f"Starting timer for user {user_id}")
+            
+        # В любом случае создаем новый таймер
+        asyncio.create_task(self._process_after_timeout(user_id))
         
         return False
     
@@ -79,13 +91,19 @@ class MessageBatcher:
             # Получаем текущее время и время последнего сообщения
             current_time = time.time()
             last_message_time = self.last_message_time.get(user_id, 0)
+            time_since_last = current_time - last_message_time
             
             # Если с момента последнего сообщения прошло достаточно времени,
             # значит новых сообщений не было и можно обработать последнее
-            if current_time - last_message_time >= self.wait_time:
-                logger.info(f"Processing last message from user {user_id} after batching period")
+            if time_since_last >= self.wait_time:
+                logger.info(f"Processing last message from user {user_id} after batching period (time since last: {time_since_last:.2f}s)")
                 # Здесь мы не делаем ничего, так как обработка будет выполнена
                 # при следующем вызове should_process_message
+            else:
+                # Если за время ожидания пришли новые сообщения, запускаем новый таймер
+                logger.debug(f"New messages received during wait time for user {user_id}, not processing yet")
+                # Не создаем новый таймер здесь, он будет создан в should_process_message
+                # при следующем сообщении
             
         except Exception as e:
             logger.error(f"Error in batching timer for user {user_id}: {e}", exc_info=True)
@@ -93,6 +111,7 @@ class MessageBatcher:
             # В любом случае удаляем пользователя из списка блокировки
             if user_id in self.processing_lock:
                 self.processing_lock.remove(user_id)
+                logger.debug(f"Removed user {user_id} from processing lock")
 
 # Global instance to be used across all message handlers
 message_batcher = MessageBatcher()
