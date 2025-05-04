@@ -2,7 +2,8 @@ import logging
 import io
 from PIL import Image
 from aiogram import F, Router
-from aiogram.types import Message, ChatType
+from aiogram.types import Message
+from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
 from google.genai import types as gemini_types
 

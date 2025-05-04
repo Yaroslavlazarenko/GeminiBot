@@ -3,7 +3,8 @@ import asyncio
 from typing import Dict, List, Optional, Tuple
 
 from aiogram import F, Router
-from aiogram.types import Message, Document, ChatType
+from aiogram.types import Message, Document
+from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
