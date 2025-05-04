@@ -2,7 +2,7 @@ import logging
 import io
 from typing import Any
 
-from aiogram import F, Router, Bot
+from aiogram import F, Router, types, Bot
 from aiogram.types import Message
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError

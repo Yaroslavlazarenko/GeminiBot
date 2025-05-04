@@ -4,7 +4,7 @@ import tempfile
 import os
 from PIL import Image
 import ffmpeg
-from aiogram import F, Router, types
+from aiogram import F, Router, types, Bot
 from aiogram.types import Message
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
@@ -123,7 +123,7 @@ def process_video_data(video_data: bytes) -> bytes:
 
 # --- Новая функция обратного вызова для батчера ---
 async def _process_video_note_batch_callback(
-    bot: types.Bot,
+    bot: Bot,
     message: types.Message,
     user_dao: UserDAO,
     group_dao: GroupDAO,
