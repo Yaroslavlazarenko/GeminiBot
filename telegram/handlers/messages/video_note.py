@@ -222,11 +222,11 @@ async def video_note_handler(
         await message_dao.add_message(
             user_id=user.id,
             role=MessageRole.USER,
-            text=transcription_text,  # Используем транскрипцию как текст, если есть
+            text=transcription_text,  # Use transcription as text if available
             group_id=group_db_id,
             telegram_message_id=message.message_id,
-            metadata=metadata,
-            video_data=video_data  # Сохраняем видео-данные
+            message_metadata=metadata,
+            video_data=video_data  # Save video note data
         )
         logger.debug(f"Video note message queued for save (user {user.telegram_id}, group_id {group_db_id})")
 

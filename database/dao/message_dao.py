@@ -26,36 +26,45 @@ class MessageHistoryDAO:
         user_id: int, 
         role: MessageRole, 
         text: str | None = None, 
-        audio_data: bytes | None = None, 
         image_data: bytes | None = None, 
         video_data: bytes | None = None, 
+        voice_data: bytes | None = None,
+        document_data: bytes | None = None,
         group_id: int | None = None,
         telegram_message_id: int | None = None,
-        metadata: str | None = None  # Добавляем поле для метаданных
+        message_metadata: str | None = None,  # Renamed parameter
+        sticker_id: int | None = None
     ) -> MessageHistory:
         """
-        Добавляет сообщение в историю. Теперь метаданные и контент хранятся в одной записи.
+        Добавляет сообщение в историю.
         
         Args:
-            metadata: JSON-строка с метаданными (время, информация о пересылке и т.д.)
+            message_metadata: JSON-строка с метаданными (время, информация о пересылке и т.д.)
         """
         message_text = text
-        if metadata:
-            message_text = f"{metadata}\n\n{text}" if text else metadata
+        if message_metadata:
+            message_text = f"{message_metadata}\n\n{text}" if text else message_metadata
 
-        new_message = MessageHistory(
-            user_id=user_id,
-            group_id=group_id,
-            role=role,
-            text=message_text,
-            audio_data=audio_data,
-            image_data=image_data,
-            video_data=video_data,
-            telegram_message_id=telegram_message_id,
-            timestamp=datetime.now(timezone.utc)
-        )
-        self.session.add(new_message)
-        return new_message
+        try:
+            new_message = MessageHistory(
+                user_id=user_id,
+                group_id=group_id,
+                role=role,
+                text=message_text,
+                image_data=image_data,
+                video_data=video_data,
+                voice_data=voice_data,
+                document_data=document_data,
+                telegram_message_id=telegram_message_id,
+                message_metadata=message_metadata,  # Use new column name
+                sticker_id=sticker_id,
+                timestamp=datetime.now(timezone.utc)
+            )
+            self.session.add(new_message)
+            return new_message
+        except SQLAlchemyError as e:
+            logger.error(f"Error adding message: {e}", exc_info=True)
+            raise
 
     async def clear_history(
         self,
@@ -216,7 +225,7 @@ class MessageHistoryDAO:
         if message.text:
             try:
                 # Текст уже содержит в себе метаданные благодаря новому формату
-                parts.append(types.Part.from_text(text=message.text))
+                parts.append(types.Part.from_text(text=message.message_metadata + message.text))
                 logger.debug(f"Added text part to message {message.id}")
             except Exception as e:
                 logger.error(f"Error creating text part for message {message.id}: {e}")
@@ -225,6 +234,7 @@ class MessageHistoryDAO:
         # Add sticker data if present
         if message.sticker and message.sticker.image_data:
             try:
+                parts.append(types.Part.from_text(text=message.message_metadata))
                 parts.append(types.Part.from_bytes(data=message.sticker.image_data, mime_type="image/webp"))
                 logger.debug(f"Added sticker part to message {message.id}")
             except Exception as e:
@@ -232,9 +242,10 @@ class MessageHistoryDAO:
                 return None
 
         # Add audio if present
-        if message.audio_data:
+        if message.voice_data:
             try:
-                parts.append(types.Part.from_bytes(data=message.audio_data, mime_type="audio/ogg"))
+                parts.append(types.Part.from_text(text=message.message_metadata))
+                parts.append(types.Part.from_bytes(data=message.voice_data, mime_type="audio/ogg"))
                 logger.debug(f"Added audio part to message {message.id}")
             except Exception as e:
                 logger.error(f"Error creating audio part for message {message.id}: {e}")
@@ -243,6 +254,7 @@ class MessageHistoryDAO:
         # Add image if present
         if message.image_data:
             try:
+                parts.append(types.Part.from_text(text=message.message_metadata))
                 parts.append(types.Part.from_bytes(data=message.image_data, mime_type="image/jpeg"))
                 logger.debug(f"Added image part to message {message.id}")
             except Exception as e:
@@ -252,6 +264,7 @@ class MessageHistoryDAO:
         # Add video if present
         if message.video_data:
             try:
+                parts.append(types.Part.from_text(text=message.message_metadata))
                 parts.append(types.Part.from_bytes(data=message.video_data, mime_type="video/mp4"))
                 logger.debug(f"Added video part to message {message.id}")
             except Exception as e:

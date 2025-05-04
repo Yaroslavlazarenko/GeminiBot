@@ -310,7 +310,7 @@ async def document_handler(
             text=caption_text,  # Use caption as text if available
             group_id=group_db_id,
             telegram_message_id=message.message_id,
-            metadata=metadata,
+            message_metadata=metadata,
             document_data=document_data  # Save document data
         )
         logger.debug(f"Document message queued for save (user {user.telegram_id}, group_id {group_db_id})")

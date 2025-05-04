@@ -365,8 +365,8 @@ async def photo_handler(
             text=message.caption,  # Use caption as text if available
             group_id=group_db_id,
             telegram_message_id=message.message_id,
-            metadata=metadata,
-            photo_data=photo_data  # Save photo data
+            message_metadata=metadata,
+            image_data=photo_data  # Save photo data
         )
         logger.debug(f"Photo message queued for save (user {user.telegram_id}, group_id {group_db_id})")
 

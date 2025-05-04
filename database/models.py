@@ -132,7 +132,7 @@ class MessageHistory(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     telegram_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
-    metadata: Mapped[str | None] = mapped_column(Text)
+    message_metadata: Mapped[str | None] = mapped_column(Text)  # Renamed from metadata to message_metadata
     sticker_id: Mapped[int | None] = mapped_column(ForeignKey("stickers.id", ondelete="SET NULL"), nullable=True)
 
     # Relationships

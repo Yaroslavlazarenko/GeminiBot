@@ -64,7 +64,7 @@ async def text_handler(
             text=message.text,
             group_id=group_db_id,
             telegram_message_id=message.message_id,
-            metadata=metadata
+            message_metadata=metadata
         )
         logger.debug(f"User message queued for save (user {user.telegram_id}, group_id {group_db_id})")
 

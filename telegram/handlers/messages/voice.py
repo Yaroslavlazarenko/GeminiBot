@@ -104,10 +104,10 @@ async def voice_handler(
         await message_dao.add_message(
             user_id=user.id,
             role=MessageRole.USER,
-            text=transcription_text,  # Use transcription as text if available
+            text=transcription_text,  # Use transcription as text if enabled
             group_id=group_db_id,
             telegram_message_id=message.message_id,
-            metadata=metadata,
+            message_metadata=metadata,
             voice_data=voice_data  # Save voice data
         )
         logger.debug(f"Voice message queued for save (user {user.telegram_id}, group_id {group_db_id})")

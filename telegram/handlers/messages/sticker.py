@@ -110,7 +110,7 @@ async def sticker_handler(
             text=None,  # No text for stickers
             group_id=group_db_id,
             telegram_message_id=message.message_id,
-            metadata=metadata,
+            message_metadata=metadata,
             sticker_id=sticker_db.id  # Reference to saved sticker
         )
         logger.debug(f"Sticker message queued for save (user {user.telegram_id}, group_id {group_db_id})")
