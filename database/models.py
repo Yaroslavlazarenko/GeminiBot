@@ -119,21 +119,26 @@ class MessageHistory(Base):
     """Модель для хранения истории сообщений."""
     __tablename__ = "message_history"
 
-    id = Column(Integer, primary_key=True)
-    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
-    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), nullable=True)
-    role = Column(Enum(MessageRole), nullable=False)
-    text = Column(Text)  # Теперь включает метаданные и текст сообщения
-    audio_data = Column(LargeBinary)
-    image_data = Column(LargeBinary)
-    video_data = Column(LargeBinary)
-    telegram_message_id = Column(BigInteger, nullable=True)
-    timestamp = Column(DateTime(timezone=True), nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), nullable=True)
+    role: Mapped[MessageRole] = mapped_column(SQLAlchemyEnum(MessageRole), nullable=False)
+    text: Mapped[str | None] = mapped_column(Text)
+    image_data: Mapped[bytes | None] = mapped_column(LargeBinary)
+    video_data: Mapped[bytes | None] = mapped_column(LargeBinary)
+    voice_data: Mapped[bytes | None] = mapped_column(LargeBinary)
+    document_data: Mapped[bytes | None] = mapped_column(LargeBinary)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    telegram_message_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    metadata: Mapped[str | None] = mapped_column(Text)
+    sticker_id: Mapped[int | None] = mapped_column(ForeignKey("stickers.id", ondelete="SET NULL"), nullable=True)
 
-    # Relations
-    user = relationship("User", back_populates="messages")
-    group = relationship("Group", back_populates="messages")
-    sticker = relationship("MessageSticker", back_populates="message", uselist=False, cascade="all, delete-orphan")
+    # Relationships
+    user: Mapped["User"] = relationship(back_populates="messages")
+    group: Mapped["Group | None"] = relationship(back_populates="messages")
+    sticker: Mapped["Sticker | None"] = relationship(back_populates="messages")
 
     def parse_text(self) -> tuple[str | None, str | None]:
         """
