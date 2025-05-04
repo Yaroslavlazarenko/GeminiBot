@@ -49,10 +49,20 @@ class MessageBatcher:
             user_id: The Telegram user ID.
             
         Returns:
-            True if the message should be processed (after waiting period), False if it's being batched.
+            True if the message should be processed immediately, False if it's being batched.
         """
         current_time = time.time()
         self.last_message_time[user_id] = current_time
+        
+        # Если это первое сообщение после долгого перерыва, обработаем его сразу
+        if user_id not in self.active_users and user_id not in self.user_timers:
+            # Но также запустим таймер для следующих сообщений
+            self.active_users.add(user_id)
+            self.user_timers[user_id] = asyncio.create_task(
+                self._wait_and_release(user_id)
+            )
+            logger.debug(f"Started batching for user {user_id}, but processing first message immediately")
+            return True  # Обработать первое сообщение сразу
         
         # If user already has an active batching session
         if user_id in self.active_users:
@@ -67,13 +77,13 @@ class MessageBatcher:
             logger.debug(f"User {user_id} sent another message during batching, timer reset")
             return False  # Don't process this message immediately
         
-        # Start a new batching session for this user
+        # Этот код не должен выполняться, но на всякий случай
+        logger.warning(f"Unexpected state for user {user_id} in register_message")
         self.active_users.add(user_id)
         self.user_timers[user_id] = asyncio.create_task(
             self._wait_and_release(user_id)
         )
-        logger.debug(f"Started batching for user {user_id}")
-        return False  # Don't process any messages immediately, wait for the timer
+        return False  # Don't process this message immediately
     
     async def _wait_and_release(self, user_id: int) -> None:
         """
@@ -92,11 +102,13 @@ class MessageBatcher:
                 # Signal that the last message can now be processed
                 # This is done by setting a flag that handlers can check
                 self.last_message_ready = user_id
+                logger.info(f"Marked last message from user {user_id} as ready for processing")
                 
                 # Schedule automatic cleanup of the ready flag after a short time
                 asyncio.create_task(self._cleanup_ready_flag(user_id))
         except asyncio.CancelledError:
             # Task was cancelled because user sent another message
+            logger.debug(f"Timer for user {user_id} was cancelled because they sent another message")
             pass
         except Exception as e:
             logger.error(f"Error in batching timer for user {user_id}: {e}", exc_info=True)
@@ -123,7 +135,19 @@ class MessageBatcher:
         Returns:
             True if the message should be processed now, False otherwise.
         """
-        return hasattr(self, 'last_message_ready') and self.last_message_ready == user_id
+        # Если пользователь не в режиме батчинга и нет активного таймера,
+        # это означает, что сообщение нужно обработать сразу
+        if user_id not in self.active_users and user_id not in self.user_timers:
+            logger.debug(f"User {user_id} is not in batching mode, processing message immediately")
+            return True
+            
+        # Если таймер сработал и сообщение помечено как готовое к обработке
+        if hasattr(self, 'last_message_ready') and self.last_message_ready == user_id:
+            logger.debug(f"Last message from user {user_id} is ready for processing after batching")
+            return True
+            
+        # В противном случае, сообщение еще в режиме батчинга
+        return False
 
 # Global instance to be used across all message handlers
 message_batcher = MessageBatcher()
