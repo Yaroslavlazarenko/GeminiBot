@@ -142,6 +142,25 @@ async def toggle_video_note_callback(callback: CallbackQuery, user: User, user_d
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
+@router.callback_query(F.data == "toggle_responds_to_sticker")
+async def toggle_sticker_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
+    """Handle sticker processing toggle."""
+    new_value = not user.responds_to_sticker
+    success = await user_dao.update_user_settings(user_id=user.id, responds_to_sticker=new_value)
+    
+    if success:
+        user.responds_to_sticker = new_value
+        status = "увімкнено" if new_value else "вимкнено"
+        await callback.answer(f"✅ Обробку стікерів {status}")
+        chat = callback.message.chat
+        is_admin = False
+        if chat.type in ["group", "supergroup"]:
+            is_admin = await is_user_group_admin(chat, user.telegram_id)
+        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
+        await refresh_user_menu(callback.message, user, is_admin, keyboard)
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
 @router.callback_query(F.data == "toggle_transcribe_voice_only")
 async def toggle_mode_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
     """Handle voice mode toggle."""
@@ -185,6 +204,32 @@ async def toggle_transcribe_video_note_callback(callback: CallbackQuery, user: U
             is_admin = await is_user_group_admin(chat, user.telegram_id)
         keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
         await refresh_user_menu(callback.message, user, is_admin, keyboard)
+    else:
+        await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
+
+@router.callback_query(F.data == "toggle_group_responds_to_sticker")
+async def toggle_group_responds_to_sticker_callback(callback: CallbackQuery, group_dao: GroupDAO):
+    """Handle group sticker processing toggle."""
+    chat = callback.message.chat
+    is_admin = await is_user_group_admin(chat, callback.from_user.id)
+    if not is_admin:
+        await callback.answer("Тільки адміністратор може змінювати налаштування групи", show_alert=True)
+        return
+
+    group = await get_group_or_none(group_dao, chat)
+    if not group:
+        await callback.answer("Групу не знайдено у базі", show_alert=True)
+        return
+
+    new_value = not group.responds_to_sticker
+    success = await group_dao.update_group_settings(group_id=group.id, responds_to_sticker=new_value)
+    
+    if success:
+        group.responds_to_sticker = new_value
+        status = "увімкнено" if new_value else "вимкнено"
+        await callback.answer(f"✅ Обробку стікерів {status}")
+        keyboard = get_group_settings_keyboard(group, show_user_settings_button=is_admin)
+        await refresh_group_menu(callback.message, group, keyboard)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -245,7 +290,7 @@ async def close_user_help_callback(callback: CallbackQuery, user: User):
     chat = callback.message.chat
     is_admin = False
     if chat.type in ["group", "supergroup"]:
-        is_admin = await is_user_group_admin(chat, user.telegram_id)
+            is_admin = await is_user_group_admin(chat, user.telegram_id)
     keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
     await refresh_user_menu(callback.message, user, is_admin, keyboard)
 
@@ -259,6 +304,7 @@ async def show_help_callback(callback: CallbackQuery):
         "• <b>Відповіді на голосові</b> — Бот буде відповідати на ваші голосові повідомлення.\n\n"
         "• <b>Відповіді на фото</b> — Бот буде відповідати на фото.\n\n"
         "• <b>Відповіді на відео-кружки</b> — Бот буде відповідати на відео-кружки.\n\n"
+        "• <b>Відповіді на стікери</b> — Бот буде відповідати на стікери.\n\n"
         "• <b>Транскрипція голосових</b> — Бот буде перетворювати голосові у текст.\n\n"
         "• <b>Транскрипція відео-кружків</b> — Бот буде перетворювати відео-кружки у текст.\n\n"
         "\nНатисніть на кнопку, щоб змінити відповідне налаштування."

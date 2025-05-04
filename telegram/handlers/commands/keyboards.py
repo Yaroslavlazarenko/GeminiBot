@@ -50,6 +50,12 @@ def get_settings_keyboard(user: User, show_group_settings_button=False) -> Inlin
                     text=f"{'✅' if user.responds_to_video_note else '❌'} Відео-кружки {'(Увімк)' if user.responds_to_video_note else '(Вимк)'}",
                     callback_data="toggle_responds_to_video_note"
                 )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"{'✅' if user.responds_to_sticker else '❌'} Стікери {'(Увімк)' if user.responds_to_sticker else '(Вимк)'}",
+                    callback_data="toggle_responds_to_sticker"
+                )
             ]
         ])
 
@@ -145,6 +151,12 @@ def get_group_settings_keyboard(group, show_user_settings_button=False) -> Inlin
                 InlineKeyboardButton(
                     text=f"{'✅' if group.responds_to_video_note else '❌'} Відео-кружки {'(Увімк)' if group.responds_to_video_note else '(Вимк)'}",
                     callback_data="toggle_group_responds_to_video_note"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text=f"{'✅' if group.responds_to_sticker else '❌'} Стікери {'(Увімк)' if group.responds_to_sticker else '(Вимк)'}",
+                    callback_data="toggle_group_responds_to_sticker"
                 )
             ]
         ])

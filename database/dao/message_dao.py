@@ -130,9 +130,14 @@ class MessageHistoryDAO:
         logger.debug(f"Getting last {limit} private messages for user_id={user_id}")
         contents: List[types.Content] = []
         try:
-            stmt = (select(MessageHistory).where(and_(MessageHistory.user_id == user_id, MessageHistory.group_id.is_(None)))
-                    .options(selectinload(MessageHistory.user))
-                    .order_by(MessageHistory.timestamp.desc()).limit(limit))
+            stmt = (select(MessageHistory)
+                    .where(and_(MessageHistory.user_id == user_id, MessageHistory.group_id.is_(None)))
+                    .options(
+                        selectinload(MessageHistory.user),
+                        selectinload(MessageHistory.sticker)
+                    )
+                    .order_by(MessageHistory.timestamp.desc())
+                    .limit(limit))
             result = await self.session.execute(stmt)
             messages: List[MessageHistory] = list(reversed(result.scalars().all()))
             logger.debug(f"Retrieved {len(messages)} private messages for user_id={user_id} to build contents")
@@ -152,7 +157,10 @@ class MessageHistoryDAO:
         try:
             stmt = (select(MessageHistory)
                     .where(MessageHistory.group_id == group_id)
-                    .options(selectinload(MessageHistory.user))
+                    .options(
+                        selectinload(MessageHistory.user),
+                        selectinload(MessageHistory.sticker)
+                    )
                     .order_by(MessageHistory.timestamp.desc())
                     .limit(limit))
             result = await self.session.execute(stmt)
@@ -197,26 +205,26 @@ class MessageHistoryDAO:
 
         parts = []
         
+        # Get common display info
+        display_name = ""
+        if message.user:
+            if message.user.first_name:
+                display_name = message.user.first_name
+                if message.user.last_name:
+                    display_name += f" {message.user.last_name}"
+            elif message.user.username:
+                display_name = message.user.username
+            else:
+                display_name = f"User {message.user.telegram_id}"
+
+        # Format timestamp with Ukrainian timezone
+        timezone_kiev = pytz.timezone('Europe/Kiev')
+        timestamp = message.timestamp.astimezone(timezone_kiev)
+        time_str = timestamp.strftime("%H:%M")
+        
         # Add text if present
         if message.text:
             try:
-                # Get user's display name
-                display_name = ""
-                if message.user:
-                    if message.user.first_name:
-                        display_name = message.user.first_name
-                        if message.user.last_name:
-                            display_name += f" {message.user.last_name}"
-                    elif message.user.username:
-                        display_name = message.user.username
-                    else:
-                        display_name = f"User {message.user.telegram_id}"
-
-                # Format timestamp with Ukrainian timezone
-                timezone_kiev = pytz.timezone('Europe/Kiev')
-                timestamp = message.timestamp.astimezone(timezone_kiev)
-                time_str = timestamp.strftime("%H:%M")
-
                 # Only add username and timestamp prefix for user messages, not bot responses
                 if role_str == "user":
                     formatted_text = f"Message Id: {message.telegram_message_id} [{time_str}] {display_name}: {message.text}"
@@ -227,6 +235,24 @@ class MessageHistoryDAO:
                 logger.debug(f"Added text part to message {message.id}")
             except Exception as e:
                 logger.error(f"Error creating text part for message {message.id}: {e}")
+                return None
+
+        # Add sticker if present
+        if message.sticker:
+            try:
+                # Add sticker context text
+                sticker_info = f"Message Id: {message.telegram_message_id} [{time_str}] {display_name} sent a sticker"
+                if message.sticker.emoji:
+                    sticker_info += f" with emoji {message.sticker.emoji}"
+                if message.sticker.name:
+                    sticker_info += f" from sticker pack '{message.sticker.name}'"
+                parts.append(types.Part.from_text(text=sticker_info))
+                
+                # Add sticker image data
+                parts.append(types.Part.from_bytes(data=message.sticker.image_data, mime_type="image/webp"))
+                logger.debug(f"Added sticker parts to message {message.id}")
+            except Exception as e:
+                logger.error(f"Error creating sticker parts for message {message.id}: {e}", exc_info=True)
                 return None
 
         # Add audio if present

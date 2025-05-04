@@ -61,36 +61,37 @@ class GroupDAO:
         responds_to_voice: bool | None = None,
         responds_to_photo: bool | None = None,
         responds_to_video_note: bool | None = None,
+        responds_to_sticker: bool | None = None,
         transcribe_voice_only: bool | None = None,
-        transcribe_video_note: bool | None = None,
+        transcribe_video_note: bool | None = None
     ) -> bool:
-        values_to_update = {}
-        if is_global_disabled is not None:
-            values_to_update["is_global_disabled"] = is_global_disabled
-        if responds_to_text is not None:
-            values_to_update["responds_to_text"] = responds_to_text
-        if responds_to_voice is not None:
-            values_to_update["responds_to_voice"] = responds_to_voice
-        if responds_to_photo is not None:
-            values_to_update["responds_to_photo"] = responds_to_photo
-        if responds_to_video_note is not None:
-            values_to_update["responds_to_video_note"] = responds_to_video_note
-        if transcribe_voice_only is not None:
-            values_to_update["transcribe_voice_only"] = transcribe_voice_only
-        if transcribe_video_note is not None:
-            values_to_update["transcribe_video_note"] = transcribe_video_note
-
-        if not values_to_update:
-            return False
-
-        stmt = update(Group).where(Group.id == group_id).values(**values_to_update)
         try:
-            result = await self.session.execute(stmt)
-            if result.rowcount > 0:
+            update_data = {}
+            if is_global_disabled is not None:
+                update_data["is_global_disabled"] = is_global_disabled
+            if responds_to_text is not None:
+                update_data["responds_to_text"] = responds_to_text
+            if responds_to_voice is not None:
+                update_data["responds_to_voice"] = responds_to_voice
+            if responds_to_photo is not None:
+                update_data["responds_to_photo"] = responds_to_photo
+            if responds_to_video_note is not None:
+                update_data["responds_to_video_note"] = responds_to_video_note
+            if responds_to_sticker is not None:
+                update_data["responds_to_sticker"] = responds_to_sticker
+            if transcribe_voice_only is not None:
+                update_data["transcribe_voice_only"] = transcribe_voice_only
+            if transcribe_video_note is not None:
+                update_data["transcribe_video_note"] = transcribe_video_note
+
+            if not update_data:
                 return True
-            else:
-                group_exists = await self.session.get(Group, group_id)
-                return group_exists is not None
+
+            stmt = update(Group).where(Group.id == group_id).values(**update_data)
+            await self.session.execute(stmt)
+            await self.session.commit()
+            return True
         except SQLAlchemyError as e:
-            logger.critical(f"Database error updating settings for group_id={group_id}: {e}", exc_info=True)
-            raise
+            logger.error(f"Error updating group settings for group_id={group_id}: {e}", exc_info=True)
+            await self.session.rollback()
+            return False

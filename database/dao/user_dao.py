@@ -67,10 +67,11 @@ class UserDAO:
         responds_to_voice: bool | None = None,
         responds_to_photo: bool | None = None,
         responds_to_video_note: bool | None = None,
+        responds_to_sticker: bool | None = None,
         transcribe_voice_only: bool | None = None,
-        transcribe_video_note: bool | None = None,
-        is_admin: bool | None = None
+        transcribe_video_note: bool | None = None
     ) -> bool:
+        """Update user settings."""
         try:
             update_data = {}
             if is_global_disabled is not None:
@@ -83,12 +84,12 @@ class UserDAO:
                 update_data["responds_to_photo"] = responds_to_photo
             if responds_to_video_note is not None:
                 update_data["responds_to_video_note"] = responds_to_video_note
+            if responds_to_sticker is not None:
+                update_data["responds_to_sticker"] = responds_to_sticker
             if transcribe_voice_only is not None:
                 update_data["transcribe_voice_only"] = transcribe_voice_only
             if transcribe_video_note is not None:
                 update_data["transcribe_video_note"] = transcribe_video_note
-            if is_admin is not None:
-                update_data["is_admin"] = is_admin
 
             if not update_data:
                 return True

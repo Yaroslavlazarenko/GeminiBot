@@ -94,6 +94,14 @@ async def sticker_handler(
         logger.debug(f"Ignoring sticker from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to global GROUP disable.")
         return
 
+    # Check sticker-specific settings
+    if not getattr(user, 'responds_to_sticker', True):
+        logger.debug(f"Ignoring sticker from user {user_display_name} (ID: {user.telegram_id}) due to USER sticker setting.")
+        return
+    if group and not getattr(group, 'responds_to_sticker', True):
+        logger.debug(f"Ignoring sticker from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to GROUP sticker setting.")
+        return
+
     sticker = message.sticker
     if not sticker:
         logger.error(f"No sticker data in message from user {user_display_name} (ID: {user.telegram_id})")
@@ -112,26 +120,11 @@ async def sticker_handler(
         logger.warning(f"Failed to send chat action 'typing' to {chat.id}: {e}")
 
     try:
-        # Create or get existing sticker
-        db_sticker = await sticker_dao.get_or_create_sticker(
-            telegram_sticker_id=sticker.file_id,
-            telegram_message_id=message.message_id,
-            name=sticker.set_name,
-            emoji=sticker.emoji,
-            image_data=sticker_data
-        )
-
-        # Add message info first
-        message_info = f"Message info: next message is a sticker from {user_display_name}"
-        if is_forwarded and original_sender:
-            message_info += f" (forwarded from {original_sender.full_name}, message ID: {message.message_id}, message Time: {message.date})"
-        elif is_forwarded:
-            message_info += " (forwarded from unknown user)"
+        
 
         await message_dao.add_message(
             user_id=user.id,
             role=MessageRole.USER,
-            text=message_info,
             group_id=group_db_id,
             telegram_message_id=message.message_id,
             sticker_id=db_sticker.id
