@@ -49,24 +49,34 @@ async def text_handler(
             logger.debug(f"Ignoring text message from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to GROUP text setting.")
             return
 
-        # Add message to history
+        # Формируем метаданные для текстового сообщения
+        metadata = f"Message info: text message from {user_display_name} (ID: {user.telegram_id})"
+        if message.forward_from:
+            metadata += f" (forwarded from {message.forward_from.full_name})"
+        elif message.forward_from_chat:
+            metadata += f" (forwarded from channel/group {message.forward_from_chat.title})"
+        metadata += f", Message ID: {message.message_id}, Message Time: {message.date}"
+
+        # Add message to history with metadata
         await message_dao.add_message(
             user_id=user.id,
             role=MessageRole.USER,
             text=message.text,
             group_id=group_db_id,
-            telegram_message_id=message.message_id
+            telegram_message_id=message.message_id,
+            metadata=metadata
         )
         logger.debug(f"User message queued for save (user {user.telegram_id}, group_id {group_db_id})")
 
         if group_db_id is not None:
             message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id)
+            logger.info(f"Retrieved {len(message_history)} messages from group chat history")
         else:
             message_history = await message_dao.get_user_private_messages_as_contents(user_id=user.id)
-        logger.debug(f"Fetched {len(message_history)} messages for context (user {user.telegram_id}, group_id {group_db_id})")
+            logger.info(f"Retrieved {len(message_history)} messages from private chat history")
 
         if not message_history:
-            logger.warning(f"Message history is empty before calling Gemini for user {user.telegram_id}, group_id {group_db_id}. This might happen after /clear.")
+            logger.warning(f"Message history is empty before calling Gemini for user {user.telegram_id}")
 
         try:
             await message.bot.send_chat_action(chat_id=chat.id, action="typing")

@@ -3,7 +3,7 @@ import asyncio
 from typing import Dict, List, Optional, Tuple
 
 from aiogram import F, Router
-from aiogram.types import Message, Document
+from aiogram.types import Message, Document, ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
@@ -232,106 +232,103 @@ async def process_media_group_after_timeout(
 @router.message(F.document)
 async def document_handler(
     message: Message,
-    session_factory: async_sessionmaker[AsyncSession],
-    user_dao: UserDAO,
     group_dao: GroupDAO,
-    message_dao: MessageHistoryDAO
+    message_dao: MessageHistoryDAO,
+    user_dao: UserDAO,
+    user: User
 ) -> None:
-    """Обрабатывает документы, проверяя настройки пользователя и группы."""
-    if not message.from_user:
-        logger.warning("Received document message without 'from_user'. Ignoring.")
-        return
+    """Обработчик документов"""
+    chat = message.chat
+    try:
+        # Get group context if message is from group
+        group = await get_group_or_none(group_dao, chat) if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP] else None
+        group_db_id = group.id if group else None
 
-    if not message.document:
-        logger.warning(f"No document found in message {message.message_id}")
-        return
+        # Get user display name for better identification
+        user_display_name = message.from_user.full_name
+        if not user_display_name:
+            user_display_name = f"User {user.telegram_id}"
 
-    # Check if the document is a supported image type
-    mime_type = message.document.mime_type
-    if mime_type not in SUPPORTED_IMAGE_TYPES:
-        logger.debug(f"Ignoring document with unsupported MIME type: {mime_type}")
-        return
-
-    user = await user_dao.get_user_by_telegram_id(message.from_user.id)
-    if not user:
-        logger.warning(f"User {message.from_user.id} not found via middleware DAO. Attempting get_or_create.")
-        user = await user_dao.get_or_create_user(
-            telegram_id=message.from_user.id,
-            username=message.from_user.username or str(message.from_user.id),
-            first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name,
-        )
-        if not user:
-            logger.error(f"Failed to get or create user {message.from_user.id} in document_handler.")
-            await send_error_message(message, "Не вдалося знайти або створити ваші дані користувача.")
+        # Check global response setting first
+        if user.is_global_disabled:
+            logger.debug(f"Ignoring document from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to global USER disable.")
+            return
+        if group and group.is_global_disabled:
+            logger.debug(f"Ignoring document from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to global GROUP disable.")
             return
 
-    chat = message.chat
-    group = await get_group_or_none(group_dao, chat)
-    group_db_id = group.id if group else None
+        # Check document specific settings
+        if not getattr(user, 'responds_to_document', True):
+            logger.debug(f"Ignoring document from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to USER document setting.")
+            return
+        if group and not getattr(group, 'responds_to_document', True):
+            logger.debug(f"Ignoring document from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to GROUP document setting.")
+            return
 
-    if not user.responds_to_photo:
-        logger.debug(f"Ignoring document from user {user.telegram_id} in chat {chat.id} due to USER settings.")
-        return
-    if group and not group.responds_to_photo:
-        logger.debug(f"Ignoring document from user {user.telegram_id} in group chat {chat.id} due to GROUP settings.")
-        return
+        document = message.document
+        if not document:
+            logger.error("Message marked as document but no document object found")
+            await send_error_message(message, "Помилка: некоректні дані документа.")
+            return
 
-    logger.info(f"Processing document ({mime_type}) from user {user.telegram_id} in chat {chat.id} (type: {chat.type}, group_id: {group_db_id})")
+        # Process document
+        try:
+            file = await message.bot.get_file(document.file_id)
+            if not file.file_path:
+                logger.error(f"File path is missing for document file_id={document.file_id}")
+                await send_error_message(message, "Помилка: не вдалося отримати шлях до файлу документа.")
+                return
 
-    media_group_id = message.media_group_id
-    document_data = await get_document_data(message)
-    if not document_data:
-        await send_error_message(message, "Помилка: не вдалося завантажити ваш документ.")
-        return
+            downloaded_file = await message.bot.download_file(file.file_path)
+            if downloaded_file is None:
+                logger.error(f"Failed to download document from path={file.file_path}, received None")
+                await send_error_message(message, "Помилка: не вдалося завантажити документ (отримано None).")
+                return
 
-    if media_group_id:
-        logger.debug(f"Document message {message.message_id} is part of media group {media_group_id}. Adding to cache.")
-        if media_group_id not in media_group_cache:
-            media_group_cache[media_group_id] = []
-        media_group_cache[media_group_id].append((message, document_data))
-        logger.debug(f"Media group {media_group_id} cache now has {len(media_group_cache[media_group_id])} documents.")
+            document_data = downloaded_file.read()
 
-        await schedule_media_group_processing(
-            media_group_id=media_group_id,
-            chat_id=chat.id,
-            user_telegram_id=user.telegram_id,
-            bot=message.bot,
-            session_factory=session_factory
+        except Exception as e:
+            logger.error(f"Error processing document: {e}", exc_info=True)
+            await send_error_message(message, "Помилка: не вдалося обробити документ.")
+            return
+
+        # Формируем метаданные для документа
+        metadata = f"Message info: document from {user_display_name} (ID: {user.telegram_id})"
+        if message.forward_from:
+            metadata += f" (forwarded from {message.forward_from.full_name})"
+        elif message.forward_from_chat:
+            metadata += f" (forwarded from channel/group {message.forward_from_chat.title})"
+        metadata += f", File name: {document.file_name}, MIME type: {document.mime_type}, "
+        metadata += f"Size: {document.file_size} bytes, Message ID: {message.message_id}, Message Time: {message.date}"
+
+        # Add message to history with metadata
+        caption_text = message.caption if message.caption else None
+        await message_dao.add_message(
+            user_id=user.id,
+            role=MessageRole.USER,
+            text=caption_text,  # Use caption as text if available
+            group_id=group_db_id,
+            telegram_message_id=message.message_id,
+            metadata=metadata,
+            document_data=document_data  # Save document data
         )
-    else:
-        logger.debug(f"Processing single document message {message.message_id}.")
+        logger.debug(f"Document message queued for save (user {user.telegram_id}, group_id {group_db_id})")
+
+        # Get message history for context
+        if group_db_id is not None:
+            message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id)
+            logger.info(f"Retrieved {len(message_history)} messages from group chat history")
+        else:
+            message_history = await message_dao.get_user_private_messages_as_contents(user_id=user.id)
+            logger.info(f"Retrieved {len(message_history)} messages from private chat history")
+
+        if not message_history:
+            logger.warning(f"Message history is empty before calling Gemini for user {user.telegram_id}")
+
         try:
             await message.bot.send_chat_action(chat_id=chat.id, action="typing")
         except Exception as e:
             logger.warning(f"Failed to send chat action 'typing' to {chat.id}: {e}")
-
-        await message_dao.add_message(
-            user_id=user.id, role=MessageRole.USER,
-            text=f"Message info: next message is a {SUPPORTED_IMAGE_TYPES[mime_type]} image, Message ID: {message.message_id}, Message Time: {message.date}",
-            group_id=group_db_id,
-            telegram_message_id=message.message_id
-        )
-        await message_dao.add_message(
-            user_id=user.id, role=MessageRole.USER,
-            image_data=document_data,
-            group_id=group_db_id,
-            telegram_message_id=message.message_id
-        )
-        logger.debug(f"User single document message {message.message_id} added to middleware session.")
-
-        message_history = []
-        try:
-            if group_db_id is not None:
-                message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id)
-            else:
-                message_history = await message_dao.get_user_private_messages_as_contents(user_id=user.id)
-            logger.debug(f"Fetched {len(message_history)} messages for single document context.")
-        except Exception as db_error:
-            logger.error(f"Error getting message history for single document: {db_error}", exc_info=True)
-
-        if not message_history:
-            logger.warning(f"Message history is empty before calling Gemini for single document.")
 
         gemini_result = await get_text_response(
             message_history=message_history,
@@ -340,9 +337,14 @@ async def document_handler(
         )
 
         await handle_gemini_result(
-            gemini_result, message,
+            gemini_result,
+            message,
             message_dao=message_dao,
             user_dao=user_dao,
             user=user,
             group_db_id=group_db_id
         )
+
+    except Exception as e:
+        logger.error(f"Handler error processing document for user {user.telegram_id} in chat {chat.id}: {e}", exc_info=True)
+        await send_error_message(message, "🤯 Ой! Сталася неочікувана помилка під час обробки документа.")

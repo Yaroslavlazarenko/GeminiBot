@@ -2,7 +2,7 @@
 from sqlalchemy import (
     String, Text, LargeBinary, ForeignKey, DateTime, BigInteger, func,
     Boolean, true, false,
-    Enum as SQLAlchemyEnum
+    Enum as SQLAlchemyEnum, Column, Integer, Enum
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
 from sqlalchemy.ext.asyncio import AsyncAttrs
@@ -115,34 +115,39 @@ class Sticker(Base, PrettyRepr):
         back_populates="sticker"
     )
 
-class MessageHistory(Base, PrettyRepr):
+class MessageHistory(Base):
+    """Модель для хранения истории сообщений."""
     __tablename__ = "message_history"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    telegram_message_id: Mapped[int] = mapped_column(BigInteger, nullable=True, index=True)
-    sticker_id: Mapped[int | None] = mapped_column(ForeignKey("stickers.id", ondelete="SET NULL"), nullable=True)
-    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), nullable=True, index=True)
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
+    group_id = Column(Integer, ForeignKey('groups.id', ondelete='CASCADE'), nullable=True)
+    role = Column(Enum(MessageRole), nullable=False)
+    text = Column(Text)  # Теперь включает метаданные и текст сообщения
+    audio_data = Column(LargeBinary)
+    image_data = Column(LargeBinary)
+    video_data = Column(LargeBinary)
+    telegram_message_id = Column(BigInteger, nullable=True)
+    timestamp = Column(DateTime(timezone=True), nullable=False)
 
-    role: Mapped[MessageRole] = mapped_column(
-        SQLAlchemyEnum(
-            MessageRole,
-            name="message_role_enum_check",
-            create_constraint=True,
-            native_enum=False
-        ),
-        nullable=False
-    )
+    # Relations
+    user = relationship("User", back_populates="messages")
+    group = relationship("Group", back_populates="messages")
+    sticker = relationship("MessageSticker", back_populates="message", uselist=False, cascade="all, delete-orphan")
 
-    text: Mapped[str | None] = mapped_column(Text)
-    audio_data: Mapped[bytes | None] = mapped_column(LargeBinary)
-    image_data: Mapped[bytes | None] = mapped_column(LargeBinary)
-    video_data: Mapped[bytes | None] = mapped_column(LargeBinary)
+    def parse_text(self) -> tuple[str | None, str | None]:
+        """
+        Разделяет текст сообщения на метаданные и основной текст.
+        Returns:
+            tuple: (metadata, main_text) где каждый элемент может быть None
+        """
+        if not self.text:
+            return None, None
+            
+        parts = self.text.split("\n\n", 1)
+        if len(parts) == 2 and parts[0].startswith("Message info:"):
+            return parts[0], parts[1]
+        return None, self.text
 
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-
-    user: Mapped["User"] = relationship("User", back_populates="messages")
-    group: Mapped["Group | None"] = relationship("Group", back_populates="messages")
-    sticker: Mapped["Sticker | None"] = relationship("Sticker", back_populates="messages")
+    def __repr__(self):
+        return f"<MessageHistory(id={self.id}, user_id={self.user_id}, role={self.role}, telegram_message_id={self.telegram_message_id})>"

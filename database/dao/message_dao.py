@@ -30,13 +30,24 @@ class MessageHistoryDAO:
         image_data: bytes | None = None, 
         video_data: bytes | None = None, 
         group_id: int | None = None,
-        telegram_message_id: int | None = None
+        telegram_message_id: int | None = None,
+        metadata: str | None = None  # Добавляем поле для метаданных
     ) -> MessageHistory:
+        """
+        Добавляет сообщение в историю. Теперь метаданные и контент хранятся в одной записи.
+        
+        Args:
+            metadata: JSON-строка с метаданными (время, информация о пересылке и т.д.)
+        """
+        message_text = text
+        if metadata:
+            message_text = f"{metadata}\n\n{text}" if text else metadata
+
         new_message = MessageHistory(
             user_id=user_id,
             group_id=group_id,
             role=role,
-            text=text,
+            text=message_text,
             audio_data=audio_data,
             image_data=image_data,
             video_data=video_data,
@@ -188,12 +199,8 @@ class MessageHistoryDAO:
 
     def _format_message_to_content(self, message: MessageHistory, is_group: bool = False) -> Optional[types.Content]:
         """Форматирует сообщение из БД в формат, понятный Gemini API."""
-        if not message:
-            logger.warning("Attempted to format None message")
-            return None
-
-        if not message.role:
-            logger.warning(f"Message {message.id} has no role")
+        if not message or not message.role:
+            logger.warning(f"Message {message.id if message else 'None'} is invalid or has no role")
             return None
 
         try:
@@ -204,55 +211,24 @@ class MessageHistoryDAO:
             return None
 
         parts = []
-        
-        # Get common display info
-        display_name = ""
-        if message.user:
-            if message.user.first_name:
-                display_name = message.user.first_name
-                if message.user.last_name:
-                    display_name += f" {message.user.last_name}"
-            elif message.user.username:
-                display_name = message.user.username
-            else:
-                display_name = f"User {message.user.telegram_id}"
 
-        # Format timestamp with Ukrainian timezone
-        timezone_kiev = pytz.timezone('Europe/Kiev')
-        timestamp = message.timestamp.astimezone(timezone_kiev)
-        time_str = timestamp.strftime("%H:%M")
-        
         # Add text if present
         if message.text:
             try:
-                # Only add username and timestamp prefix for user messages, not bot responses
-                if role_str == "user":
-                    formatted_text = f"Message Id: {message.telegram_message_id} [{time_str}] {display_name}: {message.text}"
-                else:
-                    formatted_text = message.text
-
-                parts.append(types.Part.from_text(text=formatted_text))
+                # Текст уже содержит в себе метаданные благодаря новому формату
+                parts.append(types.Part.from_text(text=message.text))
                 logger.debug(f"Added text part to message {message.id}")
             except Exception as e:
                 logger.error(f"Error creating text part for message {message.id}: {e}")
                 return None
 
-        # Add sticker if present
-        if message.sticker:
+        # Add sticker data if present
+        if message.sticker and message.sticker.image_data:
             try:
-                # Add sticker context text
-                sticker_info = f"Message Id: {message.telegram_message_id} [{time_str}] {display_name} sent a sticker"
-                if message.sticker.emoji:
-                    sticker_info += f" with emoji {message.sticker.emoji}"
-                if message.sticker.name:
-                    sticker_info += f" from sticker pack '{message.sticker.name}'"
-                parts.append(types.Part.from_text(text=sticker_info))
-                
-                # Add sticker image data
                 parts.append(types.Part.from_bytes(data=message.sticker.image_data, mime_type="image/webp"))
-                logger.debug(f"Added sticker parts to message {message.id}")
+                logger.debug(f"Added sticker part to message {message.id}")
             except Exception as e:
-                logger.error(f"Error creating sticker parts for message {message.id}: {e}", exc_info=True)
+                logger.error(f"Error creating sticker part for message {message.id}: {e}", exc_info=True)
                 return None
 
         # Add audio if present
@@ -267,7 +243,6 @@ class MessageHistoryDAO:
         # Add image if present
         if message.image_data:
             try:
-                # Telegram always converts images to JPEG
                 parts.append(types.Part.from_bytes(data=message.image_data, mime_type="image/jpeg"))
                 logger.debug(f"Added image part to message {message.id}")
             except Exception as e:

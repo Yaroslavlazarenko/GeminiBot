@@ -5,13 +5,13 @@ import os
 from PIL import Image
 import ffmpeg
 from aiogram import F, Router, types
-from aiogram.types import Message
+from aiogram.types import Message, ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from google.genai import types as gemini_types
 
-from ai.gemini_client import get_video_response
+from ai.gemini_client import get_video_response, get_text_response
 from database.models import User, MessageRole
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
 from ..utils import send_error_message, get_group_or_none, handle_gemini_result
@@ -140,196 +140,126 @@ async def video_note_handler(
     user_dao: UserDAO,
     user: User
 ) -> None:
-    """Обрабатывает видео-кружки (video notes), проверяя настройки пользователя и группы."""
+    """Обработчик видео-заметок"""
     chat = message.chat
-    group = await get_group_or_none(group_dao, chat)
-    group_db_id = group.id if group else None
-
-    # Validate user data
-    if not user:
-        logger.error(f"User object is None for message {message.message_id}")
-        await send_error_message(message, "Помилка: не вдалося отримати дані користувача.")
-        return
-
-    if not user.telegram_id:
-        logger.error(f"User {user.id} has no telegram_id")
-        await send_error_message(message, "Помилка: не вдалося ідентифікувати користувача.")
-        return
-
-    # Get user display name for better identification
-    user_display_name = message.from_user.full_name
-    if not user_display_name:
-        user_display_name = f"User {user.telegram_id}"
-
-    # Check if message is forwarded
-    is_forwarded = message.forward_from is not None or message.forward_from_chat is not None
-    if is_forwarded:
-        original_sender = message.forward_from
-        if original_sender:
-            logger.debug(f"Processing forwarded video note from original sender {original_sender.full_name} (ID: {original_sender.id})")
-        else:
-            logger.debug(f"Processing forwarded video note from unknown original sender")
-
-    # Check global response setting first
-    if user.is_global_disabled:
-        logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to global USER disable.")
-        return
-    if group and group.is_global_disabled:
-        logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to global GROUP disable.")
-        return
-
-    # Then check video note-specific setting
-    if not user.responds_to_video_note:
-        logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to USER video note setting.")
-        return
-    if group and not getattr(group, 'responds_to_video_note', True):
-        logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to GROUP video note setting.")
-        return
-
-    if not message.video_note:
-        logger.warning(f"Video note object is missing for user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id}")
-        return
-
-    logger.info(f"Processing video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} (type: {chat.type}, group_id: {group_db_id}, forwarded: {is_forwarded})")
     try:
-        await message.bot.send_chat_action(chat_id=chat.id, action="typing")
-    except Exception as inner_e:
-        logger.warning(f"Failed to send fallback chat action 'typing' to {chat.id}: {inner_e}")
+        # Get group context if message is from group
+        group = await get_group_or_none(group_dao, chat) if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP] else None
+        group_db_id = group.id if group else None
 
-    video_note = message.video_note
-    video_data: bytes | None = None
+        # Get user display name for better identification
+        user_display_name = message.from_user.full_name
+        if not user_display_name:
+            user_display_name = f"User {user.telegram_id}"
 
-    try:
-        file = await message.bot.get_file(video_note.file_id)
-        if not file.file_path:
-            logger.error(f"File path is missing for video note file_id={video_note.file_id}")
-            await send_error_message(message, "Помилка: не вдалося отримати шлях до файлу.")
+        # Check global response setting first
+        if user.is_global_disabled:
+            logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to global USER disable.")
             return
-        downloaded_file = await message.bot.download_file(file.file_path)
-        if downloaded_file is None:
-            logger.error(f"Failed to download video note from path={file.file_path}, received None.")
-            await send_error_message(message, "Помилка: не вдалося завантажити відео (отримано None).")
-            return
-        video_data = downloaded_file.read()
-        logger.info(f"Downloaded {len(video_data)} bytes for video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id}")
-    except (TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError) as e:
-        logger.error(f"Telegram API error downloading video note file: {e}", exc_info=True)
-        await send_error_message(message, f"Помилка мережі або API Telegram під час завантаження: {e}.")
-        return
-    except Exception as e:
-        logger.error(f"Unexpected error downloading video note file: {e}", exc_info=True)
-        await send_error_message(message, "Несподівана помилка при завантаженні файлу.")
-        return
-
-    if not video_data:
-        logger.error(f"Video data is empty after download attempt for user {user_display_name} (ID: {user.telegram_id})")
-        return
-
-    try:
-        # Process video data to ensure minimum duration
-        processed_video_data = process_video_data(video_data)
-        logger.info(f"Video processing complete: original size={len(video_data)}, processed size={len(processed_video_data)}")
-
-        # Add message info first
-        message_info = f"Message info: next message is video note from {user_display_name}"
-        if is_forwarded and original_sender:
-            message_info += f" (forwarded from {original_sender.full_name}, message ID: {message.message_id}, message Time: {message.date})"
-        elif is_forwarded:
-            message_info += " (forwarded from unknown user)"
-            
-        await message_dao.add_message(
-            user_id=user.id, 
-            role=MessageRole.USER, 
-            text=message_info, 
-            group_id=group_db_id,
-            telegram_message_id=message.message_id
-        )
-        
-        # Add video data - using the processed video data
-        await message_dao.add_message(
-            user_id=user.id, 
-            role=MessageRole.USER, 
-            video_data=processed_video_data,  # Using processed video data here
-            group_id=group_db_id,
-            telegram_message_id=message.message_id
-        )
-        logger.info(f"User video note message saved with processed video (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
-
-        # Different handling for group vs private messages
-        if group_db_id is not None:
-            # For groups, limit history and add group context
-            message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id, limit=500)
-            logger.info(f"Retrieved {len(message_history)} messages from group history")
-            
-            # Add group context to the first message
-            if message_history:
-                group_context_text = f"Context: This is a group chat named '{group.name}'. The video note is from {user_display_name} (ID: {user.telegram_id})"
-                if is_forwarded and original_sender:
-                    group_context_text += f" (forwarded from {original_sender.full_name})"
-                elif is_forwarded:
-                    group_context_text += " (forwarded from unknown user)"
-                group_context_text += ". Please analyze the video note and provide a concise response."
-                
-                # Add user context for non-forwarded messages
-                if not is_forwarded:
-                    user_context = gemini_types.Content(
-                        parts=[gemini_types.Part(text=f"User context: This is a video note from {user_display_name} (ID: {user.telegram_id}) in the group chat '{group.name}'. Please analyze the video note and provide a concise response.")],
-                        role="user"
-                    )
-                    message_history = [user_context] + message_history
-                    logger.info("Added user context for non-forwarded message")
-                
-                group_context = gemini_types.Content(
-                    parts=[gemini_types.Part(text=group_context_text)],
-                    role="user"
-                )
-                message_history = [group_context] + message_history
-                logger.info("Added group context to message history")
-        else:
-            # For private messages, use full history
-            message_history = await message_dao.get_user_private_messages_as_contents(user_id=user.id)
-            logger.info(f"Retrieved {len(message_history)} messages from private history")
-
-        logger.info(f"Fetched {len(message_history)} messages for context (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
-
-        if not message_history:
-            logger.warning(f"Message history is empty before calling Gemini for user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id}")
-            await send_error_message(message, "Помилка: не вдалося отримати історію повідомлень.")
+        if group and group.is_global_disabled:
+            logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to global GROUP disable.")
             return
 
-        # Use group-level control if available, otherwise fallback to user
-        transcribe_video_note = user.transcribe_video_note
-        if group and hasattr(group, 'transcribe_video_note'):
-            transcribe_video_note = transcribe_video_note or group.transcribe_video_note
-        generate_full_response = not transcribe_video_note
-        logger.info(f"Calling AI for video note. Generate response based on user/group setting: {generate_full_response} (user {user_display_name} (ID: {user.telegram_id}), group_id {group_db_id})")
+        # Check video note specific settings
+        if not getattr(user, 'responds_to_video_note', True):
+            logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id} due to USER video note setting.")
+            return
+        if group and not getattr(group, 'responds_to_video_note', True):
+            logger.debug(f"Ignoring video note from user {user_display_name} (ID: {user.telegram_id}) in group chat {chat.id} due to GROUP video note setting.")
+            return
 
+        video_note = message.video_note
+        if not video_note:
+            logger.error("Message marked as video note but no video note object found")
+            await send_error_message(message, "Помилка: некоректні дані відео-нотатки.")
+            return
+
+        # Process video note
         try:
-            gemini_result = await get_video_response(
-                message_history=message_history,
-                user=user,
-                response=generate_full_response,
-                message=message
-            )
-
-            if isinstance(gemini_result, str):
-                # If we got a string error message, send it to the user
-                await send_error_message(message, gemini_result)
+            file = await message.bot.get_file(video_note.file_id)
+            if not file.file_path:
+                logger.error(f"File path is missing for video note file_id={video_note.file_id}")
+                await send_error_message(message, "Помилка: не вдалося отримати шлях до файлу відео-нотатки.")
                 return
 
-            await handle_gemini_result(
-                gemini_result,
-                message,
-                message_dao=message_dao,
-                user_dao=user_dao,
-                user=user,
-                group_db_id=group_db_id
-            )
+            downloaded_file = await message.bot.download_file(file.file_path)
+            if downloaded_file is None:
+                logger.error(f"Failed to download video note from path={file.file_path}, received None")
+                await send_error_message(message, "Помилка: не вдалося завантажити відео-нотатку (отримано None).")
+                return
+
+            video_data = downloaded_file.read()
+
+            # Transcribe if enabled
+            transcription_text = None
+            if getattr(user, 'transcribe_video_note', False):
+                try:
+                    logger.debug("Attempting to transcribe video note...")
+                    # TODO: Add video note transcription implementation
+                    pass
+                except Exception as e:
+                    logger.error(f"Error transcribing video note: {e}", exc_info=True)
+                    await send_error_message(message, "Помилка: не вдалося транскрибувати відео-нотатку.")
+                    return
+
         except Exception as e:
-            logger.error(f"Error calling Gemini API for video note: {e}", exc_info=True)
-            await send_error_message(message, "Помилка під час обробки відео. Спробуйте пізніше.")
+            logger.error(f"Error processing video note: {e}", exc_info=True)
+            await send_error_message(message, "Помилка: не вдалося обробити відео-нотатку.")
             return
 
+        # Формируем метаданные для видео-заметки
+        metadata = f"Message info: video note from {user_display_name} (ID: {user.telegram_id})"
+        if message.forward_from:
+            metadata += f" (forwarded from {message.forward_from.full_name})"
+        elif message.forward_from_chat:
+            metadata += f" (forwarded from channel/group {message.forward_from_chat.title})"
+        metadata += f", Duration: {video_note.duration}s, Message ID: {message.message_id}, Message Time: {message.date}"
+        if transcription_text:
+            metadata += f"\nTranscription: {transcription_text}"
+
+        # Add message to history with metadata
+        await message_dao.add_message(
+            user_id=user.id,
+            role=MessageRole.USER,
+            text=transcription_text,  # Используем транскрипцию как текст, если есть
+            group_id=group_db_id,
+            telegram_message_id=message.message_id,
+            metadata=metadata,
+            video_data=video_data  # Сохраняем видео-данные
+        )
+        logger.debug(f"Video note message queued for save (user {user.telegram_id}, group_id {group_db_id})")
+
+        # Get message history for context
+        if group_db_id is not None:
+            message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id)
+            logger.info(f"Retrieved {len(message_history)} messages from group chat history")
+        else:
+            message_history = await message_dao.get_user_private_messages_as_contents(user_id=user.id)
+            logger.info(f"Retrieved {len(message_history)} messages from private chat history")
+
+        if not message_history:
+            logger.warning(f"Message history is empty before calling Gemini for user {user.telegram_id}")
+
+        try:
+            await message.bot.send_chat_action(chat_id=chat.id, action="typing")
+        except Exception as e:
+            logger.warning(f"Failed to send chat action 'typing' to {chat.id}: {e}")
+
+        gemini_result = await get_text_response(
+            message_history=message_history,
+            user=user,
+            message=message
+        )
+
+        await handle_gemini_result(
+            gemini_result,
+            message,
+            message_dao=message_dao,
+            user_dao=user_dao,
+            user=user,
+            group_db_id=group_db_id
+        )
+
     except Exception as e:
-        logger.error(f"Handler error processing video note for user {user_display_name} (ID: {user.telegram_id}) in chat {chat.id}: {e}", exc_info=True)
-        await send_error_message(message, "🤯 Ой! Сталася неочікувана помилка під час обробки вашого відео повідомлення.")
+        logger.error(f"Handler error processing video note message for user {user.telegram_id} in chat {chat.id}: {e}", exc_info=True)
+        await send_error_message(message, "🤯 Ой! Сталася неочікувана помилка під час обробки відео-нотатки.")
