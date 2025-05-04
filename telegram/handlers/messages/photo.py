@@ -6,7 +6,8 @@ import os
 from typing import Dict, List, Optional, Tuple
 
 from aiogram import F, Router
-from aiogram.types import Message, PhotoSize, ChatType
+from aiogram.types import Message, PhotoSize
+from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.exc import SQLAlchemyError
