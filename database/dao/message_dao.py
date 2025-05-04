@@ -2,6 +2,7 @@
 import logging
 from typing import Optional, List
 from datetime import datetime, timezone
+import pytz
 
 from sqlalchemy import select, delete, and_, update
 from sqlalchemy.orm import selectinload
@@ -211,9 +212,10 @@ class MessageHistoryDAO:
                     else:
                         display_name = f"User {message.user.telegram_id}"
 
-                # Format timestamp
-                timestamp = message.timestamp 
-                time_str = timestamp.strftime("%H:%M")  # Format as HH:MM
+                # Format timestamp with Ukrainian timezone
+                timezone_kiev = pytz.timezone('Europe/Kiev')
+                timestamp = message.timestamp.astimezone(timezone_kiev)
+                time_str = timestamp.strftime("%H:%M")
 
                 # Only add username and timestamp prefix for user messages, not bot responses
                 if role_str == "user":
