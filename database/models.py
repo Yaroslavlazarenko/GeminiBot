@@ -93,12 +93,32 @@ class Group(Base, PrettyRepr):
         back_populates="group"
     )
 
+class Sticker(Base, PrettyRepr):
+    __tablename__ = "stickers"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    telegram_sticker_id: Mapped[str] = mapped_column(String(256), index=True, nullable=False)
+    telegram_message_id: Mapped[int] = mapped_column(BigInteger, nullable=True, index=True)
+    name: Mapped[str | None] = mapped_column(String(256))
+    emoji: Mapped[str | None] = mapped_column(String(32))
+    image_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # Relationship with MessageHistory
+    messages: Mapped[List["MessageHistory"]] = relationship(
+        back_populates="sticker"
+    )
+
 class MessageHistory(Base, PrettyRepr):
     __tablename__ = "message_history"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     telegram_message_id: Mapped[int] = mapped_column(BigInteger, nullable=True, index=True)
+    sticker_id: Mapped[int | None] = mapped_column(ForeignKey("stickers.id", ondelete="SET NULL"), nullable=True)
+    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), nullable=True, index=True)
 
     role: Mapped[MessageRole] = mapped_column(
         SQLAlchemyEnum(
@@ -119,7 +139,6 @@ class MessageHistory(Base, PrettyRepr):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
-    group_id: Mapped[int | None] = mapped_column(ForeignKey("groups.id", ondelete="CASCADE"), nullable=True, index=True)
-
     user: Mapped["User"] = relationship("User", back_populates="messages")
     group: Mapped["Group | None"] = relationship("Group", back_populates="messages")
+    sticker: Mapped["Sticker | None"] = relationship("Sticker", back_populates="messages")
