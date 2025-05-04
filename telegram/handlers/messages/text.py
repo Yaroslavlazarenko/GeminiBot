@@ -93,16 +93,19 @@ async def text_handler(
         )
         logger.debug(f"User message queued for save (user {user.telegram_id}, group_id {group_db_id})")
         
-        # Check if we should process this message or wait for more messages
+        # Register this message with the batcher
         user_telegram_id = user.telegram_id
-        should_process = await message_batcher.register_message(user_telegram_id)
+        await message_batcher.register_message(user_telegram_id)
         
-        if not should_process:
-            # This message is part of a batch, don't respond yet
-            logger.info(f"Batching message from user {user_telegram_id} - waiting for more messages")
+        # Check if we should process this message now (after batching period)
+        should_process_now = await message_batcher.should_process_now(user_telegram_id)
+        
+        if not should_process_now:
+            # Either still in batching period or not the last message
+            logger.info(f"Message from user {user_telegram_id} - waiting for batching period to end")
             return
         
-        # If we get here, either this is the first message in a batch or the batching period has ended
+        # If we get here, the batching period has ended and this is the last message
         if group_db_id is not None:
             message_history = await message_dao.get_group_messages_as_contents(group_id=group_db_id)
             logger.info(f"Retrieved {len(message_history)} messages from group chat history")
