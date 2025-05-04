@@ -50,7 +50,7 @@ async def text_handler(
             return
 
         # Формируем метаданные для текстового сообщения
-        metadata = f"Message info: text message from {user_display_name} (ID: {user.telegram_id})"
+        metadata = f"Message info: text message from {user_display_name} (User ID: {user.telegram_id})"
         if message.forward_from:
             metadata += f" (forwarded from {message.forward_from.full_name})"
         elif message.forward_from_chat:
