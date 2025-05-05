@@ -485,6 +485,33 @@ class MessageHistoryDAO:
                 logger.debug(f"Added video part to message {message.id}")
             except Exception as e:
                 logger.error(f"Error creating video part for message {message.id}: {e}")
+                
+        # Добавляем документ (если есть)
+        if message.document_data:
+            try:
+                # Определяем MIME тип документа на основе метаданных
+                mime_type = "application/octet-stream"  # По умолчанию
+                
+                # Пытаемся найти MIME тип в метаданных
+                if message.message_metadata and "MIME type:" in message.message_metadata:
+                    # Простой парсинг строки метаданных
+                    mime_match = re.search(r"MIME type:\s*([\w\-\.]+\/[\w\-\.]+)", message.message_metadata)
+                    if mime_match:
+                        mime_type = mime_match.group(1)
+                
+                # Определяем, является ли документ изображением
+                is_image = mime_type.startswith("image/")
+                
+                # Если это изображение, добавляем его как изображение
+                if is_image:
+                    parts.append(types.Part.from_bytes(data=message.document_data, mime_type=mime_type))
+                    logger.debug(f"Added document as image part (mime: {mime_type}) to message {message.id}")
+                else:
+                    # Для неизображений добавляем только метаданные в текст
+                    logger.debug(f"Document is not an image (mime: {mime_type}), not adding binary data for message {message.id}")
+                    # Метаданные уже добавлены выше
+            except Exception as e:
+                logger.error(f"Error creating document part for message {message.id}: {e}", exc_info=True)
 
         # Проверяем, были ли добавлены хоть какие-то части контента (кроме метаданных, если они одни)
         # Если добавлена только метаданная часть, но нет основного текста или медиа, возможно, это не полное сообщение.
