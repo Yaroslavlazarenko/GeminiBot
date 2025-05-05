@@ -308,16 +308,27 @@ async def get_gemini_response(
                 logger.debug(f"[Gemini Debug] Raw response text: {raw_text[:500]}...")
                 
                 # Проверяем, похож ли ответ на JSON
+                # Если текст не начинается с { или не содержит }, то это, вероятно, не JSON
                 if not raw_text.strip().startswith('{') or not '}' in raw_text:
-                    # Если это не JSON, сразу возвращаем обычный текст
-                    logger.info(f"[Gemini Debug] Response doesn't look like JSON. Treating as plain text: {raw_text[:100]}...")
-                    return {
-                        "type": "json_response",
-                        "data": {
-                            "text": raw_text,
-                            "commands": []
+                    # Проверяем, есть ли JSON внутри текста (окруженный другим текстом)
+                    json_pattern = r'\s*({\s*".*?"\s*:.*})\s*'
+                    json_match = re.search(json_pattern, raw_text, re.DOTALL)
+                    
+                    if json_match:
+                        # Если нашли JSON внутри текста, извлекаем его
+                        logger.info(f"[Gemini Debug] Found JSON inside text. Extracting.")
+                        # Продолжаем обработку, но с извлеченным JSON
+                        raw_text = json_match.group(1).strip()
+                    else:
+                        # Если это не JSON, сразу возвращаем обычный текст
+                        logger.info(f"[Gemini Debug] Response doesn't look like JSON. Treating as plain text: {raw_text[:100]}...")
+                        return {
+                            "type": "json_response",
+                            "data": {
+                                "text": raw_text,
+                                "commands": []
+                            }
                         }
-                    }
                 
                 # Если похоже на JSON, продолжаем обработку
                 # 1. Extraction: Find the most likely JSON string in the response
@@ -327,11 +338,22 @@ async def get_gemini_response(
                     if code_block_match:
                         logger.debug("[Gemini Debug] Found JSON in code block.")
                         return code_block_match.group(1).strip()
+                    
+                    # Попытка найти JSON с помощью более простого регулярного выражения
+                    # Ищем текст, который начинается с { и заканчивается }
+                    # Сначала пробуем найти полный JSON объект с учетом возможного текста до и после
+                    json_pattern = r'\s*({\s*".*?"\s*:.*})\s*'
+                    json_match = re.search(json_pattern, text, re.DOTALL)
+                    if json_match:
+                        logger.debug("[Gemini Debug] Found JSON using regex pattern.")
+                        return json_match.group(1).strip()
 
+                    # Если регулярное выражение не сработало, используем старый метод
                     # If no code block, try to find a standalone JSON object
                     text_without_codeblocks = re.sub(r'```.*?```', '', text, flags=re.DOTALL) # Remove any code blocks
                     text_without_codeblocks = text_without_codeblocks.strip()
 
+                    # Ищем начало и конец JSON объекта
                     start_idx = text_without_codeblocks.find('{')
                     if start_idx == -1:
                         logger.debug("[Gemini Debug] No '{' found in response outside code blocks. Returning original text.")
@@ -479,10 +501,12 @@ async def get_gemini_response(
             retries += 1
             if retries >= MAX_RETRIES:
                 logger.error(f"Max retries ({MAX_RETRIES}) reached for ServerError. Last error: {e}", exc_info=True)
+                # Более понятное сообщение об ошибке для пользователя
+                user_friendly_message = "Сервер AI тимчасово недоступний. Будь ласка, спробуйте пізніше."
                 return {
                     "type": "error",
                     "data": {
-                        "text": f"AI server error after multiple retries: {e}",
+                        "text": user_friendly_message,
                         "commands": []
                     }
                 }
@@ -501,7 +525,7 @@ async def get_gemini_response(
                     return {
                         "type": "error",
                         "data": {
-                            "text": "AI rate limit exceeded. Please try again in a few minutes.",
+                            "text": "Сервіс AI зараз перевантажений. Будь ласка, спробуйте трохи пізніше.",
                             "commands": []
                         }
                     }
@@ -516,7 +540,7 @@ async def get_gemini_response(
             return {
                 "type": "error",
                 "data": {
-                    "text": f"AI client error: {e}",
+                    "text": "Помилка при з'єднанні з AI. Будь ласка, спробуйте пізніше.",
                     "commands": []
                 }
             }
@@ -527,7 +551,7 @@ async def get_gemini_response(
             return {
                 "type": "error",
                 "data": {
-                    "text": f"An unexpected error occurred while communicating with the AI model: {e}",
+                    "text": "Виникла неочікувана помилка при зверненні до AI. Будь ласка, спробуйте пізніше.",
                     "commands": []
                 }
             }
