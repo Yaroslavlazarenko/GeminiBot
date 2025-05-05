@@ -333,13 +333,21 @@ async def get_gemini_response(
                 # Если похоже на JSON, продолжаем обработку
                 # 1. Extraction: Find the most likely JSON string in the response
                 def extract_json_string(text):
+                    # Проверка на дублирование JSON
+                    # Ищем паттерн вида {JSON}{JSON} - два одинаковых JSON объекта подряд
+                    duplicate_pattern = r'({\s*"text"\s*:\s*".*?"\s*,\s*"commands"\s*:\s*\[.*?\]\s*})\s*\1'
+                    duplicate_match = re.search(duplicate_pattern, text, re.DOTALL)
+                    if duplicate_match:
+                        logger.info("[Gemini Debug] Found duplicate JSON objects. Taking only the first one.")
+                        return duplicate_match.group(1).strip()
+                    
                     # Look for JSON inside code blocks first
                     code_block_match = re.search(r'```(?:json)?\s*({[\s\S]*?})\s*```', text, re.DOTALL)
                     if code_block_match:
                         logger.debug("[Gemini Debug] Found JSON in code block.")
                         return code_block_match.group(1).strip()
                     
-                    # Попытка найти JSON с помощью более простого регулярного выражения
+                    # Попытка найти JSON с помощью регулярного выражения
                     # Ищем текст, который начинается с { и заканчивается }
                     # Сначала пробуем найти полный JSON объект с учетом возможного текста до и после
                     json_pattern = r'\s*({\s*".*?"\s*:.*})\s*'
