@@ -26,6 +26,9 @@ SUPPORTED_IMAGE_TYPES = {
     'image/heif': 'HEIF'
 }
 
+# Максимальный размер файла для инлайн-данных в Gemini API (20 МБ)
+MAX_INLINE_FILE_SIZE = 20 * 1024 * 1024  # 20 MB in bytes
+
 # --- Управление Медиагруппами ---
 media_group_cache: Dict[str, List[Tuple[Message, bytes]]] = {}
 media_group_timers: Dict[str, asyncio.Task] = {}
@@ -373,6 +376,31 @@ async def document_handler(
                 return
 
             document_data = downloaded_file.read()
+            
+            # Проверка и обработка изображений
+            mime_type = document.mime_type.lower() if document.mime_type else ""
+            file_name = document.file_name.lower() if document.file_name else ""
+            
+            # Проверяем, является ли файл изображением по MIME-типу или расширению
+            is_image = mime_type in SUPPORTED_IMAGE_TYPES or any(file_name.endswith(f".{ext.lower()}") for ext in ["jpg", "jpeg", "png", "webp", "heic", "heif"])
+            is_jpeg = mime_type == "image/jpeg" or file_name.endswith(".jpg") or file_name.endswith(".jpeg")
+            
+            # Проверяем размер файла
+            if is_image and document.file_size:
+                # Если файл больше максимального размера для инлайн-данных
+                if document.file_size > MAX_INLINE_FILE_SIZE:
+                    logger.warning(f"Image file too large for Gemini API ({document.file_size} bytes > {MAX_INLINE_FILE_SIZE} bytes).")
+                    await message.reply("Увага: файл зображення занадто великий для обробки (> 20 МБ). Будь ласка, зменшіть розмір файлу.")
+                    # Продолжаем обработку, но предупреждаем пользователя
+                
+                # Дополнительная проверка для JPEG файлов, которые чаще вызывают ошибки
+                elif is_jpeg and document.file_size > 5 * 1024 * 1024:  # Больше 5 МБ
+                    logger.warning(f"Large JPEG file detected ({document.file_size} bytes). This may cause Gemini API errors.")
+                    await message.reply("Увага: великі JPEG файли можуть викликати помилки при обробці. Якщо виникне помилка, спробуйте зменшити розмір зображення або конвертувати в PNG.")
+                # Предупреждение о токенах для больших изображений
+                elif document.file_size > 1 * 1024 * 1024:  # Больше 1 МБ
+                    logger.info(f"Large image file ({document.file_size} bytes). This will use more tokens in Gemini API.")
+                    # Здесь можно добавить предупреждение о токенах, если необходимо
 
         except Exception as e:
             logger.error(f"Error processing document: {e}", exc_info=True)
