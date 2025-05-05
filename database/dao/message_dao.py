@@ -1,5 +1,6 @@
 # services/database/message_dao.py
 import logging
+import re
 from typing import Optional, List
 from datetime import datetime, timezone
 import pytz # Импорт pytz может быть полезен для работы с часовыми поясами, хотя в коде используется timezone.utc
