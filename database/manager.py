@@ -16,15 +16,21 @@ class DatabaseManager:
         self.db_name = db_name
         self.async_url = f"postgresql+asyncpg://{user}:{password}@{host}/{db_name}"
         self.base = Base
-        # Настройки пула соединений
+        # Optimized connection pool settings
         self.engine = create_async_engine(
             self.async_url,
             echo=False,
-            pool_size=20,
-            max_overflow=30,
-            pool_timeout=60,
+            # Reduced pool size and overflow for better resource management
+            pool_size=5,
+            max_overflow=10,
+            # Shorter timeout to fail fast rather than accumulate waiting connections
+            pool_timeout=30,
+            # More aggressive connection recycling
+            pool_recycle=1800,
+            # Enable connection health checks
             pool_pre_ping=True,
-            pool_recycle=3600,
+            # Better handling of disconnects
+            pool_use_lifo=True,
         )
         self.async_session_maker = async_sessionmaker(
             bind=self.engine,

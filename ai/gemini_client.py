@@ -264,15 +264,12 @@ async def get_gemini_response(
             # Make the API call
             api_response = await async_client.models._generate_content(
                 model=config.gemini_model,
-                contents=contents_for_api, # Use the modified contents list
+                contents=contents_for_api,
                 config=GenerateContentConfig(
                     tools=tools_to_pass_in_list,
-                    response_modalities=["text"], # Request text response
-                    system_instruction=system_prompt, # Pass the combined system prompt
-                    # Configure response format if model supports (Gemini 1.5 Pro often prefers text+JSON in output)
-                    # response_mime_type="application/json" # This is often for specific function calling or structured models
-                ),
-                # generation_config=types.GenerationConfig(response_mime_type="application/json") # Alternative way
+                    response_modalities=["text"],
+                    system_instruction=system_prompt,
+                    ),
             )
 
             # Check for valid response object and text content

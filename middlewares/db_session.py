@@ -31,7 +31,8 @@ class DAOMiddleware(BaseMiddleware):
             event_type = type(event).__name__; event_id = getattr(event, 'id', 'N/A'); chat_id = getattr(event, 'chat_id', 'N/A')
         logger.debug(f"Processing {event_type} (ID:{event_id}, Chat:{chat_id}) for {user_identifier}")
 
-        async with self.session_factory() as session:
+        session = self.session_factory()
+        try:
             user_dao = UserDAO(session)
             group_dao = GroupDAO(session)
             message_dao = MessageHistoryDAO(session)
@@ -45,46 +46,49 @@ class DAOMiddleware(BaseMiddleware):
 
             db_user: Optional[DBUser] = None
 
+            if tg_user:
+                logger.debug(f"Attempting get_or_create for {user_identifier} using UserDAO")
+                db_user = await user_dao.get_or_create_user(
+                    telegram_id=tg_user.id,
+                    username=tg_user.username or str(tg_user.id),
+                    first_name=tg_user.first_name,
+                    last_name=tg_user.last_name,
+                )
+                data["user"] = db_user
+                logger.debug(f"DB User object (ID: {db_user.id if db_user else 'N/A'}) ready via middleware for {user_identifier}")
+            else:
+                data["user"] = None
+                logger.debug("No event_from_user found, skipping DB user steps.")
+
+            logger.debug(f"Executing handler for {event_type} (ID:{event_id})")
+            result = await handler(event, data)
+
+            await session.commit()
+            logger.debug(f"Handler finished successfully, session committed for {event_type} (ID:{event_id}) from {user_identifier}.")
+            return result
+
+        except SQLAlchemyError as db_err:
+            logger.error(f"Database error for {event_type} (ID:{event_id}) from {user_identifier}: {db_err}", exc_info=True)
+            await session.rollback()
+            logger.warning(f"Session rolled back for {event_type} (ID:{event_id}) from {user_identifier} due to DB error.")
+            error_message = "Виникла помилка при роботі з базою даних. Спробуйте пізніше."
             try:
-                if tg_user:
-                    logger.debug(f"Attempting get_or_create for {user_identifier} using UserDAO")
-                    db_user = await user_dao.get_or_create_user(
-                        telegram_id=tg_user.id,
-                        username=tg_user.username or str(tg_user.id),
-                        first_name=tg_user.first_name,
-                        last_name=tg_user.last_name,
-                    )
-                    data["user"] = db_user
-                    logger.debug(f"DB User object (ID: {db_user.id if db_user else 'N/A'}) ready via middleware for {user_identifier}")
-                else:
-                    data["user"] = None
-                    logger.debug("No event_from_user found, skipping DB user steps.")
+                if isinstance(event, Message): await event.answer(error_message)
+                elif isinstance(event, CallbackQuery) and event.message: await event.message.answer(error_message)
+            except Exception as send_error: logger.error(f"Failed to send DB error message to user {user_identifier}: {send_error}")
+            return None
 
-                logger.debug(f"Executing handler for {event_type} (ID:{event_id})")
-                result = await handler(event, data)
+        except Exception as e:
+            logger.error(f"Handler error for {event_type} (ID:{event_id}) from {user_identifier}: {e}", exc_info=True)
+            await session.rollback()
+            logger.warning(f"Session rolled back for {event_type} (ID:{event_id}) from {user_identifier} due to handler error.")
+            error_message = "Виникла внутрішня помилка. Спробуйте пізніше."
+            try:
+                if isinstance(event, Message): await event.answer(error_message)
+                elif isinstance(event, CallbackQuery) and event.message: await event.message.answer(error_message)
+            except Exception as send_error: logger.error(f"Failed to send error message to user {user_identifier}: {send_error}")
+            return None
 
-                await session.commit()
-                logger.debug(f"Handler finished successfully, session committed for {event_type} (ID:{event_id}) from {user_identifier}.")
-                return result
-
-            except SQLAlchemyError as db_err:
-                logger.error(f"Database error for {event_type} (ID:{event_id}) from {user_identifier}: {db_err}", exc_info=True)
-                await session.rollback()
-                logger.warning(f"Session rolled back for {event_type} (ID:{event_id}) from {user_identifier} due to DB error.")
-                error_message = "Виникла помилка при роботі з базою даних. Спробуйте пізніше."
-                try:
-                    if isinstance(event, Message): await event.answer(error_message)
-                    elif isinstance(event, CallbackQuery) and event.message: await event.message.answer(error_message)
-                except Exception as send_error: logger.error(f"Failed to send DB error message to user {user_identifier}: {send_error}")
-                return None
-
-            except Exception as e:
-                logger.error(f"Handler error for {event_type} (ID:{event_id}) from {user_identifier}: {e}", exc_info=True)
-                await session.rollback()
-                logger.warning(f"Session rolled back for {event_type} (ID:{event_id}) from {user_identifier} due to handler error.")
-                error_message = "Виникла внутрішня помилка. Спробуйте пізніше."
-                try:
-                    if isinstance(event, Message): await event.answer(error_message)
-                    elif isinstance(event, CallbackQuery) and event.message: await event.message.answer(error_message)
-                except Exception as send_error: logger.error(f"Failed to send error message to user {user_identifier}: {send_error}")
-                return None
+        finally:
+            await session.close()
+            logger.debug(f"Session closed for {event_type} (ID:{event_id}) from {user_identifier}")
