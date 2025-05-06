@@ -16,26 +16,38 @@ class DatabaseManager:
         self.db_name = db_name
         self.async_url = f"postgresql+asyncpg://{user}:{password}@{host}/{db_name}"
         self.base = Base
-        # Optimized connection pool settings
+        
+        # More aggressive connection pool settings
         self.engine = create_async_engine(
             self.async_url,
             echo=False,
-            # Reduced pool size and overflow for better resource management
-            pool_size=5,
-            max_overflow=10,
-            # Shorter timeout to fail fast rather than accumulate waiting connections
-            pool_timeout=30,
-            # More aggressive connection recycling
-            pool_recycle=1800,
-            # Enable connection health checks
+            # Increase pool size but reduce overflow for better stability
+            pool_size=10,
+            max_overflow=5,
+            # More aggressive timeouts
+            pool_timeout=20,
+            # More frequent connection recycling
+            pool_recycle=300,  # Recycle connections every 5 minutes
+            # Connection health checks
             pool_pre_ping=True,
+            # Enable pool reset on return
+            reset_on_return=True,
             # Better handling of disconnects
             pool_use_lifo=True,
+            # Optimize for many short-lived connections
+            executemany_mode='values',
+            json_serializer=None,  # Disable JSON serialization overhead
+            # Connection pool logging
+            logging_name='db_pool'
         )
+        
         self.async_session_maker = async_sessionmaker(
             bind=self.engine,
             expire_on_commit=False,
             class_=AsyncSession,
+            # More aggressive session settings
+            autoflush=True,
+            autocommit=False
         )
         logger.debug(f"DatabaseManager initialized for database '{db_name}' at {host}")
 
