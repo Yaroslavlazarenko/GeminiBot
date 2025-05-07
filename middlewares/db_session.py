@@ -44,27 +44,27 @@ class DAOMiddleware(BaseMiddleware):
                 "session_factory": self.session_factory
             })
 
-            # Handle user creation/retrieval
-            if tg_user:
-                try:
-                    async with session.begin_nested():
+            # Start a single transaction for the entire handler
+            async with session.begin():
+                # Handle user creation/retrieval within the same transaction
+                if tg_user:
+                    try:
                         db_user = await data["user_dao"].get_or_create_user(
                             telegram_id=tg_user.id,
                             username=tg_user.username or str(tg_user.id),
                             first_name=tg_user.first_name,
                             last_name=tg_user.last_name,
                         )
-                    data["user"] = db_user
-                    logger.debug(f"User object ready (ID: {db_user.id if db_user else 'N/A'}) for {user_identifier}")
-                except SQLAlchemyError as e:
-                    logger.error(f"Error getting/creating user {user_identifier}: {e}")
-                    raise
-            else:
-                data["user"] = None
-                logger.debug(f"No user information for {event_type} (ID:{event_id})")
+                        data["user"] = db_user
+                        logger.debug(f"User object ready (ID: {db_user.id if db_user else 'N/A'}) for {user_identifier}")
+                    except SQLAlchemyError as e:
+                        logger.error(f"Error getting/creating user {user_identifier}: {e}")
+                        raise
+                else:
+                    data["user"] = None
+                    logger.debug(f"No user information for {event_type} (ID:{event_id})")
 
-            # Execute handler within a transaction
-            async with session.begin():
+                # Execute handler within the same transaction
                 logger.debug(f"Executing handler for {event_type} (ID:{event_id})")
                 result = await handler(event, data)
                 return result
