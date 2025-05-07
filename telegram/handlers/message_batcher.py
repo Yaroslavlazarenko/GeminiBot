@@ -9,18 +9,12 @@ import asyncio
 import time
 from typing import Dict, Optional, Tuple, Callable, Any
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from aiogram import Bot
+from aiogram.types import Message
 
-# Assume these are available and correctly typed from your project
-# from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
-# from aiogram import Bot
-# from aiogram.types import Message
-
-# Placeholder types if actual types are not in this file context
-UserDAO = Any
-GroupDAO = Any
-MessageHistoryDAO = Any
-Bot = Any
-Message = Any # In real code, import aiogram.types.Message
+from database.dao.user_dao import UserDAO
+from database.dao.group_dao import GroupDAO
+from database.dao.message_dao import MessageHistoryDAO
 
 logger = logging.getLogger(__name__)
 
