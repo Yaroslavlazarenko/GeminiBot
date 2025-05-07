@@ -14,22 +14,49 @@ from logging_config import setup_logging
 # Global objects for graceful shutdown
 shutdown_event = asyncio.Event()
 dp = None
+bot = None
+db_manager = None
 
-async def shutdown():
-    """Handle shutdown process."""
-    global dp
-    if dp:
-        await dp.stop_polling()
+async def shutdown(timeout=10):
+    """Handle shutdown process with timeout."""
+    global dp, bot, db_manager
+    logger = logging.getLogger(__name__)
+    
+    try:
+        async with asyncio.timeout(timeout):
+            logger.info("Starting graceful shutdown...")
+            
+            if dp:
+                logger.info("Stopping dispatcher...")
+                await dp.stop_polling()
+            
+            if bot:
+                logger.info("Closing bot session...")
+                await bot.session.close()
+            
+            if db_manager:
+                logger.info("Disposing database engine...")
+                await db_manager.dispose_engine()
+                
+    except asyncio.TimeoutError:
+        logger.error(f"Shutdown timed out after {timeout} seconds")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
 
 def handle_signal(signum, frame):
-    """Handle termination signals."""
+    """Handle termination signals by scheduling shutdown in event loop."""
     logger = logging.getLogger(__name__)
-    logger.info(f"Received signal {signal.Signals(signum).name}")
-    shutdown_event.set()
+    sig_name = signal.Signals(signum).name
+    logger.info(f"Received signal {sig_name}")
+    
+    # Schedule shutdown in the event loop
+    if asyncio.get_event_loop().is_running():
+        shutdown_event.set()
+    else:
+        logger.warning("Event loop not running during signal handling")
 
 async def main():
-    global dp
-    # Setup logging
+    global dp, bot, db_manager
     logger = setup_logging()
     logger.critical("Starting bot...")
 
@@ -65,15 +92,16 @@ async def main():
         # Wait for shutdown signal
         await shutdown_event.wait()
         
+        # Perform graceful shutdown
+        await shutdown()
+        
     except Exception as e:
         logger.critical(f"Fatal error: {e}", exc_info=True)
         raise
     finally:
-        logger.critical("Stopping bot...")
-        if dp:
-            await dp.stop_polling()
-        await bot.session.close()
-        await db_manager.dispose_engine()
+        # Ensure shutdown is called even if an error occurred
+        if not shutdown_event.is_set():
+            await shutdown(timeout=5)  # Use shorter timeout in error case
         logger.info("Bot stopped")
 
 if __name__ == "__main__":

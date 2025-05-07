@@ -1,15 +1,19 @@
 [Unit]
 Description=Gemini Telegram Bot
-After=network.target
+After=network.target postgresql.service
 
 [Service]
-WorkingDirectory=/opt/geminibot
-ExecStartPre=/opt/geminibot/venv/bin/alembic upgrade head
-ExecStart=/opt/geminibot/venv/bin/python /opt/geminibot/main.py
-Restart=always
+Type=simple
 User=ubuntu
-Group=ubuntu
-Environment="PYTHONPATH=/opt/geminibot"
+WorkingDirectory=/opt/geminibot
+Environment=PATH=/opt/geminibot/venv/bin
+ExecStart=/opt/geminibot/venv/bin/python main.py
+Restart=always
+RestartSec=10
+TimeoutStartSec=30
+TimeoutStopSec=15
+KillSignal=SIGTERM
+KillMode=mixed
 
 [Install]
 WantedBy=multi-user.target
