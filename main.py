@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import signal
+import sys
 from typing import Set, Optional
 from contextlib import AsyncExitStack
 from aiogram import Bot, Dispatcher
@@ -127,18 +128,29 @@ async def shutdown(signame: str) -> None:
     logger.critical(f"Received {signame}, initiating shutdown...")
     shutdown_event.set()
     if dp:
-        await dp.stop_polling()
+        try:
+            await asyncio.wait_for(dp.stop_polling(), timeout=5)
+        except asyncio.TimeoutError:
+            logger.error("Failed to stop polling gracefully, forcing shutdown")
+        except Exception as e:
+            logger.error(f"Error during polling shutdown: {e}")
 
 def handle_signal(signame: str) -> None:
     """Convert sync signal to async shutdown."""
     logger.info(f"Received signal {signame}")
-    asyncio.create_task(shutdown(signame))
+    loop = asyncio.get_event_loop()
+    loop.create_task(shutdown(signame))
+    # Ensure the event loop continues running to process the shutdown
+    if loop.is_running():
+        logger.info("Shutdown task scheduled")
+    else:
+        logger.warning("Event loop not running during shutdown")
 
 if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     
     # Register signal handlers
-    for sig in (signal.SIGTERM, signal.SIGINT):
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, lambda signum, _: handle_signal(signal.Signals(signum).name))
     
     try:
@@ -147,3 +159,7 @@ if __name__ == "__main__":
         logger.critical("Bot stopped by user.")
     except Exception as e:
         logger.critical(f"Unhandled exception in main: {e}", exc_info=True)
+    finally:
+        # Ensure we exit with non-zero code on errors
+        if sys.exc_info()[0] is not None:
+            sys.exit(1)
