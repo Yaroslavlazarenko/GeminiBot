@@ -1,17 +1,15 @@
-# ... existing imports ...
 import logging
-
 from aiogram import F, Router, Bot
 from aiogram.types import Message
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from ai.gemini_client import get_text_response
 from database.models import User, MessageRole
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO
 from ..utils import send_error_message, get_group_or_none, handle_gemini_result
-# Import the global batcher instance
-from ..message_batcher import message_batcher, ProcessingCallback # Import the batcher instance and the callback type hint
+from ..message_batcher import message_batcher, ProcessingCallback
 
 # Define the logger for this module
 logger = logging.getLogger(__name__)
@@ -124,7 +122,8 @@ async def text_handler(
     group_dao: GroupDAO,
     message_dao: MessageHistoryDAO,
     user_dao: UserDAO,
-    user: User # Assuming user is provided by middleware and is the DB User object
+    user: User,
+    session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """
     Handles incoming text messages. Saves the message to DB and
@@ -134,70 +133,70 @@ async def text_handler(
     user_display_name = message.from_user.full_name or f"User {user.telegram_id}"
     chat_id = chat.id
 
-    logger.debug(f"Received text message {message.message_id} from user {user_display_name} (ID: {user.telegram_id}) in chat {chat_id}. Saving to DB.")
+    logger.debug(f"Received text message {message.message_id} from user {user_display_name} (ID: {user.telegram_id}) in chat {chat_id}")
 
-    # --- Immediate actions (always done) ---
-
-    # Formulate metadata
-    is_forwarded = bool(message.forward_from or message.forward_from_chat or message.forward_sender_name or message.forward_date)
-    metadata = f"Message info: text message from {user_display_name} (User ID: {user.telegram_id})"
-    if is_forwarded:
-        metadata = f"Message info: FORWARDED text message shared by {user_display_name} (User ID: {user.telegram_id})"
-        # Add detailed forwarding info as before
-        if message.forward_from:
-            forward_name = message.forward_from.full_name or message.forward_from.username or f"User {message.forward_from.id}"
-            is_bot = "(Bot)" if message.forward_from.is_bot else ""
-            metadata += f"\nOriginal sender: {forward_name} {is_bot} (ID: {message.forward_from.id})"
-        elif message.forward_sender_name:
-             metadata += f"\nOriginal sender: {message.forward_sender_name} (forwarding privacy enabled)"
-        elif message.forward_from_chat:
-            chat_type = message.forward_from_chat.type.capitalize()
-            metadata += f"\nOriginal source: {chat_type} '{message.forward_from_chat.title}' (ID: {message.forward_from_chat.id})"
-            if message.forward_signature:
-                metadata += f"\nPost author: {message.forward_signature}"
-        if message.forward_date:
-             metadata += f"\nOriginal message time: {message.forward_date}"
-
-    metadata += f", Message ID: {message.message_id}, Current time: {message.date}"
-
-    # Get group context for saving to DB
-    group = await get_group_or_none(group_dao, chat) if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP] else None
+    # --- Get group context if in a group chat ---
+    group = await get_group_or_none(group_dao, chat)
     group_db_id = group.id if group else None
 
-    # Add message to history immediately
+    # --- Save message to DB ---
+    is_forwarded = bool(message.forward_from or message.forward_from_chat or message.forward_sender_name or message.forward_date)
+    metadata_parts = []
+    metadata_parts.append(f"Message info: text message from {user_display_name} (User ID: {user.telegram_id})")
+    
+    if is_forwarded:
+        if message.forward_from:
+            metadata_parts.append(f"Forwarded from user: {message.forward_from.full_name} (ID: {message.forward_from.id})")
+        elif message.forward_from_chat:
+            metadata_parts.append(f"Forwarded from chat: {message.forward_from_chat.title} (ID: {message.forward_from_chat.id})")
+        elif message.forward_sender_name:
+            metadata_parts.append(f"Forwarded from user: {message.forward_sender_name}")
+        if message.forward_date:
+            metadata_parts.append(f"Forward date: {message.forward_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+
+    # Добавляем информацию о чате
+    if chat.type != ChatType.PRIVATE:
+        metadata_parts.append(f"Chat type: {chat.type}")
+        metadata_parts.append(f"Chat title: {chat.title}")
+        metadata_parts.append(f"Chat ID: {chat.id}")
+        
+    # Добавляем информацию о языке пользователя, если есть
+    if message.from_user.language_code:
+        metadata_parts.append(f"User language: {message.from_user.language_code}")
+
+    # Добавляем информацию о reply, если есть
+    if message.reply_to_message:
+        reply_user = message.reply_to_message.from_user
+        reply_info = f"Reply to message {message.reply_to_message.message_id}"
+        if reply_user:
+            reply_info += f" from {reply_user.full_name} (ID: {reply_user.id})"
+        metadata_parts.append(reply_info)
+
+    metadata = " | ".join(metadata_parts)
+
     try:
         await message_dao.add_message(
-            user_id=user.id, # Use internal DB user ID from middleware
+            user_id=user.id,
             role=MessageRole.USER,
             text=message.text,
             group_id=group_db_id,
             telegram_message_id=message.message_id,
             message_metadata=metadata
         )
-        logger.debug(f"User text message {message.message_id} saved to DB (user {user.telegram_id}, group_id {group_db_id})")
+        logger.debug(f"User text message {message.message_id} saved to DB with extended metadata")
     except Exception as e:
-         logger.error(f"Failed to save user text message {message.message_id} to DB: {e}", exc_info=True)
-         # If saving fails, we cannot reliably process this message later.
-         # Send an error and stop.
-         await send_error_message(message, "Не вдалося зберегти ваше текстове повідомлення.")
-         return # Cannot proceed if message isn't saved
+        logger.error(f"Failed to save user text message {message.message_id} to DB: {e}", exc_info=True)
+        await send_error_message(message, "Не вдалося зберегти ваше текстове повідомлення.")
+        return
 
     # --- Pass to Batcher ---
-    # Pass the message and the specific processing function for text messages,
-    # along with the DAOs the batcher might need to set for lazy initialization.
     try:
         await message_batcher.handle_message(
             message=message,
-            processing_callback=actual_text_processing_logic, # Pass the reference to the text processing function
-            user_dao=user_dao, # Pass dependencies
-            group_dao=group_dao,
-            message_dao=message_dao
+            processing_callback=actual_text_processing_logic,
+            session_factory=session_factory
         )
-        logger.debug(f"Text message {message.message_id} from user {user.telegram_id} passed to batcher.")
+        logger.debug(f"Text message {message.message_id} from user {user.telegram_id} passed to batcher")
     except Exception as e:
-        # If batcher fails (e.g., internal error, couldn't start timer), processing won't happen.
-        logger.error(f"Error passing text message {message.message_id} to batcher for user {user.telegram_id}: {e}", exc_info=True)
-        await send_error_message(message, "Виникла проблема з системою обробки текстових повідомлень. Спробуйте знову.")
-
-    # The handler's job is done. The batcher will trigger the actual_text_processing_logic later.
-    # Do NOT add the response logic here.
+        logger.error(f"Failed to pass message {message.message_id} to batcher: {e}", exc_info=True)
+        await send_error_message(message, "Не вдалося обробити ваше повідомлення. Спробуйте пізніше.")

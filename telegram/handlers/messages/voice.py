@@ -8,6 +8,7 @@ from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 # Assuming these imports are correct paths in your project
 from ai.gemini_client import get_audio_response, get_text_response # Assuming you have get_audio_response
@@ -184,7 +185,8 @@ async def voice_handler(
     group_dao: GroupDAO,
     message_dao: MessageHistoryDAO,
     user_dao: UserDAO,
-    user: User # Assuming user is provided by middleware and is the DB User object
+    user: User,
+    session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """
     Handles incoming voice messages. Saves the message (with data) to DB and
@@ -201,7 +203,9 @@ async def voice_handler(
     if user.is_global_disabled:
         logger.debug(f"Ignoring voice message from user {user_telegram_id} due to global USER disable.")
         return
-    group = await get_group_or_none(group_dao, chat) if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP] else None
+
+    # Get group from DB if this is a group chat
+    group = await get_group_or_none(group_dao, chat)
     group_db_id = group.id if group else None # Need group_db_id for saving
 
     if group and group.is_global_disabled:
@@ -225,8 +229,6 @@ async def voice_handler(
     # --- Immediate Save to DB ---
     # We save the message immediately including file_id and duration.
     # We DO NOT download the voice data or transcribe it here.
-    # The batched processing function will do that for the LAST message.
-    # We save transcription_text as None initially.
     try:
         # Формируем метаданные для голосового сообщения
         is_forwarded = bool(message.forward_from or message.forward_from_chat or message.forward_sender_name or message.forward_date)
@@ -255,15 +257,6 @@ async def voice_handler(
         # Save the message metadata and basic info. Voice data will be fetched *later* by the batcher.
         # Your message_dao.add_message needs to support saving voice file_id/duration and potentially voice_data=None initially.
         # Let's assume add_message can save file_id and duration. voice_data might be too large for standard history rows.
-        # The actual_voice_processing_logic will download voice_data and can pass it to the AI directly,
-        # or save it to a separate storage referenced in the message metadata/model if history requires it.
-        # For simplicity, let's assume add_message stores relevant voice info (like file_id) and metadata,
-        # and actual_voice_processing_logic downloads the file again using file_id from the message object.
-
-        # Сохраняем информацию о голосовом сообщении в метаданных
-        # Добавляем file_id и duration в метаданные
-        metadata += f"\nVoice file_id: {voice.file_id}, duration: {voice.duration}s"
-        
         await message_dao.add_message(
             user_id=user.id, # Use internal DB user ID from middleware
             role=MessageRole.USER,
@@ -282,21 +275,13 @@ async def voice_handler(
          return # Cannot proceed if message isn't saved
 
     # --- Pass to Batcher ---
-    # Pass the message and the specific processing function for voice messages,
-    # along with the DAOs for batcher initialization if needed.
     try:
         await message_batcher.handle_message(
-            message=message, # Pass the original message object
-            processing_callback=actual_voice_processing_logic, # Pass the voice processing function
-            user_dao=user_dao, # Pass dependencies for batcher init
-            group_dao=group_dao,
-            message_dao=message_dao
+            message=message,
+            processing_callback=actual_voice_processing_logic,
+            session_factory=session_factory
         )
         logger.debug(f"Voice message {message.message_id} from user {user_telegram_id} passed to batcher.")
     except Exception as e:
-        # If batcher fails (e.g., internal error, couldn't start timer), processing won't happen.
-        logger.error(f"Error passing voice message {message.message_id} to batcher for user {user_telegram_id}: {e}", exc_info=True)
-        await send_error_message(message, "Виникла проблема з системою обробки голосових повідомлень. Спробуйте знову.")
-
-    # The handler simply returns here. The actual_voice_processing_logic will be triggered
-    # asynchronously by the batcher's timer if the quiet period is met for this user.
+        logger.error(f"Failed to pass message {message.message_id} to batcher: {e}", exc_info=True)
+        await send_error_message(message, "Не вдалося обробити ваше повідомлення. Спробуйте пізніше.")

@@ -11,6 +11,7 @@ from aiogram.types import Message, PhotoSize
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 
 from ai.gemini_client import get_text_response
 from database.models import User, MessageRole
@@ -372,7 +373,8 @@ async def photo_handler(
     group_dao: GroupDAO,
     message_dao: MessageHistoryDAO,
     user_dao: UserDAO,
-    user: User
+    user: User,
+    session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """Обработчик фотографий"""
     chat = message.chat
@@ -481,23 +483,17 @@ async def photo_handler(
         logger.debug(f"Photo message queued for save (user {user.telegram_id}, group_id {group_db_id})")
         
         # --- Pass to Batcher ---
-        # Pass the message and the specific processing function for photo messages,
-        # along with the DAOs the batcher might need to set for lazy initialization.
         try:
             await message_batcher.handle_message(
                 message=message,
-                processing_callback=actual_photo_processing_logic, # Pass the reference to the photo processing function
-                user_dao=user_dao, # Pass dependencies
-                group_dao=group_dao,
-                message_dao=message_dao
+                processing_callback=actual_photo_processing_logic,
+                session_factory=session_factory
             )
             logger.debug(f"Photo message {message.message_id} from user {user.telegram_id} passed to batcher.")
         except Exception as e:
             # If batcher fails (e.g., internal error, couldn't start timer), processing won't happen.
             logger.error(f"Error passing photo message {message.message_id} to batcher for user {user.telegram_id}: {e}", exc_info=True)
             await send_error_message(message, "Виникла проблема з системою обробки фотографій. Спробуйте знову.")
-            
-        # The handler's job is done. The batcher will trigger the actual_photo_processing_logic later.
 
     except Exception as e:
         logger.error(f"Handler error processing photo message for user {user.telegram_id} in chat {chat.id}: {e}", exc_info=True)

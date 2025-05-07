@@ -30,10 +30,11 @@ class DAOMiddleware(BaseMiddleware):
         else:
             event_type = type(event).__name__; event_id = getattr(event, 'id', 'N/A'); chat_id = getattr(event, 'chat_id', 'N/A')
 
-        logger.debug(f"Starting DB session for {event_type} (ID:{event_id}, Chat:{chat_id}) from {user_identifier}")
-        session = self.session_factory()
-
+        session = None
         try:
+            logger.debug(f"Starting DB session for {event_type} (ID:{event_id}, Chat:{chat_id}) from {user_identifier}")
+            session = self.session_factory()
+
             # Initialize all DAOs with the same session
             data.update({
                 "user_dao": UserDAO(session),
@@ -46,55 +47,47 @@ class DAOMiddleware(BaseMiddleware):
             # Handle user creation/retrieval
             if tg_user:
                 try:
-                    db_user = await data["user_dao"].get_or_create_user(
-                        telegram_id=tg_user.id,
-                        username=tg_user.username or str(tg_user.id),
-                        first_name=tg_user.first_name,
-                        last_name=tg_user.last_name,
-                    )
+                    async with session.begin_nested():
+                        db_user = await data["user_dao"].get_or_create_user(
+                            telegram_id=tg_user.id,
+                            username=tg_user.username or str(tg_user.id),
+                            first_name=tg_user.first_name,
+                            last_name=tg_user.last_name,
+                        )
                     data["user"] = db_user
                     logger.debug(f"User object ready (ID: {db_user.id if db_user else 'N/A'}) for {user_identifier}")
                 except SQLAlchemyError as e:
                     logger.error(f"Error getting/creating user {user_identifier}: {e}")
-                    await session.rollback()
                     raise
             else:
                 data["user"] = None
                 logger.debug(f"No user information for {event_type} (ID:{event_id})")
 
-            # Execute handler
-            logger.debug(f"Executing handler for {event_type} (ID:{event_id})")
-            result = await handler(event, data)
-            
-            # Commit changes if any
-            if session.in_transaction():
-                await session.commit()
-                logger.debug(f"Committed changes for {event_type} (ID:{event_id})")
-            
-            return result
+            # Execute handler within a transaction
+            async with session.begin():
+                logger.debug(f"Executing handler for {event_type} (ID:{event_id})")
+                result = await handler(event, data)
+                return result
 
         except SQLAlchemyError as db_err:
             logger.error(f"Database error for {event_type} (ID:{event_id}) from {user_identifier}: {db_err}", exc_info=True)
-            if session.in_transaction():
-                await session.rollback()
             error_message = "База даних тимчасово недоступна. Спробуйте пізніше."
             await self._send_error_message(event, error_message)
             return None
 
         except Exception as e:
             logger.error(f"Handler error for {event_type} (ID:{event_id}) from {user_identifier}: {e}", exc_info=True)
-            if session.in_transaction():
-                await session.rollback()
             error_message = "Виникла внутрішня помилка. Спробуйте пізніше."
             await self._send_error_message(event, error_message)
             return None
 
         finally:
-            try:
-                await session.close()
-                logger.debug(f"Closed DB session for {event_type} (ID:{event_id}) from {user_identifier}")
-            except Exception as e:
-                logger.error(f"Error closing session for {event_type} (ID:{event_id}): {e}")
+            if session:
+                try:
+                    await session.close()
+                    logger.debug(f"Closed DB session for {event_type} (ID:{event_id}) from {user_identifier}")
+                except Exception as e:
+                    logger.error(f"Error closing session for {event_type} (ID:{event_id}): {e}")
 
     async def _send_error_message(self, event: TelegramObject, message: str) -> None:
         """Helper method to send error messages to users."""

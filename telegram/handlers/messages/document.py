@@ -325,7 +325,8 @@ async def document_handler(
     group_dao: GroupDAO,
     message_dao: MessageHistoryDAO,
     user_dao: UserDAO,
-    user: User
+    user: User,
+    session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """Обработчик документов"""
     chat = message.chat
@@ -383,6 +384,7 @@ async def document_handler(
             
             # Проверяем, является ли файл изображением по MIME-типу или расширению
             is_image = mime_type in SUPPORTED_IMAGE_TYPES or any(file_name.endswith(f".{ext.lower()}") for ext in ["jpg", "jpeg", "png", "webp", "heic", "heif"])
+            
             is_jpeg = mime_type == "image/jpeg" or file_name.endswith(".jpg") or file_name.endswith(".jpeg")
             
             # Проверяем размер файла
@@ -391,8 +393,8 @@ async def document_handler(
                 if document.file_size > MAX_INLINE_FILE_SIZE:
                     logger.warning(f"Image file too large for Gemini API ({document.file_size} bytes > {MAX_INLINE_FILE_SIZE} bytes).")
                     await message.reply("Увага: файл зображення занадто великий для обробки (> 20 МБ). Будь ласка, зменшіть розмір файлу.")
-                    # Продолжаем обработку, но предупреждаем пользователя
-                
+                    return # Выходим, так как файл слишком большой
+                    
                 # Дополнительная проверка для JPEG файлов, которые чаще вызывают ошибки
                 elif is_jpeg and document.file_size > 5 * 1024 * 1024:  # Больше 5 МБ
                     logger.warning(f"Large JPEG file detected ({document.file_size} bytes). This may cause Gemini API errors.")
@@ -456,15 +458,11 @@ async def document_handler(
         logger.debug(f"Document message queued for save (user {user.telegram_id}, group_id {group_db_id})")
         
         # --- Pass to Batcher ---
-        # Pass the message and the specific processing function for document messages,
-        # along with the DAOs the batcher might need to set for lazy initialization.
         try:
             await message_batcher.handle_message(
                 message=message,
-                processing_callback=actual_document_processing_logic, # Pass the reference to the document processing function
-                user_dao=user_dao, # Pass dependencies
-                group_dao=group_dao,
-                message_dao=message_dao
+                processing_callback=actual_document_processing_logic,
+                session_factory=session_factory
             )
             logger.debug(f"Document message {message.message_id} from user {user.telegram_id} passed to batcher.")
         except Exception as e:

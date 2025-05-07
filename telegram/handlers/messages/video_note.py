@@ -11,6 +11,7 @@ from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, Telegra
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from google.genai import types as gemini_types
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 # Убедись, что эти импорты корректны в твоем проекте
 from ai.gemini_client import get_text_response
@@ -196,7 +197,8 @@ async def video_note_handler(
     group_dao: GroupDAO,
     message_dao: MessageHistoryDAO,
     user_dao: UserDAO,
-    user: User # Middleware/Dependencies should provide the User object
+    user: User,
+    session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """Обработчик видео-заметок"""
     chat = message.chat
@@ -223,7 +225,7 @@ async def video_note_handler(
 
         video_note = message.video_note
         if not video_note:
-            logger.error("Message marked as video note but no video note object found")
+            logger.error(f"Message {message.message_id} marked as video note but no video note object found")
             await send_error_message(message, "Помилка: некоректні дані відео-нотатки.")
             return
 
@@ -267,14 +269,22 @@ async def video_note_handler(
 
         # Formulate metadata for the video note
         is_forwarded = bool(message.forward_from or message.forward_from_chat or message.forward_sender_name or message.forward_date)
-        metadata = f"Message info: video note shared by {user_display_name} (User ID: {user_telegram_id})"
         if is_forwarded:
-            metadata = f"Message info: FORWARDED video note shared by {user_display_name} (User ID: {user_telegram_id})"
-            if message.forward_from: metadata += f"\nOriginal sender: {message.forward_from.full_name or f'User {message.forward_from.id}'} (ID: {message.forward_from.id})"
-            elif message.forward_sender_name: metadata += f"\nOriginal sender: {message.forward_sender_name} (privacy enabled)"
-            elif message.forward_from_chat: metadata += f"\nOriginal source: {message.forward_from_chat.type.capitalize()} '{message.forward_from_chat.title}' (ID: {message.forward_from_chat.id})"
-            if message.forward_signature: metadata += f"\nPost author: {message.forward_signature}"
-            if message.forward_date: metadata += f"\nOriginal message time: {message.forward_date}"
+            metadata = f"Message info: FORWARDED video note shared by {user_display_name} (User ID: {user.telegram_id})"
+            if message.forward_from:
+                forward_name = message.forward_from.full_name or f"User {message.forward_from.id}"
+                is_bot = "(Bot)" if message.forward_from.is_bot else ""
+                metadata += f"\nOriginal sender: {forward_name} {is_bot} (ID: {message.forward_from.id})"
+            elif message.forward_sender_name:
+                metadata += f"\nOriginal sender: {message.forward_sender_name} (privacy enabled)"
+            elif message.forward_from_chat:
+                metadata += f"\nOriginal source: {message.forward_from_chat.type.capitalize()} '{message.forward_from_chat.title}' (ID: {message.forward_from_chat.id})"
+            if message.forward_signature:
+                metadata += f"\nPost author: {message.forward_signature}"
+            if message.forward_date:
+                metadata += f"\nOriginal message time: {message.forward_date}"
+        else:
+            metadata = f"Message info: video note shared by {user_display_name} (User ID: {user_telegram_id})"
 
         metadata += f", Duration: {video_note.duration}s, Message ID: {message.message_id}, Current time: {message.date}"
         if transcription_text:
@@ -299,11 +309,9 @@ async def video_note_handler(
         # The batcher decides *when* (or if, if a new message arrives) to call the callback.
         logger.info(f"Passing video note message {message.message_id} from user {user_telegram_id} to batcher.")
         await message_batcher.handle_message(
-            message=message, # The original message object
-            processing_callback=_process_video_note_batch_callback, # The function to call later
-            user_dao=user_dao, # Pass dependencies needed by the callback
-            group_dao=group_dao,
-            message_dao=message_dao
+            message=message,
+            processing_callback=_process_video_note_batch_callback,
+            session_factory=session_factory
         )
         logger.debug(f"message_batcher.handle_message called for user {user_telegram_id}")
 

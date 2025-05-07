@@ -34,12 +34,13 @@ class DatabaseManager:
             self._engine = create_async_engine(
                 self.async_url,
                 echo=False,
-                pool_size=10,
-                max_overflow=5,
-                pool_timeout=20,
-                pool_recycle=300,
-                pool_pre_ping=True,
-                pool_use_lifo=True,
+                pool_size=-1,  # Без ограничений на размер пула
+                max_overflow=-1,  # Без ограничений на дополнительные соединения
+                pool_timeout=60,  # Увеличенный таймаут
+                pool_recycle=3600,  # Переиспользуем соединения каждый час
+                pool_pre_ping=True,  # Проверяем работоспособность соединений
+                pool_use_lifo=True,  # LIFO для лучшего переиспользования
+                pool_reset_on_return='rollback',  # Автоматический откат при возврате
                 json_serializer=None
             )
             
@@ -47,10 +48,10 @@ class DatabaseManager:
                 bind=self._engine,
                 expire_on_commit=False,
                 class_=AsyncSession,
-                autoflush=True,
+                autoflush=False,
                 autocommit=False
             )
-            logger.debug(f"DatabaseManager initialized for database '{self.db_name}' at {self.host}")
+            logger.info("DatabaseManager initialized with unlimited pool settings")
 
     @property
     def engine(self):
@@ -109,10 +110,12 @@ class DatabaseManager:
         """Closes the connection pool."""
         if self._engine:
             try:
+                # Закрываем все существующие соединения
                 await self._engine.dispose()
-                logger.debug("Database engine connections disposed.")
-            except Exception as e:
-                logger.error(f"Error disposing database engine: {e}", exc_info=True)
-            finally:
+                # Очищаем все ссылки
                 self._engine = None
                 self._async_session_maker = None
+                logger.info("Database engine and connections disposed")
+            except Exception as e:
+                logger.error(f"Error disposing database engine: {e}", exc_info=True)
+                raise

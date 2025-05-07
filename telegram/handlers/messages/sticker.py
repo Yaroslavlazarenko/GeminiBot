@@ -5,6 +5,7 @@ from aiogram import F, Router, Bot
 from aiogram.types import Message
 from aiogram.enums import ChatType
 from aiogram.exceptions import TelegramBadRequest, TelegramNetworkError, TelegramForbiddenError
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from database.models import User, MessageRole
 from database.dao import UserDAO, GroupDAO, MessageHistoryDAO, StickerDAO
@@ -106,7 +107,8 @@ async def sticker_handler(
     group_dao: GroupDAO,
     message_dao: MessageHistoryDAO,
     user_dao: UserDAO,
-    user: User # Assuming user is provided by middleware and is the DB User object
+    user: User,
+    session_factory: async_sessionmaker[AsyncSession]
 ) -> None:
     """Handles incoming sticker messages"""
     chat = message.chat
@@ -150,8 +152,7 @@ async def sticker_handler(
     try:
         # Формируем метаданные
         is_forwarded = bool(message.forward_from or message.forward_from_chat or message.forward_sender_name or message.forward_date)
-        user_display_name = message.from_user.full_name or f"User {user_telegram_id}"
-
+        
         if is_forwarded:
             metadata = f"Message info: FORWARDED sticker shared by {user_display_name} (User ID: {user_telegram_id})"
             if message.forward_from:
@@ -169,7 +170,7 @@ async def sticker_handler(
                 metadata += f"\nOriginal message time: {message.forward_date}"
         else:
             metadata = f"Message info: sticker from {user_display_name} (User ID: {user_telegram_id})"
-
+        
         metadata += f", File ID: {sticker.file_id}, Set Name: {sticker.set_name or 'N/A'}, Emoji: {sticker.emoji or 'N/A'}, Message ID: {message.message_id}, Current time: {message.date}"
 
         # Save the message to the database
@@ -193,9 +194,7 @@ async def sticker_handler(
         await message_batcher.handle_message(
             message=message,
             processing_callback=actual_sticker_processing_logic,
-            user_dao=user_dao,
-            group_dao=group_dao,
-            message_dao=message_dao
+            session_factory=session_factory
         )
         logger.debug(f"Sticker message {message.message_id} from user {user_telegram_id} passed to batcher.")
     except Exception as e:
