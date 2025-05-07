@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import signal
-from typing import Set
+from typing import Set, Optional
 from contextlib import AsyncExitStack
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -16,26 +16,53 @@ from logging_config import setup_logging
 # Global objects for graceful shutdown
 active_tasks: Set[asyncio.Task] = set()
 shutdown_event: asyncio.Event = asyncio.Event()
+dp: Optional[Dispatcher] = None
+SHUTDOWN_TIMEOUT = 10  # seconds
 
 async def handle_polling(dp: Dispatcher, bot: Bot) -> None:
     """Handle long polling with automatic reconnection."""
-    while not shutdown_event.is_set():
-        try:
-            await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
-        except TelegramNetworkError as e:
-            logger.error(f"Telegram connection error: {e}. Reconnecting in 5 seconds...")
-            await asyncio.sleep(5)
-        except Exception as e:
-            logger.error(f"Unexpected error in polling: {e}", exc_info=True)
-            await asyncio.sleep(5)
+    try:
+        while not shutdown_event.is_set():
+            try:
+                await dp.start_polling(bot, allowed_updates=["message", "callback_query"])
+            except TelegramNetworkError as e:
+                if not shutdown_event.is_set():  # Only log if we're not shutting down
+                    logger.error(f"Telegram connection error: {e}. Reconnecting in 5 seconds...")
+                    await asyncio.sleep(5)
+            except asyncio.CancelledError:
+                logger.info("Polling task cancelled")
+                raise
+            except Exception as e:
+                if not shutdown_event.is_set():  # Only log if we're not shutting down
+                    logger.error(f"Unexpected error in polling: {e}", exc_info=True)
+                    await asyncio.sleep(5)
+    finally:
+        logger.info("Polling stopped")
 
 async def cleanup(stack: AsyncExitStack, bot: Bot, db_manager: DatabaseManager) -> None:
-    """Cleanup resources."""
+    """Cleanup resources with timeout."""
     logger.info("Starting cleanup...")
     try:
-        await stack.aclose()  # This will close resources in reverse order
-        await bot.session.close()
-        await db_manager.dispose_engine()
+        # Cancel all remaining tasks
+        remaining_tasks = [t for t in active_tasks if not t.done()]
+        if remaining_tasks:
+            logger.info(f"Cancelling {len(remaining_tasks)} remaining tasks...")
+            for task in remaining_tasks:
+                task.cancel()
+            
+            # Wait for tasks to cancel with timeout
+            try:
+                await asyncio.wait_for(asyncio.gather(*remaining_tasks, return_exceptions=True), timeout=SHUTDOWN_TIMEOUT)
+            except asyncio.TimeoutError:
+                logger.warning(f"Some tasks did not complete within {SHUTDOWN_TIMEOUT} seconds")
+
+        # Close resources with timeout
+        try:
+            await asyncio.wait_for(stack.aclose(), timeout=SHUTDOWN_TIMEOUT/2)
+            await asyncio.wait_for(bot.session.close(), timeout=SHUTDOWN_TIMEOUT/2)
+            await asyncio.wait_for(db_manager.dispose_engine(), timeout=SHUTDOWN_TIMEOUT/2)
+        except asyncio.TimeoutError:
+            logger.warning("Resource cleanup timed out")
     except Exception as e:
         logger.error(f"Error during cleanup: {e}", exc_info=True)
     finally:
@@ -68,6 +95,7 @@ async def main():
             bot = Bot(token=config.bot_token)
             await stack.enter_async_context(bot)
 
+            global dp  # Make dispatcher globally accessible for shutdown
             dp = Dispatcher(storage=storage)
             dp.update.middleware(DAOMiddleware(session_factory=session_factory))
             logger.info("Database middleware registered")
@@ -88,23 +116,30 @@ async def main():
             logger.critical(f"Fatal error: {e}", exc_info=True)
             raise
         finally:
-            # Set shutdown event and wait for tasks to complete
+            # Set shutdown event and initiate cleanup
             shutdown_event.set()
-            if active_tasks:
-                await asyncio.gather(*active_tasks, return_exceptions=True)
+            if dp:
+                await dp.stop_polling()  # Stop polling properly
             await cleanup(stack, bot, db_manager)
 
-def handle_shutdown(signame: str) -> None:
-    """Handle shutdown signals."""
+async def shutdown(signame: str) -> None:
+    """Handle shutdown signals asynchronously."""
     logger.critical(f"Received {signame}, initiating shutdown...")
     shutdown_event.set()
+    if dp:
+        await dp.stop_polling()
+
+def handle_signal(signame: str) -> None:
+    """Convert sync signal to async shutdown."""
+    logger.info(f"Received signal {signame}")
+    asyncio.create_task(shutdown(signame))
 
 if __name__ == "__main__":
     logger = logging.getLogger(__name__)
     
     # Register signal handlers
     for sig in (signal.SIGTERM, signal.SIGINT):
-        signal.signal(sig, lambda signum, _: handle_shutdown(signal.Signals(signum).name))
+        signal.signal(sig, lambda signum, _: handle_signal(signal.Signals(signum).name))
     
     try:
         asyncio.run(main())
