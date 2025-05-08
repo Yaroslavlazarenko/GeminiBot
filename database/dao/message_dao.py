@@ -454,29 +454,46 @@ class MessageHistoryDAO:
         # Добавляем стикер (если есть и загружен)
         if message.sticker:
             logger.debug(f"Processing sticker for message {message.id}, sticker_id={message.sticker_id}")
-            if not message.sticker.image_data:
-                logger.warning(f"Sticker {message.sticker_id} has no image_data for message {message.id}")
-            else:
+            # Проверяем наличие данных изображения или видео в стикере
+            if message.sticker.image_data:
                 try:
                     # Проверяем размер данных стикера
                     data_size = len(message.sticker.image_data)
-                    logger.debug(f"Sticker data size: {data_size} bytes for message {message.id}")
+                    logger.debug(f"Sticker image data size: {data_size} bytes for message {message.id}")
                     
                     if data_size == 0:
-                        logger.warning(f"Sticker data is empty for message {message.id}")
+                        logger.warning(f"Sticker image data is empty for message {message.id}")
                     else:
                         # MIME тип для стикера Telegram (обычно WebP)
                         parts.append(types.Part.from_bytes(data=message.sticker.image_data, mime_type="image/webp"))
-                        logger.debug(f"Successfully added sticker part ({data_size} bytes) to message {message.id}")
+                        logger.debug(f"Successfully added static sticker part ({data_size} bytes) to message {message.id}")
                 except Exception as e:
-                    logger.error(f"Error creating sticker part for message {message.id}: {e}", exc_info=True)
-                    # Попробуем добавить текстовое описание стикера, если есть метаданные
-                    if message.message_metadata:
-                        try:
-                            parts.append(types.Part.from_text(text=f"[Sticker metadata: {message.message_metadata}]"))
-                            logger.debug(f"Added sticker metadata as text for message {message.id}")
-                        except Exception as metadata_e:
-                            logger.error(f"Error adding sticker metadata as text for message {message.id}: {metadata_e}")
+                    logger.error(f"Error creating static sticker part for message {message.id}: {e}", exc_info=True)
+            # Проверяем наличие видео-данных для видео-стикеров
+            elif message.sticker.video_data:
+                try:
+                    # Проверяем размер данных видео-стикера
+                    data_size = len(message.sticker.video_data)
+                    logger.debug(f"Sticker video data size: {data_size} bytes for message {message.id}")
+                    
+                    if data_size == 0:
+                        logger.warning(f"Sticker video data is empty for message {message.id}")
+                    else:
+                        # MIME тип для видео-стикера (обычно MP4)
+                        parts.append(types.Part.from_bytes(data=message.sticker.video_data, mime_type="video/mp4"))
+                        logger.debug(f"Successfully added video sticker part ({data_size} bytes) to message {message.id}")
+                except Exception as e:
+                    logger.error(f"Error creating video sticker part for message {message.id}: {e}", exc_info=True)
+            else:
+                logger.warning(f"Sticker {message.sticker_id} has no image_data or video_data for message {message.id}")
+                
+            # Если не удалось добавить стикер как медиа, попробуем добавить текстовое описание
+            if message.message_metadata and not (message.sticker.image_data or message.sticker.video_data):
+                try:
+                    parts.append(types.Part.from_text(text=f"[Sticker metadata: {message.message_metadata}]"))
+                    logger.debug(f"Added sticker metadata as text for message {message.id}")
+                except Exception as metadata_e:
+                    logger.error(f"Error adding sticker metadata as text for message {message.id}: {metadata_e}")
 
         # Добавляем голосовое сообщение (если есть)
         if message.voice_data:
@@ -535,26 +552,11 @@ class MessageHistoryDAO:
         # Проверяем, были ли добавлены хоть какие-то части контента (кроме метаданных, если они одни)
         # Если добавлена только метаданная часть, но нет основного текста или медиа, возможно, это не полное сообщение.
         # Решаем, включать ли сообщения только с метаданными. Для чат-истории, возможно, нет.
-        # Учитываем, что метаданные добавляются как текстовая часть.
-        # Проверим, есть ли что-то *кроме* первой части, если она только метаданные.
-        has_main_content = False
-        if len(parts) > 1:
-             has_main_content = True
-        elif len(parts) == 1 and (message.text or message.image_data or message.video_data or message.voice_data or message.sticker_id):
-             # Если есть только одна часть, но при этом в исходном сообщении был текст или медиа,
-             # значит, единственная часть - это либо текст, либо медиа (если метаданных не было или они не добавились),
-             # либо это метаданные + что-то еще, что не было добавлено из-за ошибки форматирования.
-             # Это условие немного сложное. Проще проверить, есть ли у исходного сообщения что-то, что должно было стать частью.
-             if message.text or message.image_data or message.video_data or message.voice_data or message.sticker_id:
-                 has_main_content = True
-             # Если parts=[metadata_part] и у сообщения не было ни текста, ни медиа - пропускаем.
-             # Если parts=[] - пропускаем.
 
         # Если нет ни текста, ни медиа, ни успешно добавленных частей (кроме возможной метаданной части), пропускаем
         if not parts or (len(parts) == 1 and message_metadata_str and not has_main_content):
             logger.warning(f"Message id={message.id} (user_id={message.user_id}, group_id={message.group_id}) has no substantial content parts (text/media/sticker) or parts creation failed, skipping.")
             return None
-
 
         # 4. Создание объекта Content
         try:
