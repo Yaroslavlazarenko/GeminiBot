@@ -452,13 +452,31 @@ class MessageHistoryDAO:
                 # Не прерываем
 
         # Добавляем стикер (если есть и загружен)
-        if message.sticker and message.sticker.image_data:
-            try:
-                # MIME тип для стикера Telegram (обычно WebP)
-                parts.append(types.Part.from_bytes(data=message.sticker.image_data, mime_type="image/webp"))
-                logger.debug(f"Added sticker part to message {message.id}")
-            except Exception as e:
-                logger.error(f"Error creating sticker part for message {message.id}: {e}", exc_info=True)
+        if message.sticker:
+            logger.debug(f"Processing sticker for message {message.id}, sticker_id={message.sticker_id}")
+            if not message.sticker.image_data:
+                logger.warning(f"Sticker {message.sticker_id} has no image_data for message {message.id}")
+            else:
+                try:
+                    # Проверяем размер данных стикера
+                    data_size = len(message.sticker.image_data)
+                    logger.debug(f"Sticker data size: {data_size} bytes for message {message.id}")
+                    
+                    if data_size == 0:
+                        logger.warning(f"Sticker data is empty for message {message.id}")
+                    else:
+                        # MIME тип для стикера Telegram (обычно WebP)
+                        parts.append(types.Part.from_bytes(data=message.sticker.image_data, mime_type="image/webp"))
+                        logger.debug(f"Successfully added sticker part ({data_size} bytes) to message {message.id}")
+                except Exception as e:
+                    logger.error(f"Error creating sticker part for message {message.id}: {e}", exc_info=True)
+                    # Попробуем добавить текстовое описание стикера, если есть метаданные
+                    if message.message_metadata:
+                        try:
+                            parts.append(types.Part.from_text(text=f"[Sticker metadata: {message.message_metadata}]"))
+                            logger.debug(f"Added sticker metadata as text for message {message.id}")
+                        except Exception as metadata_e:
+                            logger.error(f"Error adding sticker metadata as text for message {message.id}: {metadata_e}")
 
         # Добавляем голосовое сообщение (если есть)
         if message.voice_data:

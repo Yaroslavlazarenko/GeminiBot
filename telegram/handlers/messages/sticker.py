@@ -104,6 +104,7 @@ async def actual_sticker_processing_logic(
 @router.message(F.sticker)
 async def sticker_handler(
     message: Message,
+    bot: Bot,
     group_dao: GroupDAO,
     message_dao: MessageHistoryDAO,
     user_dao: UserDAO,
@@ -173,16 +174,36 @@ async def sticker_handler(
         
         metadata += f", File ID: {sticker.file_id}, Set Name: {sticker.set_name or 'N/A'}, Emoji: {sticker.emoji or 'N/A'}, Message ID: {message.message_id}, Current time: {message.date}"
 
-        # Save the message to the database
+        # Download sticker file
+        sticker_file = await bot.download(sticker.file_id)
+        if not sticker_file:
+            logger.error(f"Failed to download sticker file for message {message.message_id}")
+            await send_error_message(message, "Помилка: не вдалося завантажити файл стікера.")
+            return
+
+        # Get or create sticker in database
+        async with session_factory() as session:
+            sticker_dao = StickerDAO(session)
+            db_sticker = await sticker_dao.get_or_create_sticker(
+                telegram_sticker_id=sticker.file_id,
+                telegram_message_id=message.message_id,
+                name=sticker.set_name,
+                emoji=sticker.emoji,
+                image_data=sticker_file.read()
+            )
+            await session.commit()
+
+        # Save the message to the database with sticker reference
         await message_dao.add_message(
-            user_id=user.id, # Use internal DB user ID from middleware
+            user_id=user.id,
             role=MessageRole.USER,
-            text=sticker.emoji or "[Sticker]", # Use emoji as text if available
+            text=sticker.emoji or "[Sticker]",
             group_id=group_db_id,
             telegram_message_id=message.message_id,
-            message_metadata=metadata
+            message_metadata=metadata,
+            sticker_id=db_sticker.id  # Add reference to the sticker
         )
-        logger.debug(f"User sticker message {message.message_id} saved to DB (user {user_telegram_id}, group_id {group_db_id}).")
+        logger.debug(f"User sticker message {message.message_id} saved to DB (user {user_telegram_id}, group_id {group_db_id}, sticker_id {db_sticker.id}).")
 
     except Exception as e:
         logger.error(f"Failed to save user sticker message {message.message_id} to DB: {e}", exc_info=True)

@@ -106,15 +106,6 @@ class DatabaseManager:
             raise RuntimeError("Session factory not initialized. Call initialize() first.")
         return self._async_session_maker
 
-    async def close_sessions(self):
-        """Close any active database sessions."""
-        if hasattr(self, '_session_factory'):
-            # Get the registry from session factory
-            registry = self._session_factory.registry
-            # Close all sessions
-            for session in registry:
-                await session.close()
-
     async def dispose_engine(self) -> None:
         """Closes the connection pool."""
         if self._engine:
