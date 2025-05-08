@@ -59,9 +59,14 @@ async def main():
     logger.info("Starting bot...")
     
     try:
-        # Initialize database
-        db_manager = DatabaseManager()
-        await db_manager.init_engine()
+        # Initialize database with configuration from Config
+        db_manager = DatabaseManager(
+            user=Config.db_user,
+            password=Config.db_password,
+            host=Config.db_host,
+            db_name=Config.db_name
+        )
+        await db_manager.initialize()
         
         # Initialize bot and dispatcher
         bot = Bot(token=Config.BOT_TOKEN, parse_mode="HTML")
