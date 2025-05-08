@@ -3,6 +3,7 @@ import logging
 import signal
 import sys
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import Config
@@ -71,8 +72,11 @@ async def main():
         )
         await db_manager.initialize()
         
-        # Initialize bot and dispatcher
-        bot = Bot(token=config.bot_token, parse_mode="HTML")
+        # Initialize bot and dispatcher with new DefaultBotProperties
+        bot = Bot(
+            token=config.bot_token,
+            default=DefaultBotProperties(parse_mode="HTML")
+        )
         dp = Dispatcher(storage=MemoryStorage())
         
         # Register middlewares
