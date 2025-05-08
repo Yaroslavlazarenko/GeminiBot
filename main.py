@@ -80,8 +80,9 @@ async def main():
         dp = Dispatcher(storage=MemoryStorage())
         
         # Register middlewares
-        dp.message.middleware(DAOMiddleware(db_manager))
-        dp.callback_query.middleware(DAOMiddleware(db_manager))
+        session_factory = db_manager.get_session_factory()
+        dp.message.middleware(DAOMiddleware(session_factory))
+        dp.callback_query.middleware(DAOMiddleware(session_factory))
         
         # Include all routers
         for router in all_routers:
