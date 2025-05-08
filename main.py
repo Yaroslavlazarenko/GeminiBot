@@ -35,6 +35,9 @@ async def shutdown(timeout=10):
                 await bot.session.close()
             
             if db_manager:
+                logger.info("Closing database sessions...")
+                # Close any active sessions first
+                await db_manager.close_sessions()
                 logger.info("Disposing database engine...")
                 await db_manager.dispose_engine()
                 
