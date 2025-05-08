@@ -25,18 +25,19 @@ FFPROBE_PATH = "/usr/bin/ffprobe"
 
 def process_video_data(video_data: bytes) -> bytes:
     """
-    Process video data to ensure minimum duration of 2.0 seconds using ffmpeg.
-    Prioritizes quality over speed using H.264/AAC encoding.
+    Process WebM sticker data to ensure minimum duration of 5.0 seconds using ffmpeg.
+    Prioritizes quality while maintaining WebM format.
+    Handles input files with durations between 0.1s and 3s with no audio track.
     """
-    target_duration = 2.0
-    processed_data = video_data # Default return value in case of errors or no processing needed
+    target_duration = 5.0
+    processed_data = video_data  # Default return value in case of errors or no processing needed
 
     try:
         logger.info(f"Starting video processing. Input size: {len(video_data)} bytes")
 
-        # Use .webm for input as Telegram videos are often webm, .mp4 for output (H.264/AAC standard)
+        # Use .webm for both input and output as requested
         with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as input_file, \
-             tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as output_file:
+             tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as output_file:
 
             input_file.write(video_data)
             input_file.flush()
@@ -51,20 +52,20 @@ def process_video_data(video_data: bytes) -> bytes:
                 # Get duration from format or video stream
                 duration_str = probe['format'].get('duration')
                 if not duration_str:
-                     # Sometimes duration is only in the stream info
-                     video_stream = next((s for s in probe['streams'] if s['codec_type'] == 'video'), None)
-                     if video_stream:
-                         duration_str = video_stream.get('duration')
+                    # Sometimes duration is only in the stream info
+                    video_stream = next((s for s in probe['streams'] if s['codec_type'] == 'video'), None)
+                    if video_stream:
+                        duration_str = video_stream.get('duration')
 
                 if duration_str:
                     duration = float(duration_str)
                     logger.info(f"Original video duration: {duration:.2f}s")
                 else:
-                    logger.warning(f"Could not determine video duration from probe data for {input_filename}. Skipping processing.")
-                    # Clean up temp files before returning original data
-                    if os.path.exists(input_filename): os.unlink(input_filename)
-                    if os.path.exists(output_filename): os.unlink(output_filename)
-                    return processed_data
+                    logger.warning(f"Could not determine video duration from probe data for {input_filename}. Assuming 1.0s")
+                    duration = 1.0  # Fallback duration if we can't determine it
+                    
+                # Always process the video regardless of its duration (0.1s to 3s) to reach 5.0s
+                logger.info(f"Processing video to reach target duration of {target_duration}s")
 
             except ffmpeg.Error as e:
                 logger.error(f"Failed to get video duration using ffprobe for {input_filename}: {str(e)}")
@@ -73,87 +74,38 @@ def process_video_data(video_data: bytes) -> bytes:
                 if os.path.exists(output_filename): os.unlink(output_filename)
                 return processed_data
             except Exception as e:
-                 logger.error(f"An unexpected error occurred during ffprobe for {input_filename}: {str(e)}", exc_info=True)
-                 # Clean up temp files before returning original data
-                 if os.path.exists(input_filename): os.unlink(input_filename)
-                 if os.path.exists(output_filename): os.unlink(output_filename)
-                 return processed_data
-
-
-            if duration >= target_duration:
-                logger.info(f"Video duration ({duration:.2f}s) is >= {target_duration}s, returning original data.")
-                # Clean up input temp file as it's no longer needed
+                logger.error(f"An unexpected error occurred during ffprobe for {input_filename}: {str(e)}", exc_info=True)
+                # Clean up temp files before returning original data
                 if os.path.exists(input_filename): os.unlink(input_filename)
-                # Ensure output temp file is also cleaned up
                 if os.path.exists(output_filename): os.unlink(output_filename)
                 return processed_data
 
-            # Calculate the factor needed to *slow down* the video/audio
+            # Calculate the factor needed to slow down the video
             # To reach a target duration T from original duration D (where D < T),
             # the playback speed needs to be D/T.
             speed_reduction_factor = duration / target_duration
-            logger.info(f"Will slow down video/audio by factor {speed_reduction_factor:.3f} to reach {target_duration}s")
+            logger.info(f"Will slow down video by factor {speed_reduction_factor:.3f} to reach {target_duration}s")
 
             try:
                 # Input stream
                 stream = ffmpeg.input(input_filename)
                 video = stream.video
-                audio = stream.audio # This will be None if no audio stream exists
-
+                
                 # Apply video slowdown filter (setpts factor is the inverse of speed factor)
                 video = video.filter('setpts', f'{1/speed_reduction_factor}*PTS')
                 logger.debug(f"Applied video filter: setpts={1/speed_reduction_factor}*PTS")
 
-                # Apply audio slowdown filters using atempo chaining if audio exists
-                if audio is not None:
-                    atempo_factors = []
-                    # Start with the desired speed reduction factor for audio
-                    remaining_speed_factor = speed_reduction_factor
+                # Configure output stream with video only (no audio)
+                stream = ffmpeg.output(video, output_filename, an=None)  # an=None explicitly says no audio
 
-                    # Chain atempo filters as needed (each can only handle factors 0.5 to 2.0)
-                    # If we need to slow down by a factor < 0.5, repeatedly apply atempo=0.5
-                    while remaining_speed_factor < 0.5:
-                        atempo_factors.append(0.5)
-                        remaining_speed_factor /= 0.5 # Calculate the remaining factor needed
-
-                    # Apply the remaining factor (will be >= 0.5 and <= 1.0 since original < target)
-                    if remaining_speed_factor > 0: # Avoid issues if calculation resulted in 0 or negative
-                         atempo_factors.append(remaining_speed_factor)
-                    else:
-                         logger.warning(f"Calculated invalid remaining_speed_factor: {remaining_speed_factor}. Skipping audio processing.")
-                         audio = None # Disable audio if cannot process
-
-                    if atempo_factors:
-                        logger.debug(f"Applying audio atempo factors: {atempo_factors}")
-                        audio_stream = audio
-                        for factor in atempo_factors:
-                            audio_stream = audio_stream.filter('atempo', factor)
-                        audio = audio_stream # Update the audio variable with the filtered stream
-                    # If atempo_factors is empty, speed_reduction_factor was already >= 0.5 (e.g., duration 1.5s),
-                    # and remaining_speed_factor will be the original, which is handled by the single append.
-                    # The logic seems robust for factors between 0 and 1.
-
-                # Configure output stream with video and potentially audio
-                if audio is not None:
-                    stream = ffmpeg.output(video, audio, output_filename)
-                else:
-                    stream = ffmpeg.output(video, output_filename, an=None) # an=None explicitly says no audio if it didn't exist
-
-                # Apply user's specified global args for quality and encoding
-                stream = stream.global_args('-c:v', 'libx264') # Video codec
-                stream = stream.global_args('-preset', 'fast') # Encoding speed/compression efficiency (fast is a good balance)
-                stream = stream.global_args('-crf', '23') # Constant Rate Factor (quality). Lower is better quality (0-51), 23 is good default.
-                stream = stream.global_args('-maxrate', '1M') # Max video bitrate (1 Mbps) - helps control file size while maintaining quality
-                stream = stream.global_args('-bufsize', '2M') # Buffer size for maxrate
-                # stream = stream.global_args('-x264-params', 'keyint=any:scenecut=any') # Potentially useful for seeking, but 'any' can hurt compression
-
-                # Apply user's specified audio args if audio exists
-                if audio is not None:
-                    stream = stream.global_args('-c:a', 'aac') # Audio codec
-                    stream = stream.global_args('-b:a', '128k') # Audio bitrate
-
-                # Force output format to mp4
-                stream = stream.global_args('-f', 'mp4')
+                # Apply encoding settings for WebM (VP9)
+                stream = stream.global_args('-c:v', 'libvpx-vp9')  # VP9 codec for WebM
+                stream = stream.global_args('-b:v', '1M')  # Video bitrate
+                stream = stream.global_args('-crf', '30')  # Constant Rate Factor (quality). For VP9, 0-63 range (lower is better)
+                stream = stream.global_args('-deadline', 'good')  # Encoding speed (good balance between speed and quality)
+                
+                # Force output format to webm
+                stream = stream.global_args('-f', 'webm')
 
                 logger.debug(f"Executing ffmpeg command: {ffmpeg.compile(stream, cmd=FFMPEG_PATH)}")
 
@@ -191,7 +143,6 @@ def process_video_data(video_data: bytes) -> bytes:
                 if os.path.exists(output_filename):
                     os.unlink(output_filename)
                     logger.debug(f"Cleaned up output temp file: {output_filename}")
-
 
     except Exception as e:
         logger.error(f"Error setting up video processing: {str(e)}", exc_info=True)
