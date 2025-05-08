@@ -1,6 +1,9 @@
 import logging
 import io
+import tempfile
+import os
 from PIL import Image
+import ffmpeg
 from aiogram import F, Router, Bot
 from aiogram.types import Message
 from aiogram.enums import ChatType
@@ -15,6 +18,101 @@ from ..message_batcher import message_batcher, ProcessingCallback
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+# Define FFmpeg paths
+FFMPEG_PATH = "/usr/bin/ffmpeg"
+FFPROBE_PATH = "/usr/bin/ffprobe"
+
+def process_video_data(video_data: bytes) -> bytes:
+    """Process video data to ensure minimum duration of 2.0 seconds using ffmpeg."""
+    try:
+        logger.info(f"Starting video processing. Input size: {len(video_data)} bytes")
+
+        with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as input_file, \
+             tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as output_file:
+
+            input_file.write(video_data)
+            input_file.flush()
+            logger.info(f"Created temporary input file: {input_file.name}")
+
+            try:
+                probe = ffmpeg.probe(input_file.name, cmd=FFPROBE_PATH)
+                duration = float(probe['format']['duration'])
+                logger.info(f"Original video duration: {duration:.2f}s")
+            except ffmpeg.Error as e:
+                logger.error(f"Failed to get video duration: {e.stderr.decode()}")
+                os.unlink(input_file.name)
+                return video_data
+
+            if duration >= 2.0:
+                logger.info("Video is already long enough, returning original")
+                os.unlink(input_file.name)
+                return video_data
+
+            target_duration = 2.0
+            speed_factor = duration / target_duration
+            logger.info(f"Will slow down video by factor {speed_factor:.2f} to reach {target_duration}s")
+
+            try:
+                stream = ffmpeg.input(input_file.name)
+                video = stream.video
+                audio = stream.audio
+
+                video = video.filter('setpts', f'{1/speed_factor}*PTS')
+
+                if audio is not None:
+                    atempo_filters = []
+                    remaining_speed = speed_factor
+                    while remaining_speed < 0.5:
+                        atempo_filters.append(0.5)
+                        remaining_speed *= 2
+                    if remaining_speed != 1.0:
+                        atempo_filters.append(remaining_speed)
+
+                    if atempo_filters:
+                        audio = audio.filter('atempo', atempo_filters[0])
+                        for atempo in atempo_filters[1:]:
+                            audio = audio.filter('atempo', atempo)
+
+                if audio is not None:
+                    stream = ffmpeg.output(video, audio, output_file.name)
+                else:
+                    stream = ffmpeg.output(video, output_file.name)
+
+                # Optimize encoding settings for faster processing
+                stream = stream.global_args('-c:v', 'libx264')
+                stream = stream.global_args('-preset', 'fast')
+                stream = stream.global_args('-crf', '23')
+                stream = stream.global_args('-maxrate', '1M')
+                stream = stream.global_args('-bufsize', '2M')
+                stream = stream.global_args('-x264-params', 'keyint=any:scenecut=any')
+
+                if audio is not None:
+                    stream = stream.global_args('-c:a', 'aac')
+                    stream = stream.global_args('-b:a', '128k')
+
+                ffmpeg.run(stream, cmd=FFMPEG_PATH, overwrite_output=True, capture_stdout=True, capture_stderr=True)
+                logger.info("Successfully processed video with ffmpeg")
+
+                with open(output_file.name, 'rb') as f:
+                    processed_data = f.read()
+
+                os.unlink(input_file.name)
+                os.unlink(output_file.name)
+
+                logger.info(f"Video processing complete: original size={len(video_data)}, processed size={len(processed_data)}")
+                return processed_data
+
+            except ffmpeg.Error as e:
+                logger.error(f"ffmpeg processing failed: {e.stderr.decode()}")
+                os.unlink(input_file.name)
+                if os.path.exists(output_file.name):
+                    os.unlink(output_file.name)
+                return video_data
+
+    except Exception as e:
+        logger.error(f"Error processing video: {e}", exc_info=True)
+        return video_data
 
 # --- Функция обратного вызова для батчера стикеров ---
 async def actual_sticker_processing_logic(
@@ -100,7 +198,6 @@ async def actual_sticker_processing_logic(
         except Exception as send_e:
             logger.error(f"Failed to send error message after batched sticker processing failure for user {user_telegram_id}: {send_e}")
 
-
 @router.message(F.sticker)
 async def sticker_handler(
     message: Message,
@@ -184,13 +281,30 @@ async def sticker_handler(
         # Get or create sticker in database
         async with session_factory() as session:
             sticker_dao = StickerDAO(session)
-            db_sticker = await sticker_dao.get_or_create_sticker(
-                telegram_sticker_id=sticker.file_id,
-                telegram_message_id=message.message_id,
-                name=sticker.set_name,
-                emoji=sticker.emoji,
-                image_data=sticker_file.read()
-            )
+
+            # Process video sticker if needed
+            sticker_data = sticker_file.read()
+            is_video = sticker.is_video
+            if is_video:
+                logger.info(f"Processing video sticker with duration: {sticker.duration}s")
+                processed_video_data = process_video_data(sticker_data)
+                db_sticker = await sticker_dao.get_or_create_sticker(
+                    telegram_sticker_id=sticker.file_id,
+                    telegram_message_id=message.message_id,
+                    name=sticker.set_name,
+                    emoji=sticker.emoji,
+                    video_data=processed_video_data
+                )
+                metadata += f", Type: video sticker, Duration: {sticker.duration}s"
+            else:
+                db_sticker = await sticker_dao.get_or_create_sticker(
+                    telegram_sticker_id=sticker.file_id,
+                    telegram_message_id=message.message_id,
+                    name=sticker.set_name,
+                    emoji=sticker.emoji,
+                    image_data=sticker_data
+                )
+                metadata += ", Type: static sticker"
             await session.commit()
 
         # Save the message to the database with sticker reference
@@ -221,5 +335,3 @@ async def sticker_handler(
     except Exception as e:
         logger.error(f"Error passing sticker message {message.message_id} to batcher for user {user_telegram_id}: {e}", exc_info=True)
         await send_error_message(message, "Виникла проблема з системою обробки стікерів. Спробуйте знову.")
-
-    # The handler's job is done. The batcher will trigger the actual_sticker_processing_logic later.

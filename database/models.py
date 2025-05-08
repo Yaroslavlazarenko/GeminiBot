@@ -1,7 +1,7 @@
 # services/database/models.py
 from sqlalchemy import (
     String, Text, LargeBinary, ForeignKey, DateTime, BigInteger, func,
-    Boolean, true, false,
+    Boolean, true, false, Float,
     Enum as SQLAlchemyEnum, Column, Integer, Enum
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
@@ -98,22 +98,19 @@ class Group(Base, PrettyRepr):
     )
 
 class Sticker(Base, PrettyRepr):
+    """Модель для хранения стикеров."""
     __tablename__ = "stickers"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    telegram_sticker_id: Mapped[str] = mapped_column(String(256), index=True, nullable=False)
-    telegram_message_id: Mapped[int] = mapped_column(BigInteger, nullable=True, index=True)
+    telegram_sticker_id: Mapped[str] = mapped_column(String(256), unique=True, nullable=False)
+    telegram_message_id: Mapped[int] = mapped_column(BigInteger, nullable=True)
     name: Mapped[str | None] = mapped_column(String(256))
     emoji: Mapped[str | None] = mapped_column(String(32))
-    image_data: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    timestamp: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-
-    # Relationship with MessageHistory
-    messages: Mapped[List["MessageHistory"]] = relationship(
-        back_populates="sticker"
-    )
+    image_data: Mapped[bytes | None] = mapped_column(LargeBinary)
+    video_data: Mapped[bytes | None] = mapped_column(LargeBinary)  # For video stickers
+    
+    # Relationships
+    messages: Mapped[List["MessageHistory"]] = relationship(back_populates="sticker")
 
 class MessageHistory(Base):
     """Модель для хранения истории сообщений."""
