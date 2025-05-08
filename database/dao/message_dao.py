@@ -480,7 +480,7 @@ class MessageHistoryDAO:
                         logger.warning(f"Sticker video data is empty for message {message.id}")
                     else:
                         # MIME тип для видео-стикера (обычно MP4)
-                        parts.append(types.Part.from_bytes(data=message.sticker.video_data, mime_type="video/mp4"))
+                        parts.append(types.Part.from_bytes(data=message.sticker.video_data, mime_type="video/webm"))
                         logger.debug(f"Successfully added video sticker part ({data_size} bytes) to message {message.id}")
                 except Exception as e:
                     logger.error(f"Error creating video sticker part for message {message.id}: {e}", exc_info=True)
