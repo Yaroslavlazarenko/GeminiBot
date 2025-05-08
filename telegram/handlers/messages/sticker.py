@@ -402,7 +402,7 @@ async def sticker_handler(
             if is_video:
                 logger.info(f"Processing video sticker")
                 # Call the refactored processing function
-                processed_video_data = process_video_data(sticker_data)
+                processed_video_data = sticker_data
                 db_sticker = await sticker_dao.get_or_create_sticker(
                     telegram_sticker_id=sticker.file_id,
                     telegram_message_id=message.message_id,
