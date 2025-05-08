@@ -400,7 +400,7 @@ async def sticker_handler(
             # Process video sticker if needed BEFORE saving
             is_video = sticker.is_video
             if is_video:
-                logger.info(f"Processing video sticker with duration: {sticker.duration}s")
+                logger.info(f"Processing video sticker")
                 # Call the refactored processing function
                 processed_video_data = process_video_data(sticker_data)
                 db_sticker = await sticker_dao.get_or_create_sticker(
@@ -410,7 +410,7 @@ async def sticker_handler(
                     emoji=sticker.emoji,
                     video_data=processed_video_data # Use processed data
                 )
-                metadata += f", Type: video sticker, Duration: {sticker.duration}s, Processed: {'Yes' if processed_video_data != sticker_data else 'No'}"
+                metadata += f", Type: video sticker, Processed: {'Yes' if processed_video_data != sticker_data else 'No'}"
             else:
                  # For static stickers, just use the downloaded data
                 db_sticker = await sticker_dao.get_or_create_sticker(
