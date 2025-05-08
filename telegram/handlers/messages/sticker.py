@@ -2,6 +2,8 @@ import logging
 import io
 import tempfile
 import os
+import uuid
+from pathlib import Path
 from PIL import Image # Not used in process_video_data, but kept as it's in the imports
 import ffmpeg
 from aiogram import F, Router, Bot
@@ -22,6 +24,12 @@ router = Router()
 # Define FFmpeg paths - ensure these are correct for your environment
 FFMPEG_PATH = "/usr/bin/ffmpeg"
 FFPROBE_PATH = "/usr/bin/ffprobe"
+
+# Define the directory for storing video stickers
+TEMP_STICKERS_DIR = Path("temp_stickers")
+
+# Ensure the directory exists
+TEMP_STICKERS_DIR.mkdir(exist_ok=True)
 
 def process_video_data(video_data: bytes) -> bytes:
     """
@@ -403,14 +411,31 @@ async def sticker_handler(
                 logger.info(f"Processing video sticker")
                 # Call the refactored processing function
                 processed_video_data = process_video_data(sticker_data)
+                
+                # Generate a unique filename for the video sticker
+                file_uuid = str(uuid.uuid4())
+                file_extension = ".mp4"  # Video stickers are processed to MP4
+                file_name = f"{file_uuid}{file_extension}"
+                file_path = TEMP_STICKERS_DIR / file_name
+                
+                # Save the processed video data to a file
+                with open(file_path, "wb") as f:
+                    f.write(processed_video_data)
+                
+                # Get the absolute URI for the file
+                file_uri = str(file_path.absolute())
+                
+                # Store the file path in the database
                 db_sticker = await sticker_dao.get_or_create_sticker(
                     telegram_sticker_id=sticker.file_id,
                     telegram_message_id=message.message_id,
                     name=sticker.set_name,
                     emoji=sticker.emoji,
-                    video_data=processed_video_data # Use processed data
+                    video_data=None,  # Don't store the binary data in DB
+                    file_path=file_uri,  # Store the file path instead
+                    mime_type="video/mp4"  # Store the MIME type
                 )
-                metadata += f", Type: video sticker, Processed: {'Yes' if processed_video_data != sticker_data else 'No'}"
+                metadata += f", Type: video sticker, Processed: {'Yes' if processed_video_data != sticker_data else 'No'}, File: {file_uri}"
             else:
                  # For static stickers, just use the downloaded data
                 db_sticker = await sticker_dao.get_or_create_sticker(

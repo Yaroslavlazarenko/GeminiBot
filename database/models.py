@@ -108,6 +108,8 @@ class Sticker(Base, PrettyRepr):
     emoji: Mapped[str | None] = mapped_column(String(32))
     image_data: Mapped[bytes | None] = mapped_column(LargeBinary)
     video_data: Mapped[bytes | None] = mapped_column(LargeBinary)  # For video stickers
+    file_path: Mapped[str | None] = mapped_column(String(512))  # Path to the file on disk
+    mime_type: Mapped[str | None] = mapped_column(String(128))  # MIME type of the file
     
     # Relationships
     messages: Mapped[List["MessageHistory"]] = relationship(back_populates="sticker")

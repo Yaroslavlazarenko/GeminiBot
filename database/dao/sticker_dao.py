@@ -39,7 +39,9 @@ class StickerDAO:
         name: str | None,
         emoji: str | None,
         image_data: bytes | None = None,
-        video_data: bytes | None = None
+        video_data: bytes | None = None,
+        file_path: str | None = None,
+        mime_type: str | None = None
     ) -> Sticker:
         """Create a new sticker entry."""
         try:
@@ -49,7 +51,9 @@ class StickerDAO:
                 name=name,
                 emoji=emoji,
                 image_data=image_data,
-                video_data=video_data
+                video_data=video_data,
+                file_path=file_path,
+                mime_type=mime_type
             )
             self.session.add(sticker)
             await self.session.flush()  # To get the generated ID
@@ -65,7 +69,9 @@ class StickerDAO:
         name: str | None,
         emoji: str | None,
         image_data: bytes | None = None,
-        video_data: bytes | None = None
+        video_data: bytes | None = None,
+        file_path: str | None = None,
+        mime_type: str | None = None
     ) -> Sticker:
         """Get existing sticker or create a new one."""
         try:
@@ -79,7 +85,9 @@ class StickerDAO:
                 name=name,
                 emoji=emoji,
                 image_data=image_data,
-                video_data=video_data
+                video_data=video_data,
+                file_path=file_path,
+                mime_type=mime_type
             )
         except SQLAlchemyError as e:
             logger.error(f"Error in get_or_create_sticker for telegram_id={telegram_sticker_id}: {e}", exc_info=True)

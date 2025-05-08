@@ -469,7 +469,20 @@ class MessageHistoryDAO:
                         logger.debug(f"Successfully added static sticker part ({data_size} bytes) to message {message.id}")
                 except Exception as e:
                     logger.error(f"Error creating static sticker part for message {message.id}: {e}", exc_info=True)
-            # Проверяем наличие видео-данных для видео-стикеров
+            # Проверяем наличие файлового пути для видео-стикеров
+            elif message.sticker.file_path and message.sticker.mime_type:
+                try:
+                    logger.debug(f"Using file path for video sticker: {message.sticker.file_path} for message {message.id}")
+                    
+                    # Используем from_uri для файлов на диске
+                    parts.append(types.Part.from_uri(
+                        file_uri=message.sticker.file_path,
+                        mime_type=message.sticker.mime_type,
+                    ))
+                    logger.debug(f"Successfully added video sticker part from file {message.sticker.file_path} to message {message.id}")
+                except Exception as e:
+                    logger.error(f"Error creating video sticker part from file for message {message.id}: {e}", exc_info=True)
+            # Проверяем наличие видео-данных для видео-стикеров (старый способ)
             elif message.sticker.video_data:
                 try:
                     # Проверяем размер данных видео-стикера
