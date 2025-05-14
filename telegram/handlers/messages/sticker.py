@@ -222,27 +222,36 @@ async def sticker_handler(
 
         metadata += f", Set Name: {sticker.set_name or 'N/A'}, Emoji: {sticker.emoji or 'N/A'}, Message ID: {message.message_id}, Current time: {message.date}"
 
-        # Download sticker file
-        try:
-            sticker_file_io = await bot.download(sticker.file_id, destination=io.BytesIO())
-            if not sticker_file_io:
-                 logger.error(f"Failed to download sticker file to BytesIO for message {message.message_id}")
-                 await send_error_message(message, "Помилка: не вдалося завантажити файл стікера.")
-                 return # Cannot proceed without file data
-            sticker_file_io.seek(0) # Rewind to the beginning
-            sticker_data = sticker_file_io.read()
-            if not sticker_data:
-                 logger.error(f"Downloaded sticker file data is empty for message {message.message_id}")
-                 await send_error_message(message, "Помилка: завантажений файл стікера порожній.")
-                 return # Cannot proceed with empty data
-        except (TelegramNetworkError, TelegramBadRequest, TelegramForbiddenError) as e:
-            logger.error(f"Telegram API error downloading sticker file for message {message.message_id}: {e}", exc_info=True)
-            await send_error_message(message, "Помилка Телеграм API при завантаженні стікера.")
-            return # Cannot proceed if download fails
-        except Exception as e:
-            logger.error(f"Unexpected error downloading sticker file for message {message.message_id}: {e}", exc_info=True)
-            await send_error_message(message, "Неочікувана помилка при завантаженні стікера.")
-            return # Cannot proceed if download fails
+        # Проверяем, является ли стикер форматом TGS (анимированный)
+        is_tgs_sticker = sticker.is_animated
+        sticker_data = None
+        
+        # Для TGS стикеров не загружаем файл, а только сохраняем метаданные
+        if is_tgs_sticker:
+            logger.info(f"TGS animated sticker detected, skipping file download for message {message.message_id}")
+            metadata += ", Type: animated TGS sticker (metadata only)"
+        else:
+            # Для обычных стикеров загружаем файл как раньше
+            try:
+                sticker_file_io = await bot.download(sticker.file_id, destination=io.BytesIO())
+                if not sticker_file_io:
+                     logger.error(f"Failed to download sticker file to BytesIO for message {message.message_id}")
+                     await send_error_message(message, "Помилка: не вдалося завантажити файл стікера.")
+                     return # Cannot proceed without file data
+                sticker_file_io.seek(0) # Rewind to the beginning
+                sticker_data = sticker_file_io.read()
+                if not sticker_data:
+                     logger.error(f"Downloaded sticker file data is empty for message {message.message_id}")
+                     await send_error_message(message, "Помилка: завантажений файл стікера порожній.")
+                     return # Cannot proceed with empty data
+            except (TelegramNetworkError, TelegramBadRequest, TelegramForbiddenError) as e:
+                logger.error(f"Telegram API error downloading sticker file for message {message.message_id}: {e}", exc_info=True)
+                await send_error_message(message, "Помилка Телеграм API при завантаженні стікера.")
+                return # Cannot proceed if download fails
+            except Exception as e:
+                logger.error(f"Unexpected error downloading sticker file for message {message.message_id}: {e}", exc_info=True)
+                await send_error_message(message, "Неочікувана помилка при завантаженні стікера.")
+                return # Cannot proceed if download fails
 
 
         # Get or create sticker in database
@@ -337,8 +346,18 @@ async def sticker_handler(
                         mime_type=mime_type  # Store the MIME type
                     )
                     metadata += f", Type: new video sticker with audio"
+                elif is_tgs_sticker:
+                    # Для TGS стикеров сохраняем только метаданные без изображения
+                    db_sticker = await sticker_dao.get_or_create_sticker(
+                        telegram_sticker_id=sticker.file_id,
+                        telegram_message_id=message.message_id,
+                        name=sticker.set_name,
+                        emoji=sticker.emoji,
+                        # Не передаем image_data, так как она нулевая
+                    )
+                    metadata += ", Type: animated TGS sticker (metadata only)"
                 else:
-                     # For static stickers, just use the downloaded data
+                    # Для статических стикеров используем загруженные данные
                     db_sticker = await sticker_dao.get_or_create_sticker(
                         telegram_sticker_id=sticker.file_id,
                         telegram_message_id=message.message_id,
