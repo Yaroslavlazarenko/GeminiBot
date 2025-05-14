@@ -129,8 +129,10 @@ async def get_gemini_response(
     system_prompt_parts.append(f"\nCurrent time: {current_time}")
     system_prompt_parts.append(f"\nCurrent user ID: {user.telegram_id}")
     
-    # Add user photo to contents if available and requested
-    user_photo_added = False
+    # Add photos to contents if available and requested
+    photos_added = []
+    
+    # Add user photo if available
     if include_user_photo and message and hasattr(message, 'bot') and message.from_user:        
         try:
             # Get user profile photos
@@ -141,7 +143,7 @@ async def get_gemini_response(
                 photo_bytes = await message.bot.download_file(photo_file.file_path)
                 
                 if photo_bytes:
-                    # Create a new content item with the user's photo at the beginning of the contents list
+                    # Create a new content item with the user's photo
                     photo_content = types.Content(
                         parts=[
                             types.Part(text="USER PROFILE PHOTO: This is what the current user looks like. Use this information when relevant to personalize responses."),
@@ -153,12 +155,43 @@ async def get_gemini_response(
                         role="user"
                     )
                     
-                    # Insert the photo at the beginning of the contents list
-                    contents = [photo_content] + contents
-                    user_photo_added = True
+                    # Add to the photos list
+                    photos_added.append(photo_content)
                     logger.debug(f"Added user profile photo to context for user {user.telegram_id}")
         except Exception as e:
             logger.warning(f"Failed to add user profile photo to context: {e}", exc_info=True)
+    
+    # Add group photo if message is from a group
+    if include_user_photo and message and hasattr(message, 'chat') and message.chat.type in ['group', 'supergroup']:
+        try:
+            # Get chat photo
+            chat = message.chat
+            if chat.photo:
+                chat_photo_file = await message.bot.get_file(chat.photo.big_file_id)
+                chat_photo_bytes = await message.bot.download_file(chat_photo_file.file_path)
+                
+                if chat_photo_bytes:
+                    # Create a new content item with the group's photo
+                    group_photo_content = types.Content(
+                        parts=[
+                            types.Part(text=f"GROUP PHOTO: This is the avatar of the group '{chat.title}'. Use this information when relevant to contextualize responses."),
+                            types.Part(inline_data=types.Blob(
+                                mime_type="image/jpeg",
+                                data=chat_photo_bytes.read()
+                            ))
+                        ],
+                        role="user"
+                    )
+                    
+                    # Add to the photos list
+                    photos_added.append(group_photo_content)
+                    logger.debug(f"Added group photo to context for group {chat.id}")
+        except Exception as e:
+            logger.warning(f"Failed to add group photo to context: {e}", exc_info=True)
+    
+    # Insert all photos at the beginning of the contents list (user photo first, then group photo)
+    if photos_added:
+        contents = photos_added + contents
 
     # Add group context if message is from group
     if message and hasattr(message, 'chat') and message.chat.type in ['group', 'supergroup']:
