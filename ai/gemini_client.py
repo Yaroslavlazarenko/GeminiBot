@@ -146,7 +146,7 @@ async def get_gemini_response(
                     # Create a new content item with the user's photo
                     photo_content = types.Content(
                         parts=[
-                            types.Part(text="USER PROFILE PHOTO: This is what the current user looks like. Use this information when relevant to personalize responses."),
+                            types.Part(text="ВАЖНО! ФОТОГРАФИЯ ПОЛЬЗОВАТЕЛЯ: Это аватарка текущего пользователя, который отправил сообщение. Обрати внимание на внешность пользователя и используй это при формировании ответа. Описывай, что ты видишь на фото, когда это уместно."),
                             types.Part(inline_data=types.Blob(
                                 mime_type="image/jpeg",
                                 data=photo_bytes.read()
@@ -185,7 +185,7 @@ async def get_gemini_response(
                         # Create a new content item with the group's photo
                         group_photo_content = types.Content(
                             parts=[
-                                types.Part(text=f"GROUP PHOTO: This is the avatar of the group '{chat.title}'. Use this information when relevant to contextualize responses."),
+                                types.Part(text=f"ВАЖНО! ФОТОГРАФИЯ ГРУППЫ: Это аватарка группы '{chat.title}'. Обрати внимание на изображение и используй его для контекста при формировании ответа. Описывай, что ты видишь на фото группы, когда это уместно."),
                                 types.Part(inline_data=types.Blob(
                                     mime_type="image/jpeg",
                                     data=chat_photo_bytes.read()
@@ -216,7 +216,7 @@ async def get_gemini_response(
                                 # Create a new content item with the group's photo
                                 group_photo_content = types.Content(
                                     parts=[
-                                        types.Part(text=f"GROUP PHOTO: This is the avatar of the group '{chat.title}'. Use this information when relevant to contextualize responses."),
+                                        types.Part(text=f"ВАЖНО! ФОТОГРАФИЯ ГРУППЫ: Это аватарка группы '{chat.title}'. Обрати внимание на изображение и используй его для контекста при формировании ответа. Описывай, что ты видишь на фото группы, когда это уместно."),
                                         types.Part(inline_data=types.Blob(
                                             mime_type="image/jpeg",
                                             data=chat_photo_bytes.read()
