@@ -258,7 +258,7 @@ async def toggle_group_responds_to_sticker_callback(callback: CallbackQuery, gro
         return
 
     new_value = not group.responds_to_sticker
-    success = await group_dao.update_group_settings(group_id=group.id, responds_to_sticker=new_value)
+    success = await group_dao.update_group_settings(group_id=group.id, responds_to_sticker=new_value, auto_commit=False)
     
     if success:
         group.responds_to_sticker = new_value

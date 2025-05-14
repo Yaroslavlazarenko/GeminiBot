@@ -63,8 +63,24 @@ class GroupDAO:
         responds_to_video_note: bool | None = None,
         responds_to_sticker: bool | None = None,
         transcribe_voice_only: bool | None = None,
-        transcribe_video_note: bool | None = None
+        transcribe_video_note: bool | None = None,
+        auto_commit: bool = False
     ) -> bool:
+        """Update group settings.
+        
+        Args:
+            group_id: The internal ID of the group to update
+            is_global_disabled: Whether all responses are disabled
+            responds_to_text: Whether to respond to text messages
+            responds_to_voice: Whether to respond to voice messages
+            responds_to_photo: Whether to respond to photos
+            responds_to_video_note: Whether to respond to video notes
+            responds_to_sticker: Whether to respond to stickers
+            transcribe_voice_only: Whether to only transcribe voice messages
+            transcribe_video_note: Whether to transcribe video notes
+            auto_commit: Whether to automatically commit the transaction.
+                         Set to False when called within a transaction context manager.
+        """
         try:
             update_data = {}
             if is_global_disabled is not None:
@@ -89,9 +105,14 @@ class GroupDAO:
 
             stmt = update(Group).where(Group.id == group_id).values(**update_data)
             await self.session.execute(stmt)
-            await self.session.commit()
+            
+            # Only commit if auto_commit is True (not within a transaction context)
+            if auto_commit:
+                await self.session.commit()
+                
             return True
         except SQLAlchemyError as e:
             logger.error(f"Error updating group settings for group_id={group_id}: {e}", exc_info=True)
-            await self.session.rollback()
+            if auto_commit:
+                await self.session.rollback()
             return False
