@@ -84,7 +84,8 @@ async def get_gemini_response(
     contents: List[types.Content],
     user: User,
     task_hint: str | None = None,
-    message: Any | None = None # message object from aiogram/telebot etc.
+    message: Any | None = None, # message object from aiogram/telebot etc.
+    include_user_photo: bool = True
 ) -> Dict[str, Any]:
     """
     Gets a response from the Gemini model with retry logic for server errors and response parsing.
@@ -127,6 +128,37 @@ async def get_gemini_response(
     system_prompt_parts = [base_instructions]
     system_prompt_parts.append(f"\nCurrent time: {current_time}")
     system_prompt_parts.append(f"\nCurrent user ID: {user.telegram_id}")
+    
+    # Add user photo to contents if available and requested
+    user_photo_added = False
+    if include_user_photo and message and hasattr(message, 'bot') and message.from_user:        
+        try:
+            # Get user profile photos
+            photos = await message.bot.get_user_profile_photos(message.from_user.id, limit=1)
+            if photos and photos.total_count > 0:
+                photo = photos.photos[0][-1]  # Get the highest resolution photo
+                photo_file = await message.bot.get_file(photo.file_id)
+                photo_bytes = await message.bot.download_file(photo_file.file_path)
+                
+                if photo_bytes:
+                    # Create a new content item with the user's photo at the beginning of the contents list
+                    photo_content = types.Content(
+                        parts=[
+                            types.Part(text="USER PROFILE PHOTO: This is what the current user looks like. Use this information when relevant to personalize responses."),
+                            types.Part(inline_data=types.Blob(
+                                mime_type="image/jpeg",
+                                data=photo_bytes.read()
+                            ))
+                        ],
+                        role="user"
+                    )
+                    
+                    # Insert the photo at the beginning of the contents list
+                    contents = [photo_content] + contents
+                    user_photo_added = True
+                    logger.debug(f"Added user profile photo to context for user {user.telegram_id}")
+        except Exception as e:
+            logger.warning(f"Failed to add user profile photo to context: {e}", exc_info=True)
 
     # Add group context if message is from group
     if message and hasattr(message, 'chat') and message.chat.type in ['group', 'supergroup']:
@@ -578,7 +610,8 @@ async def get_text_response(
     message_history: List[types.Content],
     user: User,
     message: Any | None = None,
-    task_hint: str | None = None
+    task_hint: str | None = None,
+    include_user_photo: bool = True
 ) -> Dict[str, Any]:
     """Gets a text response from the Gemini model for general conversation."""
     logger.debug(f"Calling get_gemini_response for text response. User: {user.telegram_id}")
@@ -586,14 +619,16 @@ async def get_text_response(
         contents=message_history,
         user=user,
         task_hint=task_hint,
-        message=message # Pass message object
+        message=message, # Pass message object
+        include_user_photo=include_user_photo
     )
 
 async def get_audio_response(
     message_history: List[types.Content],
     user: User,
     response: bool = False, # Flag: True=respond, False=transcribe
-    message: Any | None = None
+    message: Any | None = None,
+    include_user_photo: bool = True
 ) -> Dict[str, Any]:
     """Gets a response/transcription for audio from the Gemini model."""
     if response:
@@ -624,14 +659,16 @@ async def get_audio_response(
         contents=message_history_to_pass, # Use modified history for transcription hint
         user=user,
         task_hint=task,
-        message=message # Pass message object
+        message=message, # Pass message object
+        include_user_photo=include_user_photo
     )
 
 async def get_video_response(
     message_history: List[types.Content],
     user: User,
     response: bool = True, # Flag: True=analyze+respond, False=transcribe (if possible)
-    message: Any | None = None
+    message: Any | None = None,
+    include_user_photo: bool = True
 ) -> Dict[str, Any]:
     """
     Gets a response from Gemini for a video note or other video content.
@@ -667,5 +704,6 @@ async def get_video_response(
         contents=message_history_to_pass, # Use modified history if hint was added
         user=user,
         task_hint=task,
-        message=message # Pass message object
+        message=message, # Pass message object
+        include_user_photo=include_user_photo
     )
