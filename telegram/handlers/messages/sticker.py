@@ -23,14 +23,34 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 # Define FFmpeg paths - ensure these are correct for your environment
-FFMPEG_PATH = "/usr/bin/ffmpeg"
-FFPROBE_PATH = "/usr/bin/ffprobe"
+# Check if we're on Windows or Linux and set paths accordingly
+import platform
+import shutil
+
+# Detect the operating system
+IS_WINDOWS = platform.system().lower() == 'windows'
+
+# Try to find ffmpeg in PATH first
+FFMPEG_BIN = shutil.which('ffmpeg')
+FFPROBE_BIN = shutil.which('ffprobe')
+
+# If not found, use default paths based on OS
+if not FFMPEG_BIN:
+    FFMPEG_BIN = 'ffmpeg' if IS_WINDOWS else '/usr/bin/ffmpeg'
+if not FFPROBE_BIN:
+    FFPROBE_BIN = 'ffprobe' if IS_WINDOWS else '/usr/bin/ffprobe'
+
+logger.info(f"Using FFmpeg binary: {FFMPEG_BIN}")
+logger.info(f"Using FFprobe binary: {FFPROBE_BIN}")
 
 # Define the directory for storing video stickers
-TEMP_STICKERS_DIR = Path("temp_stickers")
+# Use absolute path based on the module location for better cross-platform compatibility
+MODULE_DIR = Path(__file__).parent.parent.parent.parent  # Go up to the project root
+TEMP_STICKERS_DIR = MODULE_DIR / "temp_stickers"
 
 # Ensure the directory exists
 TEMP_STICKERS_DIR.mkdir(exist_ok=True)
+logger.info(f"Temporary stickers directory: {TEMP_STICKERS_DIR.absolute()}")
 
 # --- Rest of your handler code remains the same ---
 
@@ -267,7 +287,7 @@ async def sticker_handler(
                     try:
                         # FFmpeg command to add silent audio track
                         ffmpeg_command = [
-                            'ffmpeg',
+                            FFMPEG_BIN,                                     # Use the detected FFmpeg binary
                             '-i', str(original_file_path),                  # Input 0 (video)
                             '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', # Input 1 (silent audio)
                             '-c:v', 'libx264',                              # Video codec
