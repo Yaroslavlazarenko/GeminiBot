@@ -222,14 +222,17 @@ async def sticker_handler(
 
         metadata += f", Set Name: {sticker.set_name or 'N/A'}, Emoji: {sticker.emoji or 'N/A'}, Message ID: {message.message_id}, Current time: {message.date}"
 
-        # Проверяем, является ли стикер форматом TGS (анимированный)
-        is_tgs_sticker = sticker.is_animated
+        # Определяем тип стикера
+        is_video_sticker = sticker.is_video
+        is_static_sticker = not sticker.is_animated and not sticker.is_video
+        # Все стикеры, которые не являются видео-стикерами и не являются статическими, считаются TGS
+        is_tgs_sticker = not is_video_sticker and not is_static_sticker
         sticker_data = None
         
         # Для TGS стикеров не загружаем файл, а только сохраняем метаданные
         if is_tgs_sticker:
-            logger.info(f"TGS animated sticker detected, skipping file download for message {message.message_id}")
-            metadata += ", Type: animated TGS sticker (metadata only)"
+            logger.info(f"TGS animated sticker detected (or other non-standard format), skipping file download for message {message.message_id}")
+            metadata += ", Type: animated TGS sticker or other special format (metadata only)"
         else:
             # Для обычных стикеров загружаем файл как раньше
             try:
@@ -265,9 +268,9 @@ async def sticker_handler(
                 logger.info(f"Found existing sticker with ID {existing_sticker.id} for telegram_sticker_id {sticker.file_id}")
                 db_sticker = existing_sticker
             else:
-                # Process video sticker if needed BEFORE saving
-                is_video = sticker.is_video
-                if is_video:
+                # Проверяем тип стикера для сохранения
+                # Используем ранее определенные переменные is_video_sticker, is_static_sticker и is_tgs_sticker
+                if is_video_sticker:
                     logger.info(f"Processing new video sticker with audio track")
                     
                     # Generate a unique filename for the video sticker
