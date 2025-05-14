@@ -3,6 +3,7 @@ import io
 import tempfile
 import os
 import uuid
+import asyncio
 from pathlib import Path
 from PIL import Image # Not used in process_video_data, but kept as it's in the imports
 import ffmpeg
@@ -30,183 +31,6 @@ TEMP_STICKERS_DIR = Path("temp_stickers")
 
 # Ensure the directory exists
 TEMP_STICKERS_DIR.mkdir(exist_ok=True)
-
-def process_video_data(video_data: bytes) -> bytes:
-    """
-    Process video data to ensure minimum duration of 2.0 seconds using ffmpeg.
-    Prioritizes quality over speed using H.264/AAC encoding.
-    """
-    target_duration = 2.0
-    processed_data = video_data # Default return value in case of errors or no processing needed
-
-    try:
-        logger.info(f"Starting video processing. Input size: {len(video_data)} bytes")
-
-        # Use .webm for input as Telegram videos are often webm, .mp4 for output (H.264/AAC standard)
-        with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as input_file, \
-             tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as output_file:
-
-            input_file.write(video_data)
-            input_file.flush()
-            input_filename = input_file.name
-            output_filename = output_file.name
-
-            logger.info(f"Created temporary input file: {input_filename}")
-            logger.info(f"Created temporary output file: {output_filename}")
-
-            try:
-                probe = ffmpeg.probe(input_filename, cmd=FFPROBE_PATH)
-                # Get duration from format or video stream
-                duration_str = probe['format'].get('duration')
-                if not duration_str:
-                     # Sometimes duration is only in the stream info
-                     video_stream = next((s for s in probe['streams'] if s['codec_type'] == 'video'), None)
-                     if video_stream:
-                         duration_str = video_stream.get('duration')
-
-                if duration_str:
-                    duration = float(duration_str)
-                    logger.info(f"Original video duration: {duration:.2f}s")
-                else:
-                    logger.warning(f"Could not determine video duration from probe data for {input_filename}. Skipping processing.")
-                    # Clean up temp files before returning original data
-                    if os.path.exists(input_filename): os.unlink(input_filename)
-                    if os.path.exists(output_filename): os.unlink(output_filename)
-                    return processed_data
-
-            except ffmpeg.Error as e:
-                logger.error(f"Failed to get video duration using ffprobe for {input_filename}: {str(e)}")
-                # Clean up temp files before returning original data
-                if os.path.exists(input_filename): os.unlink(input_filename)
-                if os.path.exists(output_filename): os.unlink(output_filename)
-                return processed_data
-            except Exception as e:
-                 logger.error(f"An unexpected error occurred during ffprobe for {input_filename}: {str(e)}", exc_info=True)
-                 # Clean up temp files before returning original data
-                 if os.path.exists(input_filename): os.unlink(input_filename)
-                 if os.path.exists(output_filename): os.unlink(output_filename)
-                 return processed_data
-
-
-            if duration >= target_duration:
-                logger.info(f"Video duration ({duration:.2f}s) is >= {target_duration}s, returning original data.")
-                # Clean up input temp file as it's no longer needed
-                if os.path.exists(input_filename): os.unlink(input_filename)
-                # Ensure output temp file is also cleaned up
-                if os.path.exists(output_filename): os.unlink(output_filename)
-                return processed_data
-
-            # Calculate the factor needed to *slow down* the video/audio
-            # To reach a target duration T from original duration D (where D < T),
-            # the playback speed needs to be D/T.
-            speed_reduction_factor = duration / target_duration
-            logger.info(f"Will slow down video/audio by factor {speed_reduction_factor:.3f} to reach {target_duration}s")
-
-            try:
-                # Input stream
-                stream = ffmpeg.input(input_filename)
-                video = stream.video
-                audio = stream.audio # This will be None if no audio stream exists
-
-                # Apply video slowdown filter (setpts factor is the inverse of speed factor)
-                video = video.filter('setpts', f'{1/speed_reduction_factor}*PTS')
-                logger.debug(f"Applied video filter: setpts={1/speed_reduction_factor}*PTS")
-
-                # Apply audio slowdown filters using atempo chaining if audio exists
-                if audio is not None:
-                    atempo_factors = []
-                    # Start with the desired speed reduction factor for audio
-                    remaining_speed_factor = speed_reduction_factor
-
-                    # Chain atempo filters as needed (each can only handle factors 0.5 to 2.0)
-                    # If we need to slow down by a factor < 0.5, repeatedly apply atempo=0.5
-                    while remaining_speed_factor < 0.5:
-                        atempo_factors.append(0.5)
-                        remaining_speed_factor /= 0.5 # Calculate the remaining factor needed
-
-                    # Apply the remaining factor (will be >= 0.5 and <= 1.0 since original < target)
-                    if remaining_speed_factor > 0: # Avoid issues if calculation resulted in 0 or negative
-                         atempo_factors.append(remaining_speed_factor)
-                    else:
-                         logger.warning(f"Calculated invalid remaining_speed_factor: {remaining_speed_factor}. Skipping audio processing.")
-                         audio = None # Disable audio if cannot process
-
-                    if atempo_factors:
-                        logger.debug(f"Applying audio atempo factors: {atempo_factors}")
-                        audio_stream = audio
-                        for factor in atempo_factors:
-                            audio_stream = audio_stream.filter('atempo', factor)
-                        audio = audio_stream # Update the audio variable with the filtered stream
-                    # If atempo_factors is empty, speed_reduction_factor was already >= 0.5 (e.g., duration 1.5s),
-                    # and remaining_speed_factor will be the original, which is handled by the single append.
-                    # The logic seems robust for factors between 0 and 1.
-
-                # Configure output stream with video and potentially audio
-                if audio is not None:
-                    stream = ffmpeg.output(video, audio, output_filename)
-                else:
-                    stream = ffmpeg.output(video, output_filename, an=None) # an=None explicitly says no audio if it didn't exist
-
-                # Apply user's specified global args for quality and encoding
-                stream = stream.global_args('-c:v', 'libx264') # Video codec
-                stream = stream.global_args('-preset', 'fast') # Encoding speed/compression efficiency (fast is a good balance)
-                stream = stream.global_args('-crf', '23') # Constant Rate Factor (quality). Lower is better quality (0-51), 23 is good default.
-                stream = stream.global_args('-maxrate', '1M') # Max video bitrate (1 Mbps) - helps control file size while maintaining quality
-                stream = stream.global_args('-bufsize', '2M') # Buffer size for maxrate
-                # stream = stream.global_args('-x264-params', 'keyint=any:scenecut=any') # Potentially useful for seeking, but 'any' can hurt compression
-
-                # Apply user's specified audio args if audio exists
-                if audio is not None:
-                    stream = stream.global_args('-c:a', 'aac') # Audio codec
-                    stream = stream.global_args('-b:a', '128k') # Audio bitrate
-
-                # Force output format to mp4
-                stream = stream.global_args('-f', 'mp4')
-
-                logger.debug(f"Executing ffmpeg command: {ffmpeg.compile(stream, cmd=FFMPEG_PATH)}")
-
-                # Run ffmpeg command
-                stdout, stderr = ffmpeg.run(
-                    stream,
-                    cmd=FFMPEG_PATH,
-                    overwrite_output=True,
-                    capture_stdout=True,
-                    capture_stderr=True
-                )
-                logger.info("Successfully processed video with ffmpeg")
-                if stdout: logger.debug(f"ffmpeg stdout: {stdout.decode('utf-8')}")
-                if stderr: logger.debug(f"ffmpeg stderr: {stderr.decode('utf-8')}")
-
-                # Read processed data from the output file
-                with open(output_filename, 'rb') as f:
-                    processed_data = f.read()
-
-                logger.info(f"Video processing complete: original size={len(video_data)}, processed size={len(processed_data)}")
-
-            except ffmpeg.Error as e:
-                logger.error(f"ffmpeg processing failed for {input_filename}: stdout={e.stdout.decode('utf-8')}, stderr={e.stderr.decode('utf-8')}")
-                # Return original data on ffmpeg failure
-                processed_data = video_data
-            except Exception as e:
-                logger.error(f"An unexpected error occurred during ffmpeg processing for {input_filename}: {str(e)}", exc_info=True)
-                # Return original data on any other failure
-                processed_data = video_data
-            finally:
-                # Clean up temporary files
-                if os.path.exists(input_filename):
-                    os.unlink(input_filename)
-                    logger.debug(f"Cleaned up input temp file: {input_filename}")
-                if os.path.exists(output_filename):
-                    os.unlink(output_filename)
-                    logger.debug(f"Cleaned up output temp file: {output_filename}")
-
-
-    except Exception as e:
-        logger.error(f"Error setting up video processing: {str(e)}", exc_info=True)
-        # Return original data if temp file creation or initial setup fails
-        processed_data = video_data
-
-    return processed_data
 
 # --- Rest of your handler code remains the same ---
 
@@ -404,48 +228,113 @@ async def sticker_handler(
         # Get or create sticker in database
         async with session_factory() as session:
             sticker_dao = StickerDAO(session)
-
-            # Process video sticker if needed BEFORE saving
-            is_video = sticker.is_video
-            if is_video:
-                logger.info(f"Processing video sticker")
-                # Call the refactored processing function
-                processed_video_data = process_video_data(sticker_data)
+            
+            # First check if this sticker already exists in the database
+            existing_sticker = await sticker_dao.get_sticker_by_telegram_id(sticker.file_id)
+            
+            if existing_sticker:
+                logger.info(f"Found existing sticker with ID {existing_sticker.id} for telegram_sticker_id {sticker.file_id}")
+                db_sticker = existing_sticker
                 
-                # Generate a unique filename for the video sticker
-                file_uuid = str(uuid.uuid4())
-                file_extension = ".mp4"  # Video stickers are processed to MP4
-                file_name = f"{file_uuid}{file_extension}"
-                file_path = TEMP_STICKERS_DIR / file_name
-                
-                # Save the processed video data to a file
-                with open(file_path, "wb") as f:
-                    f.write(processed_video_data)
-                
-                # Get the absolute URI for the file
-                file_uri = str(file_path.absolute())
-                
-                # Store the file path in the database
-                db_sticker = await sticker_dao.get_or_create_sticker(
-                    telegram_sticker_id=sticker.file_id,
-                    telegram_message_id=message.message_id,
-                    name=sticker.set_name,
-                    emoji=sticker.emoji,
-                    video_data=None,  # Don't store the binary data in DB
-                    file_path=file_uri,  # Store the file path instead
-                    mime_type="video/mp4"  # Store the MIME type
-                )
-                metadata += f", Type: video sticker, Processed: {'Yes' if processed_video_data != sticker_data else 'No'}, File: {file_uri}"
+                # Check if it's a video sticker with a file path
+                if existing_sticker.file_path and os.path.exists(existing_sticker.file_path):
+                    logger.info(f"Using existing processed file at {existing_sticker.file_path}")
+                    metadata += f", Type: reused video sticker with audio"
+                else:
+                    # It's a static sticker or the file doesn't exist anymore
+                    metadata += f", Type: reused sticker"
             else:
-                 # For static stickers, just use the downloaded data
-                db_sticker = await sticker_dao.get_or_create_sticker(
-                    telegram_sticker_id=sticker.file_id,
-                    telegram_message_id=message.message_id,
-                    name=sticker.set_name,
-                    emoji=sticker.emoji,
-                    image_data=sticker_data # Use original data for static
-                )
-                metadata += ", Type: static sticker"
+                # Process video sticker if needed BEFORE saving
+                is_video = sticker.is_video
+                if is_video:
+                    logger.info(f"Processing new video sticker with audio track")
+                    
+                    # Generate a unique filename for the video sticker
+                    file_uuid = str(uuid.uuid4())
+                    original_extension = ".webm"  # Original sticker format
+                    processed_extension = ".mp4"  # Processed format with audio
+                    original_file_name = f"{file_uuid}{original_extension}"
+                    processed_file_name = f"processed_{file_uuid}{processed_extension}"
+                    original_file_path = TEMP_STICKERS_DIR / original_file_name
+                    processed_file_path = TEMP_STICKERS_DIR / processed_file_name
+                    
+                    # Save the original video data to a file
+                    with open(original_file_path, "wb") as f:
+                        f.write(sticker_data)
+                    
+                    # Process with FFmpeg to add silent audio track
+                    logger.debug(f"Adding audio track to video sticker: {original_file_path} -> {processed_file_path}")
+                    try:
+                        # FFmpeg command to add silent audio track
+                        ffmpeg_command = [
+                            'ffmpeg',
+                            '-i', str(original_file_path),                  # Input 0 (video)
+                            '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', # Input 1 (silent audio)
+                            '-c:v', 'libx264',                              # Video codec
+                            '-pix_fmt', 'yuv420p',                          # Pixel format
+                            '-c:a', 'aac',                                  # Audio codec
+                            '-shortest',                                    # Match shortest stream
+                            '-map', '0:v:0',                                # Map video from input 0
+                            '-map', '1:a:0',                                # Map audio from input 1
+                            '-y',                                           # Overwrite output
+                            str(processed_file_path)                        # Output file
+                        ]
+                        
+                        # Run FFmpeg command
+                        process = await asyncio.create_subprocess_exec(
+                            *ffmpeg_command,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE
+                        )
+                        stdout, stderr = await process.communicate()
+                        
+                        if process.returncode != 0:
+                            logger.error(f"FFmpeg error: {stderr.decode()}")
+                            # If FFmpeg fails, fall back to original file
+                            processed_file_path = original_file_path
+                            processed_extension = original_extension
+                            logger.warning(f"Falling back to original sticker file without audio")
+                        else:
+                            logger.info(f"Successfully added audio track to video sticker")
+                            
+                            # Clean up original file
+                            try:
+                                os.remove(original_file_path)
+                                logger.debug(f"Removed original file: {original_file_path}")
+                            except OSError as e:
+                                logger.warning(f"Failed to remove original file {original_file_path}: {e}")
+                    
+                    except Exception as ffmpeg_e:
+                        logger.error(f"Error processing video with FFmpeg: {ffmpeg_e}", exc_info=True)
+                        # If any error occurs, use the original file
+                        processed_file_path = original_file_path
+                        processed_extension = original_extension
+                        logger.warning(f"Falling back to original sticker file without audio")
+                    
+                    # Get the absolute URI for the processed file
+                    file_uri = str(processed_file_path.absolute())
+                    mime_type = "video/mp4" if processed_extension == ".mp4" else "video/webm"
+                    
+                    # Store the file path in the database
+                    db_sticker = await sticker_dao.get_or_create_sticker(
+                        telegram_sticker_id=sticker.file_id,
+                        telegram_message_id=message.message_id,
+                        name=sticker.set_name,
+                        emoji=sticker.emoji,
+                        file_path=file_uri,  # Store the file path
+                        mime_type=mime_type  # Store the MIME type
+                    )
+                    metadata += f", Type: new video sticker with audio"
+                else:
+                     # For static stickers, just use the downloaded data
+                    db_sticker = await sticker_dao.get_or_create_sticker(
+                        telegram_sticker_id=sticker.file_id,
+                        telegram_message_id=message.message_id,
+                        name=sticker.set_name,
+                        emoji=sticker.emoji,
+                        image_data=sticker_data # Use original data for static
+                    )
+                    metadata += ", Type: new static sticker"
 
             await session.commit()
             # Access db_sticker.id after commit if needed elsewhere, though add_message doesn't strictly require commit first

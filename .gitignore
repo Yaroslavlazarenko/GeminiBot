@@ -30,3 +30,15 @@ database/dao/__pycache__/group_dao.cpython-313.pyc
 database/dao/__pycache__/__init__.cpython-313.pyc
 database/__pycache__/manager.cpython-313.pyc
 ai/__pycache__/gemini_client.cpython-313.pyc
+middlewares/__pycache__/db_session.cpython-313.pyc
+database/dao/__pycache__/message_dao.cpython-313.pyc
+.env
+test1.py
+test2.py
+telegram/handlers/messages/__pycache__/voice.cpython-313.pyc
+telegram/handlers/messages/__pycache__/text.cpython-313.pyc
+middlewares/__pycache__/db_session.cpython-313.pyc
+logs/error_20250514.log
+database/dao/__pycache__/message_dao.cpython-313.pyc
+database/__pycache__/manager.cpython-313.pyc
+ai/__pycache__/gemini_client.cpython-313.pyc

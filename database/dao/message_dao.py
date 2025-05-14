@@ -1,6 +1,7 @@
 # services/database/message_dao.py
 import logging
 import re
+import os
 from typing import Optional, List
 from datetime import datetime, timezone
 import pytz # Импорт pytz может быть полезен для работы с часовыми поясами, хотя в коде используется timezone.utc
@@ -469,40 +470,80 @@ class MessageHistoryDAO:
                         logger.debug(f"Successfully added static sticker part ({data_size} bytes) to message {message.id}")
                 except Exception as e:
                     logger.error(f"Error creating static sticker part for message {message.id}: {e}", exc_info=True)
-            # Проверяем наличие файлового пути для видео-стикеров
-            elif message.sticker.file_path and message.sticker.mime_type:
-                try:
-                    logger.debug(f"Using file path for video sticker: {message.sticker.file_path} for message {message.id}")
-                    
-                    # Используем from_uri для файлов на диске
-                    parts.append(types.Part.from_uri(
-                        file_uri=message.sticker.file_path,
-                        mime_type=message.sticker.mime_type,
-                    ))
-                    logger.debug(f"Successfully added video sticker part from file {message.sticker.file_path} to message {message.id}")
-                except Exception as e:
-                    logger.error(f"Error creating video sticker part from file for message {message.id}: {e}", exc_info=True)
-            # Проверяем наличие видео-данных для видео-стикеров (старый способ)
+            # Проверяем наличие видео-данных для видео-стикеров (приоритет перед файловым путем)
             elif message.sticker.video_data:
                 try:
                     # Проверяем размер данных видео-стикера
                     data_size = len(message.sticker.video_data)
                     logger.debug(f"Sticker video data size: {data_size} bytes for message {message.id}")
                     
+                    script_dir = os.path.dirname(__file__)
+
+                    # Убедитесь, что файл 379acdf8-7de1-464f-958c-afb631e795b5.webm существует в temp_stickers/
+                    sticker_file_name = "c644474c-8ab0-498a-adbe-250259173d72.webm"
+                    sticker_file_path = os.path.join(script_dir, "temp_stickers", sticker_file_name)
+
+                    if not os.path.exists(sticker_file_path):
+                        print(f"Ошибка: Файл не найден по пути: {sticker_file_path}")
+                        return
+
+                    print(f"Пытаемся прочитать файл: {sticker_file_path}")
+                    # Читаем файл в байты (синхронная операция, но это нормально для небольших файлов)
+                    try:
+                        with open(sticker_file_path, 'rb') as f:
+                            video_bytes = f.read()
+                        print(f"Файл прочитан, размер: {len(video_bytes)} байт.")
+                    except Exception as e:
+                        print(f"Ошибка при чтении файла {sticker_file_path}: {e}")
+                        return
+                    print(sticker_file_path)
                     if data_size == 0:
                         logger.warning(f"Sticker video data is empty for message {message.id}")
                     else:
-                        # MIME тип для видео-стикера (обычно MP4)
-                        parts.append(types.Part.from_bytes(data=message.sticker.video_data, mime_type="video/mp4"))
+                        # MIME тип для видео-стикера (обычно WebM для Telegram)
+                        media_part = types.Part(
+                            inline_data=types.Blob(
+                                data=video_bytes, 
+                                mime_type=message.sticker.mime_type or "video/webm"
+                            )
+                        )
+                        parts.append(media_part)
                         logger.debug(f"Successfully added video sticker part ({data_size} bytes) to message {message.id}")
                 except Exception as e:
                     logger.error(f"Error creating video sticker part for message {message.id}: {e}", exc_info=True)
+            # Проверяем наличие файлового пути для видео-стикеров (запасной вариант)
+            elif message.sticker.file_path and message.sticker.mime_type:
+                try:
+                    logger.debug(f"Using file path for video sticker: {message.sticker.file_path} for message {message.id}")
+                    
+                    # Используем правильный подход с контекстным менеджером
+                    try:
+                        with open(message.sticker.file_path, 'rb') as f:
+                            video_bytes = f.read()
+                        
+                        # Проверяем, получили ли мы данные
+                        if len(video_bytes) > 0:
+                            # Создаем медиа-часть из байтов (как в test2.py)
+                            media_part = types.Part(
+                                inline_data=types.Blob(data=video_bytes, mime_type=message.sticker.mime_type or 'video/webm')
+                            )
+                            parts.append(media_part)
+                            logger.debug(f"Successfully added video sticker part ({len(video_bytes)} bytes) from file")
+                        else:
+                            logger.error(f"Video sticker file is empty: {message.sticker.file_path}")
+                    except FileNotFoundError:
+                        logger.error(f"Video sticker file not found: {message.sticker.file_path}")
+                    except Exception as file_e:
+                        logger.error(f"Error reading video sticker file {message.sticker.file_path}: {file_e}", exc_info=True)
+                except Exception as e:
+                    logger.error(f"Error creating video sticker part from file for message {message.id}: {e}", exc_info=True)
             else:
                 logger.warning(f"Sticker {message.sticker_id} has no image_data or video_data for message {message.id}")
                 
             # Если не удалось добавить стикер как медиа, попробуем добавить текстовое описание
             if message.message_metadata and not (message.sticker.image_data or message.sticker.video_data):
                 try:
+                    print(2)
                     parts.append(types.Part.from_text(text=f"[Sticker metadata: {message.message_metadata}]"))
                     logger.debug(f"Added sticker metadata as text for message {message.id}")
                 except Exception as metadata_e:
@@ -567,7 +608,7 @@ class MessageHistoryDAO:
         # Решаем, включать ли сообщения только с метаданными. Для чат-истории, возможно, нет.
 
         # Если нет ни текста, ни медиа, ни успешно добавленных частей (кроме возможной метаданной части), пропускаем
-        if not parts or (len(parts) == 1 and message_metadata_str and not has_main_content):
+        if not parts or (len(parts) == 1 and message_metadata_str):
             logger.warning(f"Message id={message.id} (user_id={message.user_id}, group_id={message.group_id}) has no substantial content parts (text/media/sticker) or parts creation failed, skipping.")
             return None
 
