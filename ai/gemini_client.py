@@ -163,6 +163,7 @@ async def get_gemini_response(
     
     # Group photo functionality has been removed as requested
     # Only user avatar functionality is maintained
+    # Note: No early return here to ensure function continues for group chats
     
     # Insert all photos at the beginning of the contents list (user photo first, then group photo)
     if photos_added:
@@ -623,13 +624,26 @@ async def get_text_response(
 ) -> Dict[str, Any]:
     """Gets a text response from the Gemini model for general conversation."""
     logger.debug(f"Calling get_gemini_response for text response. User: {user.telegram_id}")
-    return await get_gemini_response(
+    result = await get_gemini_response(
         contents=message_history,
         user=user,
         task_hint=task_hint,
         message=message, # Pass message object
         include_user_photo=include_user_photo
     )
+    
+    # Проверка на случай, если get_gemini_response вернул None
+    if result is None:
+        logger.error(f"get_gemini_response returned None for user {user.telegram_id}. Returning error response.")
+        return {
+            "type": "error",
+            "data": {
+                "text": "Не удалось получить ответ от модели. Пожалуйста, попробуйте еще раз.",
+                "commands": []
+            }
+        }
+    
+    return result
 
 async def get_audio_response(
     message_history: List[types.Content],
@@ -663,13 +677,26 @@ async def get_audio_response(
          message_history_to_pass = message_history
 
 
-    return await get_gemini_response(
+    result = await get_gemini_response(
         contents=message_history_to_pass, # Use modified history for transcription hint
         user=user,
         task_hint=task,
         message=message, # Pass message object
         include_user_photo=include_user_photo
     )
+    
+    # Проверка на случай, если get_gemini_response вернул None
+    if result is None:
+        logger.error(f"get_gemini_response returned None for audio from user {user.telegram_id}. Returning error response.")
+        return {
+            "type": "error",
+            "data": {
+                "text": "Не удалось обработать аудио. Пожалуйста, попробуйте еще раз.",
+                "commands": []
+            }
+        }
+    
+    return result
 
 async def get_video_response(
     message_history: List[types.Content],
@@ -708,10 +735,23 @@ async def get_video_response(
          message_history_to_pass = message_history
 
 
-    return await get_gemini_response(
+    result = await get_gemini_response(
         contents=message_history_to_pass, # Use modified history if hint was added
         user=user,
         task_hint=task,
         message=message, # Pass message object
         include_user_photo=include_user_photo
     )
+    
+    # Проверка на случай, если get_gemini_response вернул None
+    if result is None:
+        logger.error(f"get_gemini_response returned None for video from user {user.telegram_id}. Returning error response.")
+        return {
+            "type": "error",
+            "data": {
+                "text": "Не удалось обработать видео. Пожалуйста, попробуйте еще раз.",
+                "commands": []
+            }
+        }
+    
+    return result
