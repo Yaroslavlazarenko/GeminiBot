@@ -52,17 +52,21 @@ async def toggle_global_callback(callback: CallbackQuery, user: User, user_dao: 
     success = await user_dao.update_user_settings(user_id=user.id, is_global_disabled=new_value)
     
     if success:
-        user.is_global_disabled = new_value
-        status = "увімкнено" if not new_value else "вимкнено"
-        await callback.answer(f"✅ Глобальні відповіді {status}")
-        
-        chat = callback.message.chat
-        is_admin = False
-        if chat.type in ["group", "supergroup"]:
-            is_admin = await is_user_group_admin(chat, user.telegram_id)
-        
-        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
-        await refresh_user_menu(callback.message, user, is_admin, keyboard)
+        # Получаем свежую копию пользователя из базы данных
+        updated_user = await user_dao.get_user_by_id(user.id)
+        if updated_user:
+            status = "увімкнено" if not updated_user.is_global_disabled else "вимкнено"
+            await callback.answer(f"✅ Глобальні відповіді {status}")
+            
+            chat = callback.message.chat
+            is_admin = False
+            if chat.type in ["group", "supergroup"]:
+                is_admin = await is_user_group_admin(chat, updated_user.telegram_id)
+            
+            keyboard = get_settings_keyboard(updated_user, show_group_settings_button=is_admin)
+            await refresh_user_menu(callback.message, updated_user, is_admin, keyboard)
+        else:
+            await callback.answer("❌ Не вдалося отримати оновлені дані користувача", show_alert=True)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -73,15 +77,19 @@ async def toggle_text_callback(callback: CallbackQuery, user: User, user_dao: Us
     success = await user_dao.update_user_settings(user_id=user.id, responds_to_text=new_value)
     
     if success:
-        user.responds_to_text = new_value
-        status = "увімкнено" if new_value else "вимкнено"
-        await callback.answer(f"✅ Відповіді на текст {status}")
-        chat = callback.message.chat
-        is_admin = False
-        if chat.type in ["group", "supergroup"]:
-            is_admin = await is_user_group_admin(chat, user.telegram_id)
-        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
-        await refresh_user_menu(callback.message, user, is_admin, keyboard)
+        # Получаем свежую копию пользователя из базы данных
+        updated_user = await user_dao.get_user_by_id(user.id)
+        if updated_user:
+            status = "увімкнено" if updated_user.responds_to_text else "вимкнено"
+            await callback.answer(f"✅ Відповіді на текст {status}")
+            chat = callback.message.chat
+            is_admin = False
+            if chat.type in ["group", "supergroup"]:
+                is_admin = await is_user_group_admin(chat, updated_user.telegram_id)
+            keyboard = get_settings_keyboard(updated_user, show_group_settings_button=is_admin)
+            await refresh_user_menu(callback.message, updated_user, is_admin, keyboard)
+        else:
+            await callback.answer("❌ Не вдалося отримати оновлені дані користувача", show_alert=True)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -92,15 +100,19 @@ async def toggle_voice_callback(callback: CallbackQuery, user: User, user_dao: U
     success = await user_dao.update_user_settings(user_id=user.id, responds_to_voice=new_value)
     
     if success:
-        user.responds_to_voice = new_value
-        status = "увімкнено" if new_value else "вимкнено"
-        await callback.answer(f"✅ Обробку голосу {status}")
-        chat = callback.message.chat
-        is_admin = False
-        if chat.type in ["group", "supergroup"]:
-            is_admin = await is_user_group_admin(chat, user.telegram_id)
-        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
-        await refresh_user_menu(callback.message, user, is_admin, keyboard)
+        # Получаем свежую копию пользователя из базы данных
+        updated_user = await user_dao.get_user_by_id(user.id)
+        if updated_user:
+            status = "увімкнено" if updated_user.responds_to_voice else "вимкнено"
+            await callback.answer(f"✅ Відповіді на голосові {status}")
+            chat = callback.message.chat
+            is_admin = False
+            if chat.type in ["group", "supergroup"]:
+                is_admin = await is_user_group_admin(chat, updated_user.telegram_id)
+            keyboard = get_settings_keyboard(updated_user, show_group_settings_button=is_admin)
+            await refresh_user_menu(callback.message, updated_user, is_admin, keyboard)
+        else:
+            await callback.answer("❌ Не вдалося отримати оновлені дані користувача", show_alert=True)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -111,15 +123,19 @@ async def toggle_photo_callback(callback: CallbackQuery, user: User, user_dao: U
     success = await user_dao.update_user_settings(user_id=user.id, responds_to_photo=new_value)
     
     if success:
-        user.responds_to_photo = new_value
-        status = "увімкнено" if new_value else "вимкнено"
-        await callback.answer(f"✅ Обробку фото {status}")
-        chat = callback.message.chat
-        is_admin = False
-        if chat.type in ["group", "supergroup"]:
-            is_admin = await is_user_group_admin(chat, user.telegram_id)
-        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
-        await refresh_user_menu(callback.message, user, is_admin, keyboard)
+        # Получаем свежую копию пользователя из базы данных
+        updated_user = await user_dao.get_user_by_id(user.id)
+        if updated_user:
+            status = "увімкнено" if updated_user.responds_to_photo else "вимкнено"
+            await callback.answer(f"✅ Відповіді на фото {status}")
+            chat = callback.message.chat
+            is_admin = False
+            if chat.type in ["group", "supergroup"]:
+                is_admin = await is_user_group_admin(chat, updated_user.telegram_id)
+            keyboard = get_settings_keyboard(updated_user, show_group_settings_button=is_admin)
+            await refresh_user_menu(callback.message, updated_user, is_admin, keyboard)
+        else:
+            await callback.answer("❌ Не вдалося отримати оновлені дані користувача", show_alert=True)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -130,15 +146,19 @@ async def toggle_video_note_callback(callback: CallbackQuery, user: User, user_d
     success = await user_dao.update_user_settings(user_id=user.id, responds_to_video_note=new_value)
     
     if success:
-        user.responds_to_video_note = new_value
-        status = "увімкнено" if new_value else "вимкнено"
-        await callback.answer(f"✅ Обробку відео-повідомлень {status}")
-        chat = callback.message.chat
-        is_admin = False
-        if chat.type in ["group", "supergroup"]:
-            is_admin = await is_user_group_admin(chat, user.telegram_id)
-        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
-        await refresh_user_menu(callback.message, user, is_admin, keyboard)
+        # Получаем свежую копию пользователя из базы данных
+        updated_user = await user_dao.get_user_by_id(user.id)
+        if updated_user:
+            status = "увімкнено" if updated_user.responds_to_video_note else "вимкнено"
+            await callback.answer(f"✅ Відповіді на відео-повідомлення {status}")
+            chat = callback.message.chat
+            is_admin = False
+            if chat.type in ["group", "supergroup"]:
+                is_admin = await is_user_group_admin(chat, updated_user.telegram_id)
+            keyboard = get_settings_keyboard(updated_user, show_group_settings_button=is_admin)
+            await refresh_user_menu(callback.message, updated_user, is_admin, keyboard)
+        else:
+            await callback.answer("❌ Не вдалося отримати оновлені дані користувача", show_alert=True)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -149,15 +169,19 @@ async def toggle_sticker_callback(callback: CallbackQuery, user: User, user_dao:
     success = await user_dao.update_user_settings(user_id=user.id, responds_to_sticker=new_value)
     
     if success:
-        user.responds_to_sticker = new_value
-        status = "увімкнено" if new_value else "вимкнено"
-        await callback.answer(f"✅ Обробку стікерів {status}")
-        chat = callback.message.chat
-        is_admin = False
-        if chat.type in ["group", "supergroup"]:
-            is_admin = await is_user_group_admin(chat, user.telegram_id)
-        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
-        await refresh_user_menu(callback.message, user, is_admin, keyboard)
+        # Получаем свежую копию пользователя из базы данных
+        updated_user = await user_dao.get_user_by_id(user.id)
+        if updated_user:
+            status = "увімкнено" if updated_user.responds_to_sticker else "вимкнено"
+            await callback.answer(f"✅ Відповіді на стікери {status}")
+            chat = callback.message.chat
+            is_admin = False
+            if chat.type in ["group", "supergroup"]:
+                is_admin = await is_user_group_admin(chat, updated_user.telegram_id)
+            keyboard = get_settings_keyboard(updated_user, show_group_settings_button=is_admin)
+            await refresh_user_menu(callback.message, updated_user, is_admin, keyboard)
+        else:
+            await callback.answer("❌ Не вдалося отримати оновлені дані користувача", show_alert=True)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -172,15 +196,19 @@ async def toggle_mode_callback(callback: CallbackQuery, user: User, user_dao: Us
     success = await user_dao.update_user_settings(user_id=user.id, transcribe_voice_only=new_value)
     
     if success:
-        user.transcribe_voice_only = new_value
-        mode = "транскрипція" if new_value else "відповідь"
-        await callback.answer(f"✅ Режим голосу: {mode}")
-        chat = callback.message.chat
-        is_admin = False
-        if chat.type in ["group", "supergroup"]:
-            is_admin = await is_user_group_admin(chat, user.telegram_id)
-        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
-        await refresh_user_menu(callback.message, user, is_admin, keyboard)
+        # Получаем свежую копию пользователя из базы данных вместо модификации существующего объекта
+        updated_user = await user_dao.get_user_by_id(user.id)
+        if updated_user:
+            mode = "транскрипція" if updated_user.transcribe_voice_only else "відповідь"
+            await callback.answer(f"✅ Режим голосу: {mode}")
+            chat = callback.message.chat
+            is_admin = False
+            if chat.type in ["group", "supergroup"]:
+                is_admin = await is_user_group_admin(chat, updated_user.telegram_id)
+            keyboard = get_settings_keyboard(updated_user, show_group_settings_button=is_admin)
+            await refresh_user_menu(callback.message, updated_user, is_admin, keyboard)
+        else:
+            await callback.answer("❌ Не вдалося отримати оновлені дані користувача", show_alert=True)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
@@ -195,15 +223,19 @@ async def toggle_transcribe_video_note_callback(callback: CallbackQuery, user: U
     success = await user_dao.update_user_settings(user_id=user.id, transcribe_video_note=new_value)
     
     if success:
-        user.transcribe_video_note = new_value
-        mode = "транскрипція" if new_value else "відповідь"
-        await callback.answer(f"✅ Режим відео: {mode}")
-        chat = callback.message.chat
-        is_admin = False
-        if chat.type in ["group", "supergroup"]:
-            is_admin = await is_user_group_admin(chat, user.telegram_id)
-        keyboard = get_settings_keyboard(user, show_group_settings_button=is_admin)
-        await refresh_user_menu(callback.message, user, is_admin, keyboard)
+        # Получаем свежую копию пользователя из базы данных
+        updated_user = await user_dao.get_user_by_id(user.id)
+        if updated_user:
+            mode = "транскрипція" if updated_user.transcribe_video_note else "відповідь"
+            await callback.answer(f"✅ Режим відео: {mode}")
+            chat = callback.message.chat
+            is_admin = False
+            if chat.type in ["group", "supergroup"]:
+                is_admin = await is_user_group_admin(chat, updated_user.telegram_id)
+            keyboard = get_settings_keyboard(updated_user, show_group_settings_button=is_admin)
+            await refresh_user_menu(callback.message, updated_user, is_admin, keyboard)
+        else:
+            await callback.answer("❌ Не вдалося отримати оновлені дані користувача", show_alert=True)
     else:
         await callback.answer("❌ Помилка при зміні налаштувань", show_alert=True)
 
