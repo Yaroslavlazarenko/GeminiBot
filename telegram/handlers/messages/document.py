@@ -414,7 +414,7 @@ async def document_handler(
         
         if is_forwarded:
             # This is a forwarded document
-            metadata = f"Message info: FORWARDED document shared by {user_display_name} (User ID: {user.telegram_id})"
+            metadata = f"Next Message info: FORWARDED document shared by {user_display_name} (User ID: {user.telegram_id})"
             
             # Add detailed forwarding information
             if message.forward_from:
@@ -423,14 +423,14 @@ async def document_handler(
                 forward_last_name = message.forward_from.last_name or ""
                 forward_name = f"{forward_first_name} {forward_last_name}".strip() or message.forward_from.username or f"User {message.forward_from.id}"
                 is_bot = "(Bot)" if message.forward_from.is_bot else ""
-                metadata += f"\nOriginal sender: {forward_name} {is_bot} (ID: {message.forward_from.id})"
+                metadata += f"\nOriginal sender: {forward_name} {is_bot}"
             elif message.forward_sender_name:
                 # Forwarded from a user who restricted forwarding privacy
                 metadata += f"\nOriginal sender: {message.forward_sender_name} (forwarding privacy enabled)"
             elif message.forward_from_chat:
                 # Forwarded from a channel or group
                 chat_type = message.forward_from_chat.type.capitalize()
-                metadata += f"\nOriginal source: {chat_type} '{message.forward_from_chat.title}' (ID: {message.forward_from_chat.id})"
+                metadata += f"\nOriginal source: {chat_type} '{message.forward_from_chat.title}'"
                 if message.forward_signature:
                     metadata += f"\nPost author: {message.forward_signature}"
             
@@ -439,7 +439,7 @@ async def document_handler(
                 metadata += f"\nOriginal message time: {message.forward_date}"
         else:
             # Regular non-forwarded document
-            metadata = f"Message info: document from {user_display_name} (User ID: {user.telegram_id})"
+            metadata = f"Next Message info: document from {user_display_name} (User ID: {user.telegram_id})"
         
         metadata += f", File name: {document.file_name}, MIME type: {document.mime_type}, "
         metadata += f"Size: {document.file_size} bytes, Message ID: {message.message_id}, Current time: {message.date}"

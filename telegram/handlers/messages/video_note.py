@@ -270,7 +270,7 @@ async def video_note_handler(
         # Formulate metadata for the video note
         is_forwarded = bool(message.forward_from or message.forward_from_chat or message.forward_sender_name or message.forward_date)
         if is_forwarded:
-            metadata = f"Message info: FORWARDED video note shared by {user_display_name} (User ID: {user.telegram_id})"
+            metadata = f"Next Message info: FORWARDED video note shared by {user_display_name} (User ID: {user.telegram_id})"
             if message.forward_from:
                 forward_name = message.forward_from.full_name or f"User {message.forward_from.id}"
                 is_bot = "(Bot)" if message.forward_from.is_bot else ""
@@ -284,7 +284,7 @@ async def video_note_handler(
             if message.forward_date:
                 metadata += f"\nOriginal message time: {message.forward_date}"
         else:
-            metadata = f"Message info: video note shared by {user_display_name} (User ID: {user_telegram_id})"
+            metadata = f"Next Message info: video note shared by {user_display_name} (User ID: {user_telegram_id})"
 
         metadata += f", Duration: {video_note.duration}s, Message ID: {message.message_id}, Current time: {message.date}"
         if transcription_text:

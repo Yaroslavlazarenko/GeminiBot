@@ -440,7 +440,7 @@ async def photo_handler(
         
         if is_forwarded:
             # This is a forwarded photo
-            metadata = f"Message info: FORWARDED photo shared by {user_display_name} (User ID: {user.telegram_id})"
+            metadata = f"Next Message info: FORWARDED photo shared by {user_display_name} (User ID: {user.telegram_id})"
             
             # Add detailed forwarding information
             if message.forward_from:
@@ -463,7 +463,7 @@ async def photo_handler(
                 metadata += f"\nOriginal message time: {message.forward_date}"
         else:
             # Regular non-forwarded photo
-            metadata = f"Message info: photo from {user_display_name} (User ID: {user.telegram_id})"
+            metadata = f"Next Message info: photo from {user_display_name} (User ID: {user.telegram_id})"
         
         metadata += f", Message ID: {message.message_id}, Current time: {message.date}"
         metadata += f"\nPhoto info: dimensions={photo.width}x{photo.height}"

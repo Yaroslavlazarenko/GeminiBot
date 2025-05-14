@@ -203,7 +203,7 @@ async def sticker_handler(
         is_forwarded = bool(message.forward_from or message.forward_from_chat or message.forward_sender_name or message.forward_date)
 
         if is_forwarded:
-            metadata = f"Message info: FORWARDED sticker shared by {user_display_name} (User ID: {user_telegram_id})"
+            metadata = f"Next Sticker info: FORWARDED sticker shared by {user_display_name} (User ID: {user_telegram_id})"
             if message.forward_from:
                 forward_name = message.forward_from.full_name or message.forward_from.username or f"User {message.forward_from.id}"
                 is_bot = "(Bot)" if message.forward_from.is_bot else ""
@@ -212,15 +212,15 @@ async def sticker_handler(
                 metadata += f"\nOriginal sender: {message.forward_sender_name} (forwarding privacy enabled)"
             elif message.forward_from_chat:
                 chat_type = message.forward_from_chat.type.capitalize()
-                metadata += f"\nOriginal source: {chat_type} '{message.forward_from_chat.title}' (ID: {message.forward_from_chat.id})"
+                metadata += f"\nOriginal source: {chat_type} '{message.forward_from_chat.title}'"
                 if message.forward_signature:
                     metadata += f"\nPost author: {message.forward_signature}"
             if message.forward_date:
                 metadata += f"\nOriginal message time: {message.forward_date}"
         else:
-            metadata = f"Message info: sticker from {user_display_name} (User ID: {user_telegram_id})"
+            metadata = f"Next sticker info: sticker from {user_display_name} (User ID: {user_telegram_id})"
 
-        metadata += f", File ID: {sticker.file_id}, Set Name: {sticker.set_name or 'N/A'}, Emoji: {sticker.emoji or 'N/A'}, Message ID: {message.message_id}, Current time: {message.date}"
+        metadata += f", Set Name: {sticker.set_name or 'N/A'}, Emoji: {sticker.emoji or 'N/A'}, Message ID: {message.message_id}, Current time: {message.date}"
 
         # Download sticker file
         try:
@@ -255,14 +255,6 @@ async def sticker_handler(
             if existing_sticker:
                 logger.info(f"Found existing sticker with ID {existing_sticker.id} for telegram_sticker_id {sticker.file_id}")
                 db_sticker = existing_sticker
-                
-                # Check if it's a video sticker with a file path
-                if existing_sticker.file_path and os.path.exists(existing_sticker.file_path):
-                    logger.info(f"Using existing processed file at {existing_sticker.file_path}")
-                    metadata += f", Type: reused video sticker with audio"
-                else:
-                    # It's a static sticker or the file doesn't exist anymore
-                    metadata += f", Type: reused sticker"
             else:
                 # Process video sticker if needed BEFORE saving
                 is_video = sticker.is_video
