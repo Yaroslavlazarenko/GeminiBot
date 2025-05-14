@@ -294,6 +294,7 @@ async def sticker_handler(
                             FFMPEG_BIN,                                     # Use the detected FFmpeg binary
                             '-i', str(original_file_path),                  # Input 0 (video)
                             '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', # Input 1 (silent audio)
+                            '-vf', 'pad=width=ceil(iw/2)*2:height=ceil(ih/2)*2',  # Ensure even dimensions
                             '-c:v', 'libx264',                              # Video codec
                             '-pix_fmt', 'yuv420p',                          # Pixel format
                             '-c:a', 'aac',                                  # Audio codec
