@@ -52,7 +52,7 @@ async def toggle_global_callback(callback: CallbackQuery, user: User, user_dao: 
     new_value = not user.is_global_disabled
     
     # Обновляем настройки в базе данных
-    success = await user_dao.update_user_settings(user_id=user.id, is_global_disabled=new_value)
+    success = await user_dao.update_user_settings(user_id=user.id, is_global_disabled=new_value, auto_commit=False)
     
     if success:
         # Обновляем локальный объект пользователя
@@ -78,7 +78,7 @@ async def toggle_global_callback(callback: CallbackQuery, user: User, user_dao: 
 async def toggle_text_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
     """Handle text response toggle."""
     new_value = not user.responds_to_text
-    success = await user_dao.update_user_settings(user_id=user.id, responds_to_text=new_value)
+    success = await user_dao.update_user_settings(user_id=user.id, responds_to_text=new_value, auto_commit=False)
     
     if success:
         # Обновляем локальный объект пользователя
@@ -101,7 +101,7 @@ async def toggle_text_callback(callback: CallbackQuery, user: User, user_dao: Us
 async def toggle_voice_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
     """Handle voice processing toggle."""
     new_value = not user.responds_to_voice
-    success = await user_dao.update_user_settings(user_id=user.id, responds_to_voice=new_value)
+    success = await user_dao.update_user_settings(user_id=user.id, responds_to_voice=new_value, auto_commit=False)
     
     if success:
         # Обновляем локальный объект пользователя
@@ -124,7 +124,7 @@ async def toggle_voice_callback(callback: CallbackQuery, user: User, user_dao: U
 async def toggle_photo_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
     """Handle photo processing toggle."""
     new_value = not user.responds_to_photo
-    success = await user_dao.update_user_settings(user_id=user.id, responds_to_photo=new_value)
+    success = await user_dao.update_user_settings(user_id=user.id, responds_to_photo=new_value, auto_commit=False)
     
     if success:
         # Обновляем локальный объект пользователя
@@ -147,7 +147,7 @@ async def toggle_photo_callback(callback: CallbackQuery, user: User, user_dao: U
 async def toggle_video_note_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
     """Handle video note processing toggle."""
     new_value = not user.responds_to_video_note
-    success = await user_dao.update_user_settings(user_id=user.id, responds_to_video_note=new_value)
+    success = await user_dao.update_user_settings(user_id=user.id, responds_to_video_note=new_value, auto_commit=False)
     
     if success:
         # Обновляем локальный объект пользователя
@@ -170,7 +170,7 @@ async def toggle_video_note_callback(callback: CallbackQuery, user: User, user_d
 async def toggle_sticker_callback(callback: CallbackQuery, user: User, user_dao: UserDAO):
     """Handle sticker processing toggle."""
     new_value = not user.responds_to_sticker
-    success = await user_dao.update_user_settings(user_id=user.id, responds_to_sticker=new_value)
+    success = await user_dao.update_user_settings(user_id=user.id, responds_to_sticker=new_value, auto_commit=False)
     
     if success:
         # Обновляем локальный объект пользователя
@@ -197,7 +197,7 @@ async def toggle_mode_callback(callback: CallbackQuery, user: User, user_dao: Us
         return
         
     new_value = not user.transcribe_voice_only
-    success = await user_dao.update_user_settings(user_id=user.id, transcribe_voice_only=new_value)
+    success = await user_dao.update_user_settings(user_id=user.id, transcribe_voice_only=new_value, auto_commit=False)
     
     if success:
         # Обновляем локальный объект пользователя
@@ -224,7 +224,7 @@ async def toggle_transcribe_video_note_callback(callback: CallbackQuery, user: U
         return
         
     new_value = not user.transcribe_video_note
-    success = await user_dao.update_user_settings(user_id=user.id, transcribe_video_note=new_value)
+    success = await user_dao.update_user_settings(user_id=user.id, transcribe_video_note=new_value, auto_commit=False)
     
     if success:
         # Обновляем локальный объект пользователя
