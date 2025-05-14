@@ -40,8 +40,21 @@ if not FFMPEG_BIN:
 if not FFPROBE_BIN:
     FFPROBE_BIN = 'ffprobe' if IS_WINDOWS else '/usr/bin/ffprobe'
 
+# Check if FFmpeg is actually available and log detailed information
+try:
+    import subprocess
+    ffmpeg_version_cmd = [FFMPEG_BIN, '-version']
+    ffmpeg_version_output = subprocess.check_output(ffmpeg_version_cmd, stderr=subprocess.STDOUT, text=True)
+    logger.info(f"FFmpeg version info: {ffmpeg_version_output.splitlines()[0]}")
+    logger.info(f"FFmpeg is available at: {FFMPEG_BIN}")
+except Exception as e:
+    logger.error(f"Error checking FFmpeg availability: {e}")
+    logger.warning("FFmpeg might not be properly installed or accessible")
+
 logger.info(f"Using FFmpeg binary: {FFMPEG_BIN}")
 logger.info(f"Using FFprobe binary: {FFPROBE_BIN}")
+logger.info(f"Platform: {platform.system()} {platform.release()}")
+logger.info(f"Python version: {platform.python_version()}")
 
 # Define the directory for storing video stickers
 # Use absolute path based on the module location for better cross-platform compatibility
@@ -289,21 +302,72 @@ async def sticker_handler(
                     # Process with FFmpeg to add silent audio track
                     logger.debug(f"Adding audio track to video sticker: {original_file_path} -> {processed_file_path}")
                     try:
+                        # First try to get video dimensions using ffprobe
+                        video_width = None
+                        video_height = None
+                        try:
+                            probe_cmd = [FFPROBE_BIN, '-v', 'error', '-select_streams', 'v:0',
+                                        '-show_entries', 'stream=width,height', '-of', 'csv=s=x:p=0',
+                                        str(original_file_path)]
+                            probe_process = await asyncio.create_subprocess_exec(
+                                *probe_cmd,
+                                stdout=asyncio.subprocess.PIPE,
+                                stderr=asyncio.subprocess.PIPE
+                            )
+                            probe_stdout, probe_stderr = await probe_process.communicate()
+                            if probe_process.returncode == 0:
+                                dimensions = probe_stdout.decode().strip()
+                                logger.info(f"Video dimensions: {dimensions}")
+                                if 'x' in dimensions:
+                                    width_str, height_str = dimensions.split('x')
+                                    video_width = int(width_str)
+                                    video_height = int(height_str)
+                        except Exception as probe_e:
+                            logger.error(f"Error getting video dimensions: {probe_e}")
+                        
+                        # Check if we need to adjust dimensions
+                        needs_dimension_fix = False
+                        if video_width is not None and video_height is not None:
+                            if video_width % 2 != 0 or video_height % 2 != 0:
+                                needs_dimension_fix = True
+                                logger.info(f"Video has odd dimensions ({video_width}x{video_height}), will adjust")
+                        
                         # FFmpeg command to add silent audio track
-                        ffmpeg_command = [
-                            FFMPEG_BIN,                                     # Use the detected FFmpeg binary
-                            '-i', str(original_file_path),                  # Input 0 (video)
-                            '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', # Input 1 (silent audio)
-                            '-vf', 'pad=width=ceil(iw/2)*2:height=ceil(ih/2)*2',  # Ensure even dimensions
-                            '-c:v', 'libx264',                              # Video codec
-                            '-pix_fmt', 'yuv420p',                          # Pixel format
-                            '-c:a', 'aac',                                  # Audio codec
-                            '-shortest',                                    # Match shortest stream
-                            '-map', '0:v:0',                                # Map video from input 0
-                            '-map', '1:a:0',                                # Map audio from input 1
-                            '-y',                                           # Overwrite output
-                            str(processed_file_path)                        # Output file
-                        ]
+                        if IS_WINDOWS or needs_dimension_fix:
+                            # Windows or videos with odd dimensions - use pad filter
+                            ffmpeg_command = [
+                                FFMPEG_BIN,                                     # Use the detected FFmpeg binary
+                                '-i', str(original_file_path),                  # Input 0 (video)
+                                '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', # Input 1 (silent audio)
+                                '-vf', 'pad=width=ceil(iw/2)*2:height=ceil(ih/2)*2',  # Ensure even dimensions
+                                '-c:v', 'libx264',                              # Video codec
+                                '-pix_fmt', 'yuv420p',                          # Pixel format
+                                '-c:a', 'aac',                                  # Audio codec
+                                '-shortest',                                    # Match shortest stream
+                                '-map', '0:v:0',                                # Map video from input 0
+                                '-map', '1:a:0',                                # Map audio from input 1
+                                '-y',                                           # Overwrite output
+                                str(processed_file_path)                        # Output file
+                            ]
+                        else:
+                            # Linux - simpler command without pad filter for better compatibility
+                            ffmpeg_command = [
+                                FFMPEG_BIN,                                     # Use the detected FFmpeg binary
+                                '-i', str(original_file_path),                  # Input 0 (video)
+                                '-f', 'lavfi', '-i', 'anullsrc=r=44100:cl=stereo', # Input 1 (silent audio)
+                                '-c:v', 'libx264',                              # Video codec
+                                '-preset', 'fast',                              # Faster encoding
+                                '-pix_fmt', 'yuv420p',                          # Pixel format
+                                '-c:a', 'aac',                                  # Audio codec
+                                '-strict', 'experimental',                       # Allow experimental codecs
+                                '-shortest',                                    # Match shortest stream
+                                '-y',                                           # Overwrite output
+                                str(processed_file_path)                        # Output file
+                            ]
+                        
+                        # Log the full FFmpeg command for debugging
+                        ffmpeg_cmd_str = ' '.join(ffmpeg_command)
+                        logger.info(f"Running FFmpeg command: {ffmpeg_cmd_str}")
                         
                         # Run FFmpeg command
                         process = await asyncio.create_subprocess_exec(
@@ -314,7 +378,26 @@ async def sticker_handler(
                         stdout, stderr = await process.communicate()
                         
                         if process.returncode != 0:
-                            logger.error(f"FFmpeg error: {stderr.decode()}")
+                            stderr_text = stderr.decode()
+                            logger.error(f"FFmpeg error (return code {process.returncode}): {stderr_text}")
+                            # Log more details about the input file
+                            try:
+                                probe_cmd = [FFPROBE_BIN, '-v', 'error', '-show_entries', 
+                                            'stream=width,height,codec_name,pix_fmt', '-of', 'json', 
+                                            str(original_file_path)]
+                                probe_process = await asyncio.create_subprocess_exec(
+                                    *probe_cmd,
+                                    stdout=asyncio.subprocess.PIPE,
+                                    stderr=asyncio.subprocess.PIPE
+                                )
+                                probe_stdout, probe_stderr = await probe_process.communicate()
+                                if probe_process.returncode == 0:
+                                    logger.info(f"Input file details: {probe_stdout.decode()}")
+                                else:
+                                    logger.error(f"FFprobe error: {probe_stderr.decode()}")
+                            except Exception as probe_e:
+                                logger.error(f"Error running FFprobe: {probe_e}")
+                                
                             # If FFmpeg fails, fall back to original file
                             processed_file_path = original_file_path
                             processed_extension = original_extension
