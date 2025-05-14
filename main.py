@@ -25,7 +25,13 @@ async def shutdown():
     try:
         if dp:
             logger.info("Stopping dispatcher...")
-            await dp.stop_polling()
+            try:
+                await dp.stop_polling()
+            except RuntimeError as e:
+                if "Polling is not started" in str(e):
+                    logger.info("Polling was not started, skipping stop_polling")
+                else:
+                    raise
         
         if bot:
             logger.info("Closing bot session...")

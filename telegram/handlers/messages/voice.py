@@ -105,12 +105,16 @@ async def actual_voice_processing_logic(
                 # Optionally, update the saved message in the DB with the transcription
                 # so that future history fetches include it.
                 if transcription_text:
-                     await message_dao.update_message_text(
-                         telegram_message_id=message.message_id,
-                         chat_id=chat_id, # Need chat_id or group_id/user_id to uniquely identify
-                         text=transcription_text
-                     )
-                     logger.debug(f"Updated DB message {message.message_id} with transcription.")
+                     # First get the message by telegram_id to get its internal ID
+                     message_record = await message_dao.get_message_by_telegram_id(telegram_message_id=message.message_id)
+                     if message_record:
+                         await message_dao.update_message_content(
+                             message_id=message_record.id,
+                             text=transcription_text
+                         )
+                         logger.debug(f"Updated DB message {message.message_id} with transcription.")
+                     else:
+                         logger.warning(f"Could not find message with telegram_id {message.message_id} to update with transcription.")
 
             except Exception as e:
                 logger.error(f"Error transcribing voice message {message.message_id}: {e}", exc_info=True)
