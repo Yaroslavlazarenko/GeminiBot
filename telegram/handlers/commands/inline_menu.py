@@ -53,7 +53,7 @@ async def toggle_global_callback(callback: CallbackQuery, user: User, user_dao: 
     
     if success:
         # Получаем свежую копию пользователя из базы данных
-        updated_user = await user_dao.get_user_by_id(user.id)
+        updated_user = await user_dao.get_user_by_internal_id(user.id)
         if updated_user:
             status = "увімкнено" if not updated_user.is_global_disabled else "вимкнено"
             await callback.answer(f"✅ Глобальні відповіді {status}")
@@ -78,7 +78,7 @@ async def toggle_text_callback(callback: CallbackQuery, user: User, user_dao: Us
     
     if success:
         # Получаем свежую копию пользователя из базы данных
-        updated_user = await user_dao.get_user_by_id(user.id)
+        updated_user = await user_dao.get_user_by_internal_id(user.id)
         if updated_user:
             status = "увімкнено" if updated_user.responds_to_text else "вимкнено"
             await callback.answer(f"✅ Відповіді на текст {status}")
@@ -101,7 +101,7 @@ async def toggle_voice_callback(callback: CallbackQuery, user: User, user_dao: U
     
     if success:
         # Получаем свежую копию пользователя из базы данных
-        updated_user = await user_dao.get_user_by_id(user.id)
+        updated_user = await user_dao.get_user_by_internal_id(user.id)
         if updated_user:
             status = "увімкнено" if updated_user.responds_to_voice else "вимкнено"
             await callback.answer(f"✅ Відповіді на голосові {status}")
@@ -124,7 +124,7 @@ async def toggle_photo_callback(callback: CallbackQuery, user: User, user_dao: U
     
     if success:
         # Получаем свежую копию пользователя из базы данных
-        updated_user = await user_dao.get_user_by_id(user.id)
+        updated_user = await user_dao.get_user_by_internal_id(user.id)
         if updated_user:
             status = "увімкнено" if updated_user.responds_to_photo else "вимкнено"
             await callback.answer(f"✅ Відповіді на фото {status}")
@@ -147,7 +147,7 @@ async def toggle_video_note_callback(callback: CallbackQuery, user: User, user_d
     
     if success:
         # Получаем свежую копию пользователя из базы данных
-        updated_user = await user_dao.get_user_by_id(user.id)
+        updated_user = await user_dao.get_user_by_internal_id(user.id)
         if updated_user:
             status = "увімкнено" if updated_user.responds_to_video_note else "вимкнено"
             await callback.answer(f"✅ Відповіді на відео-повідомлення {status}")
@@ -170,7 +170,7 @@ async def toggle_sticker_callback(callback: CallbackQuery, user: User, user_dao:
     
     if success:
         # Получаем свежую копию пользователя из базы данных
-        updated_user = await user_dao.get_user_by_id(user.id)
+        updated_user = await user_dao.get_user_by_internal_id(user.id)
         if updated_user:
             status = "увімкнено" if updated_user.responds_to_sticker else "вимкнено"
             await callback.answer(f"✅ Відповіді на стікери {status}")
@@ -197,7 +197,7 @@ async def toggle_mode_callback(callback: CallbackQuery, user: User, user_dao: Us
     
     if success:
         # Получаем свежую копию пользователя из базы данных вместо модификации существующего объекта
-        updated_user = await user_dao.get_user_by_id(user.id)
+        updated_user = await user_dao.get_user_by_internal_id(user.id)
         if updated_user:
             mode = "транскрипція" if updated_user.transcribe_voice_only else "відповідь"
             await callback.answer(f"✅ Режим голосу: {mode}")
@@ -224,7 +224,7 @@ async def toggle_transcribe_video_note_callback(callback: CallbackQuery, user: U
     
     if success:
         # Получаем свежую копию пользователя из базы данных
-        updated_user = await user_dao.get_user_by_id(user.id)
+        updated_user = await user_dao.get_user_by_internal_id(user.id)
         if updated_user:
             mode = "транскрипція" if updated_user.transcribe_video_note else "відповідь"
             await callback.answer(f"✅ Режим відео: {mode}")
