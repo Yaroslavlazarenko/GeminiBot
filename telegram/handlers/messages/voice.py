@@ -85,6 +85,23 @@ async def actual_voice_processing_logic(
                 return
 
             voice_data = downloaded_file.read() # Get raw bytes
+            
+            # Сохраняем голосовые данные в базу данных
+            try:
+                # Создаем новое сообщение с теми же параметрами, но с голосовыми данными
+                await message_dao.add_message(
+                    user_id=user.id,
+                    role=MessageRole.USER,
+                    text=None,
+                    voice_data=voice_data,  # Сохраняем голосовые данные
+                    group_id=group_db_id,
+                    telegram_message_id=message.message_id,
+                    message_metadata=f"Voice data for message {message.message_id}, size: {len(voice_data)} bytes"
+                )
+                logger.debug(f"Saved voice data ({len(voice_data)} bytes) for message {message.message_id} to database")
+            except Exception as save_e:
+                logger.error(f"Failed to save voice data for message {message.message_id}: {save_e}", exc_info=True)
+                # Продолжаем обработку даже если не удалось сохранить голосовые данные
 
         except Exception as e:
             logger.error(f"Error downloading voice message {message.message_id} during batched processing: {e}", exc_info=True)

@@ -437,7 +437,7 @@ class MessageHistoryDAO:
         # Метаданные добавляем как первую текстовую часть
         if message_metadata_str:
             try:
-                parts.append(types.Part.from_text(text=f"--- Message Info ---\n{message_metadata_str}\n--------------------"))
+                parts.append(types.Part.from_text(text=f"{message_metadata_str}"))
                 logger.debug(f"Added metadata text part to message {message.id}")
             except Exception as e:
                 logger.error(f"Error creating metadata text part for message {message.id}: {e}")
