@@ -105,16 +105,22 @@ async def actual_voice_processing_logic(
                 # Optionally, update the saved message in the DB with the transcription
                 # so that future history fetches include it.
                 if transcription_text:
-                     # First get the message by telegram_id to get its internal ID
-                     message_record = await message_dao.get_message_by_telegram_id(telegram_message_id=message.message_id)
-                     if message_record:
-                         await message_dao.update_message_content(
-                             message_id=message_record.id,
-                             text=transcription_text
+                     # Instead of trying to update an existing message, we'll add a new one with the transcription
+                     # This is a workaround since MessageHistoryDAO doesn't have update methods
+                     try:
+                         # Add a new message with the transcription text
+                         await message_dao.add_message(
+                             user_id=user.id,
+                             role=MessageRole.USER,
+                             text=transcription_text,
+                             group_id=group_db_id,
+                             telegram_message_id=message.message_id,
+                             message_metadata=f"Transcription of voice message {message.message_id}"
                          )
-                         logger.debug(f"Updated DB message {message.message_id} with transcription.")
-                     else:
-                         logger.warning(f"Could not find message with telegram_id {message.message_id} to update with transcription.")
+                         logger.debug(f"Added transcription for voice message {message.message_id}")
+                     except Exception as add_e:
+                         logger.warning(f"Could not add transcription for message {message.message_id}: {add_e}")
+                         # Continue processing even if we couldn't add the transcription
 
             except Exception as e:
                 logger.error(f"Error transcribing voice message {message.message_id}: {e}", exc_info=True)
