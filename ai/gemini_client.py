@@ -166,26 +166,71 @@ async def get_gemini_response(
         try:
             # Get chat photo
             chat = message.chat
-            if chat.photo:
-                chat_photo_file = await message.bot.get_file(chat.photo.big_file_id)
-                chat_photo_bytes = await message.bot.download_file(chat_photo_file.file_path)
-                
-                if chat_photo_bytes:
-                    # Create a new content item with the group's photo
-                    group_photo_content = types.Content(
-                        parts=[
-                            types.Part(text=f"GROUP PHOTO: This is the avatar of the group '{chat.title}'. Use this information when relevant to contextualize responses."),
-                            types.Part(inline_data=types.Blob(
-                                mime_type="image/jpeg",
-                                data=chat_photo_bytes.read()
-                            ))
-                        ],
-                        role="user"
-                    )
+            if hasattr(chat, 'photo') and chat.photo:
+                # В aiogram 3.x структура chat.photo отличается от aiogram 2.x
+                # Попробуем получить фото разными способами
+                try:
+                    # Сначала попробуем как в aiogram 3.x
+                    if hasattr(chat.photo, 'big_file_id'):
+                        file_id = chat.photo.big_file_id
+                    else:
+                        # Попробуем как в aiogram 2.x
+                        file_id = chat.photo.big_file_id if hasattr(chat.photo, 'big_file_id') else chat.photo.small_file_id
                     
-                    # Add to the photos list
-                    photos_added.append(group_photo_content)
-                    logger.debug(f"Added group photo to context for group {chat.id}")
+                    logger.debug(f"Attempting to get group photo with file_id: {file_id}")
+                    chat_photo_file = await message.bot.get_file(file_id)
+                    chat_photo_bytes = await message.bot.download_file(chat_photo_file.file_path)
+                    
+                    if chat_photo_bytes:
+                        # Create a new content item with the group's photo
+                        group_photo_content = types.Content(
+                            parts=[
+                                types.Part(text=f"GROUP PHOTO: This is the avatar of the group '{chat.title}'. Use this information when relevant to contextualize responses."),
+                                types.Part(inline_data=types.Blob(
+                                    mime_type="image/jpeg",
+                                    data=chat_photo_bytes.read()
+                                ))
+                            ],
+                            role="user"
+                        )
+                        
+                        # Add to the photos list
+                        photos_added.append(group_photo_content)
+                        logger.debug(f"Added group photo to context for group {chat.id}")
+                except Exception as inner_e:
+                    # Попробуем альтернативный метод - получить фото группы через getChatPhoto
+                    try:
+                        chat_photos = await message.bot.get_chat(chat.id)
+                        if hasattr(chat_photos, 'photo') and chat_photos.photo:
+                            # Получаем самую большую версию фото
+                            if hasattr(chat_photos.photo, 'big_file_id'):
+                                file_id = chat_photos.photo.big_file_id
+                            else:
+                                file_id = chat_photos.photo.file_id
+                                
+                            logger.debug(f"Attempting to get group photo with alternative method, file_id: {file_id}")
+                            chat_photo_file = await message.bot.get_file(file_id)
+                            chat_photo_bytes = await message.bot.download_file(chat_photo_file.file_path)
+                            
+                            if chat_photo_bytes:
+                                # Create a new content item with the group's photo
+                                group_photo_content = types.Content(
+                                    parts=[
+                                        types.Part(text=f"GROUP PHOTO: This is the avatar of the group '{chat.title}'. Use this information when relevant to contextualize responses."),
+                                        types.Part(inline_data=types.Blob(
+                                            mime_type="image/jpeg",
+                                            data=chat_photo_bytes.read()
+                                        ))
+                                    ],
+                                    role="user"
+                                )
+                                
+                                # Add to the photos list
+                                photos_added.append(group_photo_content)
+                                logger.debug(f"Added group photo to context for group {chat.id} using alternative method")
+                    except Exception as alt_e:
+                        logger.warning(f"Failed to add group photo using alternative method: {alt_e}", exc_info=True)
+                        logger.warning(f"Original error: {inner_e}", exc_info=True)
         except Exception as e:
             logger.warning(f"Failed to add group photo to context: {e}", exc_info=True)
     
