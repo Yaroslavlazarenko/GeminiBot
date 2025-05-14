@@ -95,8 +95,7 @@ async def actual_voice_processing_logic(
                     text=None,
                     voice_data=voice_data,  # Сохраняем голосовые данные
                     group_id=group_db_id,
-                    telegram_message_id=message.message_id,
-                    message_metadata=f"Voice data for message {message.message_id}, size: {len(voice_data)} bytes"
+                    telegram_message_id=message.message_id
                 )
                 logger.debug(f"Saved voice data ({len(voice_data)} bytes) for message {message.message_id} to database")
             except Exception as save_e:
@@ -261,11 +260,11 @@ async def voice_handler(
         is_forwarded = bool(message.forward_from or message.forward_from_chat or message.forward_sender_name or message.forward_date)
 
         if is_forwarded:
-            metadata = f"Message info: FORWARDED voice message shared by {user_display_name} (User ID: {user.telegram_id})"
+            metadata = f"NEXT MESSAGE info: FORWARDED voice message shared by {user_display_name} (User ID: {user.telegram_id})"
             if message.forward_from:
                 forward_name = message.forward_from.full_name or message.forward_from.username or f"User {message.forward_from.id}"
                 is_bot = "(Bot)" if message.forward_from.is_bot else ""
-                metadata += f"\nOriginal sender: {forward_name} {is_bot} (ID: {message.forward_from.id})"
+                metadata += f"\nOriginal sender: {forward_name} {is_bot}"
             elif message.forward_sender_name:
                  metadata += f"\nOriginal sender: {message.forward_sender_name} (forwarding privacy enabled)"
             elif message.forward_from_chat:
@@ -276,9 +275,9 @@ async def voice_handler(
             if message.forward_date:
                  metadata += f"\nOriginal message time: {message.forward_date}"
         else:
-            metadata = f"Message info: voice message from {user_display_name} (User ID: {user.telegram_id})"
+            metadata = f"Next message info: voice message from {user_display_name} (User ID: {user.telegram_id})"
 
-        metadata += f", Duration: {voice.duration}s, File ID: {voice.file_id}, Message ID: {message.message_id}, Current time: {message.date}"
+        metadata += f", Duration: {voice.duration}s, Message ID: {message.message_id}, Current time: {message.date}"
         # Note: transcription_text is added to metadata *after* transcription in the processing logic.
 
         # Save the message metadata and basic info. Voice data will be fetched *later* by the batcher.
@@ -287,11 +286,9 @@ async def voice_handler(
         await message_dao.add_message(
             user_id=user.id, # Use internal DB user ID from middleware
             role=MessageRole.USER,
-            text=None, # Transcription text is not available yet
+            text=metadata,
             group_id=group_db_id,
-            telegram_message_id=message.message_id,
-            message_metadata=metadata # Initial metadata with file_id and duration
-            # Do NOT save voice_data here - it's large and processed later
+            telegram_message_id=message.message_id
         )
         logger.debug(f"User voice message {message.message_id} saved to DB (user {user_telegram_id}, group_id {group_db_id}) with file_id.")
 
