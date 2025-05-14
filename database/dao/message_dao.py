@@ -455,8 +455,28 @@ class MessageHistoryDAO:
         # Добавляем стикер (если есть и загружен)
         if message.sticker:
             logger.debug(f"Processing sticker for message {message.id}, sticker_id={message.sticker_id}")
-            # Проверяем наличие данных изображения или видео в стикере
-            if message.sticker.image_data:
+            
+            # Проверяем, является ли стикер TGS (анимированным)
+            # Для TGS стикеров не пытаемся передавать данные изображения
+            is_tgs_sticker = False
+            
+            # Проверяем метаданные для определения TGS стикера
+            if message.message_metadata and ("animated TGS sticker" in message.message_metadata or "special format" in message.message_metadata):
+                is_tgs_sticker = True
+                logger.debug(f"Detected TGS or special format sticker for message {message.id} based on metadata")
+            
+            # Если это TGS стикер, добавляем только текстовое описание
+            if is_tgs_sticker:
+                try:
+                    # Добавляем текстовое описание стикера с эмодзи
+                    emoji = message.sticker.emoji if hasattr(message.sticker, 'emoji') and message.sticker.emoji else ""
+                    sticker_text = f"[TGS Animated Sticker: {emoji}]" if emoji else "[TGS Animated Sticker]"
+                    parts.append(types.Part.from_text(text=sticker_text))
+                    logger.debug(f"Added TGS sticker as text description for message {message.id}")
+                except Exception as e:
+                    logger.error(f"Error adding TGS sticker text description for message {message.id}: {e}", exc_info=True)
+            # Если это обычный стикер, проверяем наличие данных изображения
+            elif message.sticker.image_data:
                 try:
                     # Проверяем размер данных стикера
                     data_size = len(message.sticker.image_data)
