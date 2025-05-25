@@ -50,10 +50,14 @@ async def inline_transcribe_handler(
     try:
         # Get the message being replied to
         try:
-            message = await inline_query.bot.get_message(
+            message = await inline_query.bot.get_chat_history(
                 chat_id=inline_query.chat.id,
-                message_id=inline_query.message_id
+                limit=1,
+                offset_id=inline_query.message_id
             )
+            if not message or not message[0]:
+                raise Exception("Message not found")
+            message = message[0]
         except Exception as e:
             logger.error(f"Error getting message: {e}")
             error_result = InlineQueryResultArticle(
