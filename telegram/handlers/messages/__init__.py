@@ -4,6 +4,7 @@ from .photo import router as photo_router
 from .video_note import router as video_note_router
 from .document import router as document_router
 from .sticker import router as sticker_router
+from .transcribe import router as transcribe_router
 
 message_routers = [
     text_router,
@@ -11,5 +12,6 @@ message_routers = [
     video_note_router,
     photo_router,
     document_router,
-    sticker_router
+    sticker_router,
+    transcribe_router,
 ]
