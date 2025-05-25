@@ -48,27 +48,11 @@ async def inline_transcribe_handler(
         return
 
     try:
-        # Try to get the message being replied to
-        try:
-            message_id = int(inline_query.query)
-        except ValueError:
-            # Show error if query is not a valid message ID
-            error_result = InlineQueryResultArticle(
-                id="1",
-                title="❌ Помилка",
-                description="Неправильний формат запиту",
-                input_message_content=InputTextMessageContent(
-                    message_text="❌ Будь ласка, відповідайте на голосове повідомлення та виберіть цей бот."
-                )
-            )
-            await inline_query.answer([error_result], cache_time=1)
-            return
-
         # Get the message being replied to
         try:
             message = await inline_query.bot.get_message(
                 chat_id=inline_query.chat.id,
-                message_id=message_id
+                message_id=inline_query.message_id
             )
         except Exception as e:
             logger.error(f"Error getting message: {e}")
