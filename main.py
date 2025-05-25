@@ -89,6 +89,7 @@ async def main():
         session_factory = db_manager.get_session_factory()
         dp.message.middleware(DAOMiddleware(session_factory))
         dp.callback_query.middleware(DAOMiddleware(session_factory))
+        dp.inline_query.middleware(DAOMiddleware(session_factory))
         
         # Include all routers
         for router in all_routers:
