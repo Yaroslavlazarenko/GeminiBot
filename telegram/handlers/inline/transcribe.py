@@ -53,13 +53,13 @@ async def inline_transcribe_handler(
         try:
             # Get the chat and message information
             chat = await inline_query.bot(GetChat(
-                chat_id=inline_query.chat.id
+                chat_id=inline_query.from_user.id
             ))
             
             # Get the message from the chat history
             message = await inline_query.bot.get_messages(
-                chat_id=inline_query.chat.id,
-                message_ids=[inline_query.message_id]
+                chat_id=inline_query.from_user.id,
+                message_ids=[int(inline_query.query)]
             )
             
             if not message or not message[0]:
