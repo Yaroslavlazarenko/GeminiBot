@@ -3,6 +3,7 @@ from typing import Any
 
 from aiogram import F, Router, types
 from aiogram.types import InlineQuery, InlineQueryResultArticle, InputTextMessageContent
+from aiogram.methods import GetChat
 from ai.gemini_client import get_audio_response
 from database.models import User
 from database.dao import UserDAO
@@ -50,14 +51,21 @@ async def inline_transcribe_handler(
     try:
         # Get the message being replied to
         try:
-            message = await inline_query.bot.get_chat_history(
+            # Get the chat and message information
+            chat = await inline_query.bot(GetChat(
+                chat_id=inline_query.chat.id
+            ))
+            
+            # Get the message from the chat history
+            message = await inline_query.bot.get_messages(
                 chat_id=inline_query.chat.id,
-                limit=1,
-                offset_id=inline_query.message_id
+                message_ids=[inline_query.message_id]
             )
+            
             if not message or not message[0]:
                 raise Exception("Message not found")
             message = message[0]
+            
         except Exception as e:
             logger.error(f"Error getting message: {e}")
             error_result = InlineQueryResultArticle(
