@@ -33,13 +33,71 @@ async def inline_transcribe_handler(
         await inline_query.answer([error_result], cache_time=1)
         return
 
-    # Check if the inline query is a reply to a voice message
-    if not inline_query.reply_to_message or not inline_query.reply_to_message.voice:
+    # Check if query contains a message ID (for reply)
+    if not inline_query.query:
+        # Show usage instructions
+        help_result = InlineQueryResultArticle(
+            id="1",
+            title="ℹ️ Як використовувати",
+            description="Відповідайте на голосове повідомлення та виберіть цей бот",
+            input_message_content=InputTextMessageContent(
+                message_text="ℹ️ Відповідайте на голосове повідомлення та виберіть цей бот для отримання транскрипції."
+            )
+        )
+        await inline_query.answer([help_result], cache_time=1)
         return
 
     try:
+        # Try to get the message being replied to
+        try:
+            message_id = int(inline_query.query)
+        except ValueError:
+            # Show error if query is not a valid message ID
+            error_result = InlineQueryResultArticle(
+                id="1",
+                title="❌ Помилка",
+                description="Неправильний формат запиту",
+                input_message_content=InputTextMessageContent(
+                    message_text="❌ Будь ласка, відповідайте на голосове повідомлення та виберіть цей бот."
+                )
+            )
+            await inline_query.answer([error_result], cache_time=1)
+            return
+
+        # Get the message being replied to
+        try:
+            message = await inline_query.bot.get_message(
+                chat_id=inline_query.chat.id,
+                message_id=message_id
+            )
+        except Exception as e:
+            logger.error(f"Error getting message: {e}")
+            error_result = InlineQueryResultArticle(
+                id="1",
+                title="❌ Помилка",
+                description="Не вдалося знайти повідомлення",
+                input_message_content=InputTextMessageContent(
+                    message_text="❌ Не вдалося знайти повідомлення для транскрипції."
+                )
+            )
+            await inline_query.answer([error_result], cache_time=1)
+            return
+
+        # Check if the message contains a voice
+        if not message.voice:
+            error_result = InlineQueryResultArticle(
+                id="1",
+                title="❌ Помилка",
+                description="Повідомлення не містить голосового",
+                input_message_content=InputTextMessageContent(
+                    message_text="❌ Будь ласка, відповідайте на голосове повідомлення."
+                )
+            )
+            await inline_query.answer([error_result], cache_time=1)
+            return
+
         # Download the voice file
-        file = await inline_query.bot.get_file(inline_query.reply_to_message.voice.file_id)
+        file = await inline_query.bot.get_file(message.voice.file_id)
         if not file.file_path:
             return
 
@@ -66,7 +124,7 @@ async def inline_transcribe_handler(
             message_history=message_history,
             user=user,
             response=False,  # False means transcribe only
-            message=inline_query.reply_to_message
+            message=message
         )
 
         if result and result.get("type") != "error":
