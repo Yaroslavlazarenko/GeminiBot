@@ -16,7 +16,10 @@ class GatekeeperDecision(BaseModel):
 class GatekeeperService:
     def __init__(self, config: Config):
         self.config = config
-        self.client = genai.Client(api_key=config.gemini_api_key)
+        
+        http_opts = {"base_url": config.gemini_base_url} if config.gemini_base_url else None
+        self.client = genai.Client(api_key=config.gemini_api_key, http_options=http_opts)
+        
         self.system_instruction = (
             "You are the Gatekeeper for a Telegram bot persona named Mia. "
             "Your job is to read the latest message and the chat history, and decide if Mia should respond.\n\n"

@@ -13,7 +13,10 @@ logger = logging.getLogger(__name__)
 class AIService:
     def __init__(self, config: Config):
         self.config = config
-        self.client = genai.Client(api_key=config.gemini_api_key)
+        
+        http_opts = {"base_url": config.gemini_base_url} if config.gemini_base_url else None
+        self.client = genai.Client(api_key=config.gemini_api_key, http_options=http_opts)
+        
         self.system_instruction = self._load_system_instructions()
         self.mcp_manager = MCPConnectionManager(config.mcp_servers_config)
         
