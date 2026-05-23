@@ -3,10 +3,13 @@ from aiogram import Router, F
 from aiogram.types import Message
 from database.manager import ChatContext
 from services.ai_service import get_ai_service
+from services.gatekeeper_service import get_gatekeeper
+from core.enums import GatekeeperAction, ToolName
 
 logger = logging.getLogger(__name__)
 router = Router()
 ai_service = get_ai_service()
+gatekeeper = get_gatekeeper()
 
 @router.message(F.text & ~F.text.startswith("/"))
 async def handle_text_message(message: Message, chat_context: ChatContext):
@@ -15,25 +18,29 @@ async def handle_text_message(message: Message, chat_context: ChatContext):
         return
 
     text = message.text
-    
-    # Show typing action
+
+    # 1. Gatekeeper determines if a response is needed
+    action = await gatekeeper.decide(text, chat_context)
+
+    if action == GatekeeperAction.IGNORE:
+        return
+        
+    if action == GatekeeperAction.DISABLE_RESPONSES:
+        await chat_context.update_settings({"is_global_disabled": True})
+        logger.info(f"Responses disabled for chat {chat_context.id}")
+        return
+
+    # 2. Proceed with Persona response
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
     # Generate Response
     response_text, tool_calls = await ai_service.generate_response(text, chat_context)
 
-    # Handle native Tool Calls
-    should_reply = True
+    # Handle native Tool Calls via Enums
     for call in tool_calls:
         logger.info(f"LLM called tool: {call.name} with args {call.args}")
-        if call.name == "disable_responses":
-            await chat_context.update_settings({"is_global_disabled": True})
-            should_reply = False
             
-        elif call.name == "do_not_respond":
-            should_reply = False
-            
-        elif call.name == "add_reaction":
+        if call.name == ToolName.ADD_REACTION.value:
             emoji = call.args.get("emoji")
             message_ids = call.args.get("message_ids", [message.message_id])
             if not message_ids:
@@ -49,16 +56,14 @@ async def handle_text_message(message: Message, chat_context: ChatContext):
                 except Exception as e:
                     logger.error(f"Failed to add reaction {emoji} to {m_id}: {e}")
                     
-        elif call.name == "reply_to_message":
-            # This is a bit complex in telegram without actually sending text,
-            # but we can set the reply_to_message_id for the upcoming message.
+        elif call.name == ToolName.REPLY_TO_MESSAGE.value:
             message.reply_to_message_id = call.args.get("message_id")
 
     # Save User Message to DB via the Context abstraction
     await chat_context.add_message("user", text, message.message_id)
 
-    # Send text response if the model provided one and didn't disable responses
-    if should_reply and response_text:
+    # Send text response if the model provided one
+    if response_text:
         bot_message = await message.reply(
             response_text, 
             reply_to_message_id=getattr(message, 'reply_to_message_id', None)
