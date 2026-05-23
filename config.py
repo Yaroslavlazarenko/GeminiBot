@@ -7,7 +7,6 @@ class Config(BaseSettings):
     gemini_api_key: str
     gemini_api_model: str
     gemini_gatekeeper_model: str = "gemini-2.5-flash-8b"
-    gemini_transcription_model: str = "gemini-2.5-flash"
 
     mongo_uri: str = "mongodb://localhost:27017"
     mongo_db_name: str = "gemini_bot"

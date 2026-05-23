@@ -10,7 +10,6 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - GEMINI_API_MODEL=${GEMINI_API_MODEL:-gemini-2.5-flash}
       - GEMINI_GATEKEEPER_MODEL=${GEMINI_GATEKEEPER_MODEL:-gemini-2.5-flash-8b}
-      - GEMINI_TRANSCRIPTION_MODEL=${GEMINI_TRANSCRIPTION_MODEL:-gemini-2.5-flash}
     depends_on:
       - mongodb
     restart: unless-stopped

@@ -97,8 +97,6 @@ class DatabaseManager:
                     "responds_to_photo": True,
                     "responds_to_video_note": True,
                     "responds_to_sticker": True,
-                    "transcribe_voice_only": False,
-                    "transcribe_video_note": False,
                 },
                 "history": []
             }
@@ -145,8 +143,6 @@ class DatabaseManager:
                     "responds_to_photo": True,
                     "responds_to_video_note": True,
                     "responds_to_sticker": True,
-                    "transcribe_voice_only": False,
-                    "transcribe_video_note": False,
                 },
                 "history": []
             }
