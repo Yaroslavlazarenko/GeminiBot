@@ -31,6 +31,14 @@ class ChatContext:
             await self._db.append_user_history(self.id, msg)
         self.history.append(msg)
 
+    async def update_settings(self, settings: Dict[str, Any]):
+        """Update settings for the current context."""
+        if self.is_group:
+            await self._db.update_group_settings(self.id, settings)
+        else:
+            await self._db.update_user_settings(self.id, settings)
+        self.settings.update(settings)
+
     async def clear_history(self):
         """Clear the history."""
         if self.is_group:
