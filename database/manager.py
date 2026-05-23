@@ -1,121 +1,143 @@
-# services/database/manager.py
-
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-import asyncpg
 import logging
-
-from .models import Base
+from motor.motor_asyncio import AsyncIOMotorClient
+from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
 class DatabaseManager:
-    def __init__(self, user: str, password: str, host: str, db_name: str) -> None:
-        self.user = user
-        self.password = password
-        self.host = host
-        self.db_name = db_name
-        self.async_url = f"postgresql+asyncpg://{user}:{password}@{host}/{db_name}"
-        self.base = Base
-        self._engine = None
-        self._async_session_maker = None
+    def __init__(self, uri: str, db_name: str):
+        self.client = AsyncIOMotorClient(uri)
+        self.db = self.client[db_name]
+        self.users = self.db['users']
+        self.groups = self.db['groups']
+
+    async def _setup_indexes(self):
+        """Create necessary indexes for performance."""
+        try:
+            await self.users.create_index("telegram_id", unique=True)
+            await self.groups.create_index("telegram_chat_id", unique=True)
+            logger.info("MongoDB indexes created successfully.")
+        except Exception as e:
+            logger.error(f"Error creating MongoDB indexes: {e}")
+
+    async def connect(self):
+        """Verify connection and setup indexes."""
+        try:
+            # Ping the server to verify connection
+            await self.client.admin.command('ping')
+            logger.info("Successfully connected to MongoDB.")
+            await self._setup_indexes()
+        except Exception as e:
+            logger.error(f"Failed to connect to MongoDB: {e}")
+            raise
+
+    async def close(self):
+        """Close the database connection."""
+        self.client.close()
+        logger.info("MongoDB connection closed.")
+
+    # --- User Methods ---
+
+    async def get_or_create_user(self, telegram_id: int, username: str = None, first_name: str = None, last_name: str = None) -> Dict[str, Any]:
+        """Get a user document, creating it with default settings if it doesn't exist."""
+        user = await self.users.find_one({"telegram_id": telegram_id})
+        if not user:
+            user = {
+                "telegram_id": telegram_id,
+                "username": username,
+                "first_name": first_name,
+                "last_name": last_name,
+                "settings": {
+                    "is_global_disabled": False,
+                    "responds_to_text": True,
+                    "responds_to_voice": True,
+                    "responds_to_photo": True,
+                    "responds_to_video_note": True,
+                    "responds_to_sticker": True,
+                    "transcribe_voice_only": False,
+                    "transcribe_video_note": False,
+                },
+                "history": []
+            }
+            await self.users.insert_one(user)
+        return user
+
+    async def update_user_settings(self, telegram_id: int, settings: Dict[str, Any]):
+        """Update user settings."""
+        await self.users.update_one(
+            {"telegram_id": telegram_id},
+            {"$set": {f"settings.{k}": v for k, v in settings.items()}}
+        )
+
+    async def append_user_history(self, telegram_id: int, message: Dict[str, Any], max_history: int = 50):
+        """Append a message to the user's history, keeping only the latest max_history messages."""
+        await self.users.update_one(
+            {"telegram_id": telegram_id},
+            {
+                "$push": {
+                    "history": {
+                        "$each": [message],
+                        "$slice": -max_history
+                    }
+                }
+            }
+        )
         
-    async def __aenter__(self):
-        """Async context manager entry."""
-        await self.initialize()
-        return self
+    async def clear_user_history(self, telegram_id: int):
+        """Clear the message history for a user."""
+        await self.users.update_one(
+            {"telegram_id": telegram_id},
+            {"$set": {"history": []}}
+        )
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        """Async context manager exit."""
-        await self.dispose_engine()
+    # --- Group Methods ---
 
-    async def initialize(self):
-        """Initialize database engine and session maker."""
-        if self._engine is None:
-            self._engine = create_async_engine(
-                self.async_url,
-                echo=False,
-                pool_size=-1,  # Без ограничений на размер пула
-                max_overflow=-1,  # Без ограничений на дополнительные соединения
-                pool_timeout=60,  # Увеличенный таймаут
-                pool_recycle=3600,  # Переиспользуем соединения каждый час
-                pool_pre_ping=True,  # Проверяем работоспособность соединений
-                pool_use_lifo=True,  # LIFO для лучшего переиспользования
-                pool_reset_on_return='rollback',  # Автоматический откат при возврате
-                json_serializer=None
-            )
-            
-            self._async_session_maker = async_sessionmaker(
-                bind=self._engine,
-                expire_on_commit=False,
-                class_=AsyncSession,
-                autoflush=False,
-                autocommit=False
-            )
-            logger.info("DatabaseManager initialized with unlimited pool settings")
+    async def get_or_create_group(self, telegram_chat_id: int, name: str) -> Dict[str, Any]:
+        """Get a group document, creating it with default settings if it doesn't exist."""
+        group = await self.groups.find_one({"telegram_chat_id": telegram_chat_id})
+        if not group:
+            group = {
+                "telegram_chat_id": telegram_chat_id,
+                "name": name,
+                "settings": {
+                    "is_global_disabled": False,
+                    "responds_to_text": True,
+                    "responds_to_voice": True,
+                    "responds_to_photo": True,
+                    "responds_to_video_note": True,
+                    "responds_to_sticker": True,
+                    "transcribe_voice_only": False,
+                    "transcribe_video_note": False,
+                },
+                "history": []
+            }
+            await self.groups.insert_one(group)
+        return group
 
-    @property
-    def engine(self):
-        """Get the database engine."""
-        if self._engine is None:
-            raise RuntimeError("Database engine not initialized. Call initialize() first.")
-        return self._engine
+    async def update_group_settings(self, telegram_chat_id: int, settings: Dict[str, Any]):
+        """Update group settings."""
+        await self.groups.update_one(
+            {"telegram_chat_id": telegram_chat_id},
+            {"$set": {f"settings.{k}": v for k, v in settings.items()}}
+        )
 
-    async def create_database(self):
-        """Creates database if it doesn't exist."""
-        conn = None
-        try:
-            conn = await asyncpg.connect(
-                user=self.user,
-                password=self.password,
-                host=self.host,
-                database="postgres"
-            )
-            exists = await conn.fetchval(
-                "SELECT 1 FROM pg_database WHERE datname = $1",
-                self.db_name
-            )
-            if not exists:
-                logger.info(f"Creating database '{self.db_name}'...")
-                try:
-                    await conn.execute(f'CREATE DATABASE "{self.db_name}"')
-                    logger.info(f"Database '{self.db_name}' created successfully.")
-                except asyncpg.PostgresError as e:
-                    logger.critical(f"Error creating database '{self.db_name}': {e}", exc_info=True)
-            else:
-                logger.debug(f"Database '{self.db_name}' already exists.")
-        except Exception as e:
-            logger.critical(f"Error during database creation: {e}", exc_info=True)
-            raise
-        finally:
-            if conn:
-                await conn.close()
+    async def append_group_history(self, telegram_chat_id: int, message: Dict[str, Any], max_history: int = 50):
+        """Append a message to the group's history, keeping only the latest max_history messages."""
+        await self.groups.update_one(
+            {"telegram_chat_id": telegram_chat_id},
+            {
+                "$push": {
+                    "history": {
+                        "$each": [message],
+                        "$slice": -max_history
+                    }
+                }
+            }
+        )
 
-    async def create_tables(self) -> None:
-        """Creates tables in the database."""
-        try:
-            async with self.engine.begin() as conn:
-                await conn.run_sync(self.base.metadata.create_all)
-            logger.info("Database tables created successfully.")
-        except Exception as e:
-            logger.critical(f"Could not create tables in database '{self.db_name}': {e}", exc_info=True)
-            raise
-
-    def get_session_factory(self) -> async_sessionmaker[AsyncSession]:
-        """Returns the session factory."""
-        if self._async_session_maker is None:
-            raise RuntimeError("Session factory not initialized. Call initialize() first.")
-        return self._async_session_maker
-
-    async def dispose_engine(self) -> None:
-        """Closes the connection pool."""
-        if self._engine:
-            try:
-                # Закрываем все существующие соединения
-                await self._engine.dispose()
-                # Очищаем все ссылки
-                self._engine = None
-                self._async_session_maker = None
-                logger.info("Database engine and connections disposed")
-            except Exception as e:
-                logger.error(f"Error disposing database engine: {e}", exc_info=True)
-                raise
+    async def clear_group_history(self, telegram_chat_id: int):
+        """Clear the message history for a group."""
+        await self.groups.update_one(
+            {"telegram_chat_id": telegram_chat_id},
+            {"$set": {"history": []}}
+        )

@@ -304,7 +304,7 @@ async def get_gemini_response(
 
             # Make the API call
             api_response = await async_client.models._generate_content(
-                model=config.gemini_model,
+                model=config.gemini_api_model,
                 contents=contents_for_api,
                 config=GenerateContentConfig(
                     tools=tools_to_pass_in_list,

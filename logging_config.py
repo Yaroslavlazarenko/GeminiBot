@@ -10,7 +10,7 @@ def setup_logging():
 
     # Create a logger
     logger = logging.getLogger()
-    logger.setLevel(logging.ERROR)  # Only ERROR and above
+    logger.setLevel(logging.INFO)  # Change to INFO
 
     # Create formatters
     console_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(name)s - %(message)s')
@@ -18,7 +18,7 @@ def setup_logging():
 
     # Create console handler
     console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.ERROR)  # Only ERROR and above
+    console_handler.setLevel(logging.INFO)  # Change to INFO
     console_handler.setFormatter(console_formatter)
 
     # Create error file handler

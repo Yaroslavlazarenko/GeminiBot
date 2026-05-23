@@ -1,13 +1,11 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Config(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
     bot_token: str
     gemini_api_key: str
-    gemini_model: str
+    gemini_api_model: str
 
-    db_user: str
-    db_password: str
-    db_name: str
-    db_host: str
+    mongo_uri: str = "mongodb://localhost:27017"
+    mongo_db_name: str = "gemini_bot"

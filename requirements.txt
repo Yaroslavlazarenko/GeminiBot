@@ -1,10 +1,7 @@
 aiogram>=3.0.0
-SQLAlchemy
-asyncpg
+motor
 pytz
 google-genai
 pydantic-settings
-alembic
-psycopg2-binary
 ffmpeg-python==0.2.0
 pillow>=11.1.0

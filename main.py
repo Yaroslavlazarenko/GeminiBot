@@ -8,7 +8,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from config import Config
 from telegram.handlers import all_routers
-from middlewares.db_session import DAOMiddleware
+from middlewares.db_session import DatabaseMiddleware
 from database.manager import DatabaseManager
 from logging_config import setup_logging
 
@@ -35,13 +35,11 @@ async def shutdown():
         
         if bot:
             logger.info("Closing bot session...")
-            session = await bot.get_session()
-            if session:
-                await session.close()
+            await bot.session.close()
         
         if db_manager:
             logger.info("Closing database connections...")
-            await db_manager.dispose_engine()
+            await db_manager.close()
             
     except Exception as e:
         logger.error(f"Error during shutdown: {e}", exc_info=True)
@@ -69,14 +67,12 @@ async def main():
         # Load configuration
         config = Config()  # This will load from .env file
         
-        # Initialize database with configuration
+        # Initialize MongoDB
         db_manager = DatabaseManager(
-            user=config.db_user,
-            password=config.db_password,
-            host=config.db_host,
-            db_name=config.db_name
+            uri=config.mongo_uri,
+            db_name=config.mongo_db_name
         )
-        await db_manager.initialize()
+        await db_manager.connect()
         
         # Initialize bot and dispatcher with new DefaultBotProperties
         bot = Bot(
@@ -86,10 +82,8 @@ async def main():
         dp = Dispatcher(storage=MemoryStorage())
         
         # Register middlewares
-        session_factory = db_manager.get_session_factory()
-        dp.message.middleware(DAOMiddleware(session_factory))
-        dp.callback_query.middleware(DAOMiddleware(session_factory))
-        dp.inline_query.middleware(DAOMiddleware(session_factory))
+        dp.message.middleware(DatabaseMiddleware(db_manager))
+        dp.callback_query.middleware(DatabaseMiddleware(db_manager))
         
         # Include all routers
         for router in all_routers:

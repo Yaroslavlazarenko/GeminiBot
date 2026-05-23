@@ -201,7 +201,7 @@ powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1
 ```env
 bot_token = 'ваш_токен_бота'
 gemini_api_key = 'ваш_ключ_gemini'
-gemini_model = 'gemini-2.0-flash'
+gemini_api_model = 'gemini-2.0-flash'
 db_user = 'postgres'
 db_password = 'ваш_пароль'
 db_name = 'geminibot'

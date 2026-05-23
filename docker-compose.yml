@@ -4,35 +4,20 @@ services:
   bot:
     build: .
     environment:
-      - db_host=postgres
-      - db_user=${DB_USER:-postgres}
-      - db_password=${DB_PASSWORD:-postgres}
-      - db_name=${DB_NAME:-gemini_bot}
-      - bot_token=${BOT_TOKEN}
-      - gemini_api_key=${GEMINI_API_KEY}
-      - gemini_model=${GEMINI_MODEL:-gemini-pro}
+      - MONGO_URI=mongodb://mongodb:27017
+      - MONGO_DB_NAME=${MONGO_DB_NAME:-gemini_bot}
+      - BOT_TOKEN=${BOT_TOKEN}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_API_MODEL=${GEMINI_API_MODEL:-gemini-pro}
     depends_on:
-      - postgres
-    restart: unless-stopped
-    labels:
-      - "com.centurylinklabs.watchtower.enable=true"
-
-  postgres:
-    image: postgres:14.10
-    environment:
-      - POSTGRES_USER=${DB_USER:-postgres}
-      - POSTGRES_PASSWORD=${DB_PASSWORD:-postgres}
-      - POSTGRES_DB=${DB_NAME:-gemini_bot}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+      - mongodb
     restart: unless-stopped
 
-  watchtower:
-    image: containrrr/watchtower
+  mongodb:
+    image: mongo:6.0
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 3600 --cleanup --label-enable
+      - mongodb_data:/data/db
     restart: unless-stopped
 
 volumes:
-  postgres_data:
+  mongodb_data:
