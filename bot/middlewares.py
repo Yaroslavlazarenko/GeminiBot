@@ -1,6 +1,6 @@
 from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery
-from database.manager import DatabaseManager, ChatContext
+from core.database import DatabaseManager, ChatContext
 from typing import Any, Awaitable, Callable, Dict
 
 class DatabaseMiddleware(BaseMiddleware):

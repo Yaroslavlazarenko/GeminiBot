@@ -1,10 +1,10 @@
 import logging
 import os
-from config import Config
+from core.config import Config
 from google import genai
 from google.genai.types import GenerateContentConfig, FunctionCall
 from typing import List, Dict, Any, Tuple
-from database.manager import ChatContext
+from core.database import ChatContext
 from services.mcp_server import gemini_tools
 
 logger = logging.getLogger(__name__)

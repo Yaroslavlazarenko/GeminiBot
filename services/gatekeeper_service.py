@@ -1,11 +1,11 @@
 import logging
-from config import Config
+from core.config import Config
 from google import genai
 from google.genai.types import GenerateContentConfig
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
 from core.enums import GatekeeperAction
-from database.manager import ChatContext
+from core.database import ChatContext
 
 logger = logging.getLogger(__name__)
 

@@ -1,15 +1,32 @@
 import logging
-from aiogram import Router, F
+from aiogram import Router, filters, F
 from aiogram.types import Message
-from database.manager import ChatContext
+from core.database import ChatContext
 from services.ai_service import get_ai_service
 from services.gatekeeper_service import get_gatekeeper
 from core.enums import GatekeeperAction, ToolName
 
 logger = logging.getLogger(__name__)
+
+# Initialize the main router
 router = Router()
 ai_service = get_ai_service()
 gatekeeper = get_gatekeeper()
+
+@router.message(filters.Command("start", "help"))
+async def start_command(message: Message, chat_context: ChatContext):
+    # Depending on context, personalize greeting
+    name = chat_context.doc.get('first_name', 'User') if not chat_context.is_group else chat_context.doc.get('name', 'Group')
+    text = (
+        f"Hello, {name}!\n\n"
+        "I am a Gemini AI assistant. Send me a text message or a photo, and I will reply!"
+    )
+    await message.answer(text)
+
+@router.message(filters.Command("clear"))
+async def clear_command(message: Message, chat_context: ChatContext):
+    await chat_context.clear_history()
+    await message.reply("Context history has been cleared.")
 
 @router.message(F.text & ~F.text.startswith("/"))
 async def handle_text_message(message: Message, chat_context: ChatContext):
@@ -58,6 +75,23 @@ async def handle_text_message(message: Message, chat_context: ChatContext):
                     
         elif call.name == ToolName.REPLY_TO_MESSAGE.value:
             message.reply_to_message_id = call.args.get("message_id")
+            
+        elif call.name == ToolName.SEND_STICKER.value:
+            emotion = call.args.get("emotion", "happy")
+            # We will map emotions to a sticker later, for now we can send a mock message
+            await message.answer(f"*(Отправляет {emotion} стикер)*", parse_mode="Markdown")
+            
+        elif call.name == ToolName.SEND_VOICE.value:
+            text_to_speak = call.args.get("text_to_speak", "")
+            # MOCK for TTS. You would integrate real TTS here.
+            await message.answer(f"*(Отправляет голосовое сообщение)*: {text_to_speak}", parse_mode="Markdown")
+            # We don't want to send this as normal text too, so we clear the response_text
+            response_text = ""
+            
+        elif call.name == ToolName.SEARCH_WEB.value:
+            query = call.args.get("query", "")
+            # MOCK for Web Search. You would integrate DuckDuckGo/Google API here.
+            await message.answer(f"*(Ищет в интернете: {query})*", parse_mode="Markdown")
 
     # Save User Message to DB via the Context abstraction
     await chat_context.add_message("user", text, message.message_id)
@@ -71,3 +105,10 @@ async def handle_text_message(message: Message, chat_context: ChatContext):
         # Save Bot Message to DB
         await chat_context.add_message("model", response_text, bot_message.message_id)
 
+@router.message(F.photo | F.video | F.document | F.voice | F.video_note | F.sticker)
+async def handle_media_message(message: Message, chat_context: ChatContext):
+    
+    if chat_context.is_disabled:
+        return
+        
+    await message.reply("Media processing is currently being upgraded for the new architecture. It will be available shortly!")

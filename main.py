@@ -6,11 +6,11 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from config import Config
-from telegram.handlers import all_routers
-from middlewares.db_session import DatabaseMiddleware
-from database.manager import DatabaseManager
-from logging_config import setup_logging
+from core.config import Config
+from bot.handlers import router as main_router
+from bot.middlewares import DatabaseMiddleware
+from core.database import DatabaseManager
+from core.logger import setup_logging
 
 # Global objects
 dp = None
@@ -85,9 +85,8 @@ async def main():
         dp.message.middleware(DatabaseMiddleware(db_manager))
         dp.callback_query.middleware(DatabaseMiddleware(db_manager))
         
-        # Include all routers
-        for router in all_routers:
-            dp.include_router(router)
+        # Include main router
+        dp.include_router(main_router)
             
         # Start polling
         logger.info("Bot is running...")

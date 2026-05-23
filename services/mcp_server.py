@@ -22,8 +22,35 @@ def reply_to_message(message_id: int) -> str:
     """
     return f"Replying to {message_id}"
 
+@mcp.tool(name=ToolName.SEND_STICKER.value)
+def send_sticker(emotion: str) -> str:
+    """Send a sticker to express a specific emotion. 
+    Args:
+        emotion: The core emotion you want to express (e.g., 'happy', 'sad', 'angry', 'love', 'laughing').
+    """
+    return f"Sending {emotion} sticker"
+
+@mcp.tool(name=ToolName.SEND_VOICE.value)
+def send_voice(text_to_speak: str) -> str:
+    """Send a voice message instead of a text message. Use this when you want to feel more intimate or when conveying a lot of emotion.
+    Args:
+        text_to_speak: The text that will be converted to a voice message.
+    """
+    return f"Sending voice message"
+
+@mcp.tool(name=ToolName.SEARCH_WEB.value)
+def search_web(query: str) -> str:
+    """Search the web for current information, news, or facts you don't know. 
+    Args:
+        query: The search query.
+    """
+    return f"Searching web for: {query}"
+
 # Export the raw functions for Gemini
 gemini_tools = [
     add_reaction,
-    reply_to_message
+    reply_to_message,
+    send_sticker,
+    send_voice,
+    search_web
 ]
