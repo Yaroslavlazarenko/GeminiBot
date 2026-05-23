@@ -52,15 +52,17 @@ class GatekeeperService:
                 )
             )
             
-            # The SDK parses the JSON into a dictionary or Pydantic object if response_schema is used
-            # But just to be safe if it returns raw text matching the schema:
-            decision_text = response.text
-            import json
-            data = json.loads(decision_text)
+            # The SDK automatically parses the response into the Pydantic object
+            decision: GatekeeperDecision = response.parsed
             
-            action = GatekeeperAction(data.get("action", GatekeeperAction.RESPOND.value))
-            logger.info(f"Gatekeeper decided: {action.value} (Reason: {data.get('reasoning', '')})")
-            return action
+            if not decision:
+                # Fallback if parsed is empty for some reason
+                import json
+                data = json.loads(response.text)
+                decision = GatekeeperDecision(**data)
+            
+            logger.info(f"Gatekeeper decided: {decision.action.value} (Reason: {decision.reasoning})")
+            return decision.action
             
         except Exception as e:
             logger.error(f"Error in Gatekeeper: {e}")
