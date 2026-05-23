@@ -1,9 +1,10 @@
 import logging
 from aiogram import Router, filters, F
-from aiogram.types import Message
+from aiogram.types import Message, BufferedInputFile
 from core.database import ChatContext
 from services.ai_service import get_ai_service
 from services.gatekeeper_service import get_gatekeeper
+from services.tts_service import get_tts_service
 from core.enums import GatekeeperAction, ToolName
 
 logger = logging.getLogger(__name__)
@@ -12,6 +13,7 @@ logger = logging.getLogger(__name__)
 router = Router()
 ai_service = get_ai_service()
 gatekeeper = get_gatekeeper()
+tts_service = get_tts_service()
 
 @router.message(filters.Command("start", "help"))
 async def start_command(message: Message, chat_context: ChatContext):
@@ -83,8 +85,20 @@ async def handle_text_message(message: Message, chat_context: ChatContext):
             
         elif call.name == ToolName.SEND_VOICE.value:
             text_to_speak = call.args.get("text_to_speak", "")
-            # MOCK for TTS. You would integrate real TTS here.
-            await message.answer(f"*(Отправляет голосовое сообщение)*: {text_to_speak}", parse_mode="Markdown")
+            
+            # Show "recording voice" action
+            await message.bot.send_chat_action(chat_id=message.chat.id, action="record_voice")
+            
+            # Generate the voice using ElevenLabs
+            audio_bytes = await tts_service.generate_voice(text_to_speak)
+            
+            if audio_bytes:
+                voice_file = BufferedInputFile(audio_bytes, filename="voice.ogg")
+                await message.answer_voice(voice=voice_file)
+            else:
+                # Fallback to text if TTS fails or isn't configured
+                await message.answer(f"*(Голосовое сообщение)*: {text_to_speak}", parse_mode="Markdown")
+                
             # We don't want to send this as normal text too, so we clear the response_text
             response_text = ""
             
