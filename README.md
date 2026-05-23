@@ -231,7 +231,7 @@ sudo ./scripts/install.sh
 
 3. Настройте `.env` файл:
 ```bash
-cp .envExample .env
+cp .env.example .env
 nano .env  # Отредактируйте файл
 ```
 
