@@ -4,6 +4,42 @@ from typing import Optional, Dict, Any, List
 
 logger = logging.getLogger(__name__)
 
+class ChatContext:
+    """A unified interface for interacting with the current chat context (User or Group)."""
+    def __init__(self, db_manager, context_id: int, is_group: bool, document: Dict[str, Any]):
+        self._db = db_manager
+        self.id = context_id
+        self.is_group = is_group
+        self.doc = document
+        self.settings = document.get("settings", {})
+        self.history = document.get("history", [])
+
+    @property
+    def is_disabled(self) -> bool:
+        return self.settings.get("is_global_disabled", False)
+
+    def responds_to(self, msg_type: str) -> bool:
+        """Check if the context allows responding to a specific message type (e.g., 'text', 'voice')."""
+        return self.settings.get(f"responds_to_{msg_type}", True)
+
+    async def add_message(self, role: str, text: str, message_id: int):
+        """Add a message to the history."""
+        msg = {"role": role, "text": text, "message_id": message_id}
+        if self.is_group:
+            await self._db.append_group_history(self.id, msg)
+        else:
+            await self._db.append_user_history(self.id, msg)
+        self.history.append(msg)
+
+    async def clear_history(self):
+        """Clear the history."""
+        if self.is_group:
+            await self._db.clear_group_history(self.id)
+        else:
+            await self._db.clear_user_history(self.id)
+        self.history.clear()
+
+
 class DatabaseManager:
     def __init__(self, uri: str, db_name: str):
         self.client = AsyncIOMotorClient(uri)
@@ -39,7 +75,6 @@ class DatabaseManager:
     # --- User Methods ---
 
     async def get_or_create_user(self, telegram_id: int, username: str = None, first_name: str = None, last_name: str = None) -> Dict[str, Any]:
-        """Get a user document, creating it with default settings if it doesn't exist."""
         user = await self.users.find_one({"telegram_id": telegram_id})
         if not user:
             user = {
@@ -63,14 +98,12 @@ class DatabaseManager:
         return user
 
     async def update_user_settings(self, telegram_id: int, settings: Dict[str, Any]):
-        """Update user settings."""
         await self.users.update_one(
             {"telegram_id": telegram_id},
             {"$set": {f"settings.{k}": v for k, v in settings.items()}}
         )
 
     async def append_user_history(self, telegram_id: int, message: Dict[str, Any], max_history: int = 50):
-        """Append a message to the user's history, keeping only the latest max_history messages."""
         await self.users.update_one(
             {"telegram_id": telegram_id},
             {
@@ -84,7 +117,6 @@ class DatabaseManager:
         )
         
     async def clear_user_history(self, telegram_id: int):
-        """Clear the message history for a user."""
         await self.users.update_one(
             {"telegram_id": telegram_id},
             {"$set": {"history": []}}
@@ -93,7 +125,6 @@ class DatabaseManager:
     # --- Group Methods ---
 
     async def get_or_create_group(self, telegram_chat_id: int, name: str) -> Dict[str, Any]:
-        """Get a group document, creating it with default settings if it doesn't exist."""
         group = await self.groups.find_one({"telegram_chat_id": telegram_chat_id})
         if not group:
             group = {
@@ -115,14 +146,12 @@ class DatabaseManager:
         return group
 
     async def update_group_settings(self, telegram_chat_id: int, settings: Dict[str, Any]):
-        """Update group settings."""
         await self.groups.update_one(
             {"telegram_chat_id": telegram_chat_id},
             {"$set": {f"settings.{k}": v for k, v in settings.items()}}
         )
 
     async def append_group_history(self, telegram_chat_id: int, message: Dict[str, Any], max_history: int = 50):
-        """Append a message to the group's history, keeping only the latest max_history messages."""
         await self.groups.update_one(
             {"telegram_chat_id": telegram_chat_id},
             {
@@ -136,7 +165,6 @@ class DatabaseManager:
         )
 
     async def clear_group_history(self, telegram_chat_id: int):
-        """Clear the message history for a group."""
         await self.groups.update_one(
             {"telegram_chat_id": telegram_chat_id},
             {"$set": {"history": []}}

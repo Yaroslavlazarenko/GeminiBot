@@ -1,6 +1,6 @@
 from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery
-from database.manager import DatabaseManager
+from database.manager import DatabaseManager, ChatContext
 from typing import Any, Awaitable, Callable, Dict
 
 class DatabaseMiddleware(BaseMiddleware):
@@ -15,40 +15,30 @@ class DatabaseMiddleware(BaseMiddleware):
         data: Dict[str, Any]
     ) -> Any:
         
-        data["db_manager"] = self.db_manager
+        chat_context = None
         
-        user = None
-        group = None
-        
-        # Determine the user object based on event type
+        # Check if the event happened in a group
+        chat = event.chat if isinstance(event, Message) else event.message.chat if isinstance(event, CallbackQuery) else None
         from_user = event.from_user if isinstance(event, Message) else event.from_user if isinstance(event, CallbackQuery) else None
-        
-        if from_user:
-            user = await self.db_manager.get_or_create_user(
+
+        if chat and chat.type in ['group', 'supergroup']:
+            doc = await self.db_manager.get_or_create_group(
+                telegram_chat_id=chat.id,
+                name=chat.title or "Unknown Group"
+            )
+            chat_context = ChatContext(self.db_manager, chat.id, True, doc)
+            
+        elif chat and chat.type == 'private' and from_user:
+            doc = await self.db_manager.get_or_create_user(
                 telegram_id=from_user.id,
                 username=from_user.username,
                 first_name=from_user.first_name,
                 last_name=from_user.last_name
             )
-            data["user"] = user
+            chat_context = ChatContext(self.db_manager, from_user.id, False, doc)
 
-        # Check if the event happened in a group
-        chat = event.chat if isinstance(event, Message) else event.message.chat if isinstance(event, CallbackQuery) else None
-        
-        if chat and chat.type in ['group', 'supergroup']:
-            group = await self.db_manager.get_or_create_group(
-                telegram_chat_id=chat.id,
-                name=chat.title or "Unknown Group"
-            )
-            data["group"] = group
-            
-            # If in group, use group history. If in private, use user history.
-            data["history_context"] = group.get("history", [])
-            data["context_id"] = chat.id
-            data["is_group"] = True
-        elif chat and chat.type == 'private' and user:
-            data["history_context"] = user.get("history", [])
-            data["context_id"] = from_user.id
-            data["is_group"] = False
+        # Inject the unified context into data
+        if chat_context:
+            data["chat_context"] = chat_context
 
         return await handler(event, data)

@@ -1,22 +1,20 @@
 from aiogram import Router, filters
 from aiogram.types import Message
-from typing import Dict, Any
+from database.manager import ChatContext
 
 router = Router()
 
 @router.message(filters.Command("start", "help"))
-async def start_command(message: Message, user: Dict[str, Any]):
+async def start_command(message: Message, chat_context: ChatContext):
+    # Depending on context, personalize greeting
+    name = chat_context.doc.get('first_name', 'User') if not chat_context.is_group else chat_context.doc.get('name', 'Group')
     text = (
-        f"Hello, {user.get('first_name', 'User')}!\n\n"
+        f"Hello, {name}!\n\n"
         "I am a Gemini AI assistant. Send me a text message or a photo, and I will reply!"
     )
     await message.answer(text)
 
 @router.message(filters.Command("clear"))
-async def clear_command(message: Message, db_manager: Any, context_id: int, is_group: bool):
-    if is_group:
-        await db_manager.clear_group_history(context_id)
-    else:
-        await db_manager.clear_user_history(context_id)
-    
+async def clear_command(message: Message, chat_context: ChatContext):
+    await chat_context.clear_history()
     await message.reply("Context history has been cleared.")
