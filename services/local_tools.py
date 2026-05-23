@@ -38,19 +38,10 @@ def send_voice(text_to_speak: str) -> str:
     """
     return f"Sending voice message"
 
-@mcp.tool(name=ToolName.SEARCH_WEB.value)
-def search_web(query: str) -> str:
-    """Search the web for current information, news, or facts you don't know. 
-    Args:
-        query: The search query.
-    """
-    return f"Searching web for: {query}"
-
 # Export the raw functions for Gemini
-gemini_tools = [
+local_tools_list = [
     add_reaction,
     reply_to_message,
     send_sticker,
-    send_voice,
-    search_web
+    send_voice
 ]

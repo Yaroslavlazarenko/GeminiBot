@@ -101,11 +101,6 @@ async def handle_text_message(message: Message, chat_context: ChatContext):
                 
             # We don't want to send this as normal text too, so we clear the response_text
             response_text = ""
-            
-        elif call.name == ToolName.SEARCH_WEB.value:
-            query = call.args.get("query", "")
-            # MOCK for Web Search. You would integrate DuckDuckGo/Google API here.
-            await message.answer(f"*(Ищет в интернете: {query})*", parse_mode="Markdown")
 
     # Save User Message to DB via the Context abstraction
     await chat_context.add_message("user", text, message.message_id)

@@ -11,6 +11,7 @@ services:
       - GEMINI_API_MODEL=${GEMINI_API_MODEL:-gemini-2.5-flash}
       - GEMINI_GATEKEEPER_MODEL=${GEMINI_GATEKEEPER_MODEL:-gemini-2.5-flash-8b}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
+      - MCP_SERVERS_CONFIG=${MCP_SERVERS_CONFIG}
     depends_on:
       - mongodb
     restart: unless-stopped
