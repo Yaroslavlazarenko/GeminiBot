@@ -1,44 +1,32 @@
-h.py
-output_tiles
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# IDE / Editor
+.vscode/
+.idea/
+
+# Logs
+logs/
+*.log
+
+# Docker
+postgres_data/
+mongodb_data/
+
+# Specific ignores
+output_tiles/
 input_image.png
 TODO
-.env
-__pycache__
-ai/__pycache__
-alembic/__pycache__
-alembic/versions/__pycache__
-database/__pycache__
-database/dao/__pycache__
-middlewares/__pycache__
-telegram/handlers/__pycache__
-telegram/handlers/commands/__pycache__
-telegram/handlers/messages/__pycache__
-.vscode/settings.json
-telegram/handlers/messages/__pycache__/text.cpython-313.pyc
-telegram/handlers/messages/__pycache__/__init__.cpython-313.pyc
-telegram/handlers/messages/__pycache__/text.cpython-313.pyc
-telegram/handlers/__pycache__/utils.cpython-313.pyc
-middlewares/__pycache__/db_session.cpython-313.pyc
-telegram/handlers/commands/__pycache__/__init__.cpython-313.pyc
-middlewares/__pycache__/db_session.cpython-313.pyc
-logs/error_20250505.log
-logs/error_20250504.log
-middlewares/__pycache__/db_session.cpython-313.pyc
-database/dao/__pycache__/user_dao.cpython-313.pyc
-database/dao/__pycache__/message_dao.cpython-313.pyc
-database/dao/__pycache__/group_dao.cpython-313.pyc
-database/dao/__pycache__/__init__.cpython-313.pyc
-database/__pycache__/manager.cpython-313.pyc
-ai/__pycache__/gemini_client.cpython-313.pyc
-middlewares/__pycache__/db_session.cpython-313.pyc
-database/dao/__pycache__/message_dao.cpython-313.pyc
-.env
 test1.py
 test2.py
-telegram/handlers/messages/__pycache__/voice.cpython-313.pyc
-telegram/handlers/messages/__pycache__/text.cpython-313.pyc
-middlewares/__pycache__/db_session.cpython-313.pyc
-logs/error_20250514.log
-database/dao/__pycache__/message_dao.cpython-313.pyc
-database/__pycache__/manager.cpython-313.pyc
-ai/__pycache__/gemini_client.cpython-313.pyc
