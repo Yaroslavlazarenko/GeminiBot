@@ -7,8 +7,8 @@ Mia is a highly sophisticated, persona-driven Telegram bot built on top of the *
 ## 🌟 Core Features
 
 - **Dual-Model Architecture (Gatekeeper Pattern):** 
-  - A fast, lightweight model (`gemini-2.5-flash-8b`) analyzes every incoming message to determine if it's white noise, if the bot should be silenced, or if a response is needed.
-  - The main persona model (`gemini-2.5-flash`) is only invoked when necessary, saving tokens and preventing hallucinations in busy group chats.
+  - A fast, lightweight model (`gemini-3.1-flash-lite`) analyzes every incoming message to determine if it's white noise, if the bot should be silenced, or if a response is needed.
+  - The main persona model (`gemini-3.5-flash`) is only invoked when necessary, saving tokens and preventing hallucinations in busy group chats.
 - **Native FastMCP Integration:**
   - **Local Tools:** Mia natively uses tools to send Telegram reactions, reply to specific messages, send stickers, and generate **real voice messages** (via ElevenLabs TTS).
   - **Remote MCP Servers:** Connect the bot to external HTTP/SSE MCP servers (like Exa Search, File systems, Math solvers). The proxy fetches tools dynamically, handles name collisions, and orchestrates the function-calling loop autonomously.

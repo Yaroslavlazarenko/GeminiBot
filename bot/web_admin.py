@@ -50,14 +50,14 @@ HTML_TEMPLATE = """
                 <label class="block text-gray-700 text-sm font-bold mb-2" for="gemini_api_model">
                     Main Persona Model (Mia)
                 </label>
-                <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="gemini_api_model" type="text" placeholder="e.g. gemini-2.5-flash">
+                <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="gemini_api_model" type="text" placeholder="e.g. gemini-3.5-flash">
             </div>
 
             <div class="mb-4">
                 <label class="block text-gray-700 text-sm font-bold mb-2" for="gemini_gatekeeper_model">
                     Gatekeeper Model (Fast filter)
                 </label>
-                <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="gemini_gatekeeper_model" type="text" placeholder="e.g. gemini-2.5-flash-8b">
+                <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="gemini_gatekeeper_model" type="text" placeholder="e.g. gemini-3.1-flash-lite">
             </div>
 
             <div class="mb-6">

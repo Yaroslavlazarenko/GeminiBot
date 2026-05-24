@@ -6,7 +6,7 @@ class Config(BaseSettings):
     bot_token: str
     gemini_api_key: str
     gemini_api_model: str
-    gemini_gatekeeper_model: str = "gemini-2.5-flash-8b"
+    gemini_gatekeeper_model: str = "gemini-3.1-flash-lite"
     gemini_base_url: str | None = None
     
     elevenlabs_api_key: str = ""
