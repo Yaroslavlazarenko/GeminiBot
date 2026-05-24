@@ -156,7 +156,11 @@ class AIService:
                 if not active_packs:
                     active_packs = ["Animals"]
                     
-                sticker_catalog = await chat_context._db.stickers.find({"pack_name": {"$in": active_packs}}).to_list(None)
+                # Fetch up to 150 stickers total to prevent context bloat
+                sticker_catalog = await chat_context._db.stickers.find(
+                    {"$or": [{"pack_name": {"$in": active_packs}}, {"pack_name": "user_discovered"}]}
+                ).limit(150).to_list(None)
+                
                 if sticker_catalog:
                     catalog_text = "\n\n## Available Sticker Catalog\nUse the 'send_specific_sticker(sticker_id)' tool with the exact ID provided below to send a sticker that fits your visual needs. Do NOT use send_sticker if you can use send_specific_sticker.\n"
                     for s in sticker_catalog:

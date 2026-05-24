@@ -358,8 +358,26 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
         file_size = message.document.file_size
         mime_type = message.document.mime_type
         media_type_name = "image document"
+    elif message.sticker:
+        from services.sticker_service import StickerService
+        from core.key_manager import get_key_manager
+        
+        # Analyze and cache the user's sticker on the fly
+        desc = await StickerService.analyze_single_sticker(
+            message.bot, 
+            chat_context._db, 
+            get_key_manager(), 
+            message.sticker
+        )
+        db_text = f"*(Пользователь отправил стикер: {desc})*"
+        await chat_context.add_message("user", db_text, message.message_id)
+        await trigger_summarization_if_needed(chat_context, gatekeeper)
+        
+        # Pass to bot logic in case we want it to react immediately to the sticker itself
+        await _process_bot_turn(message, chat_context, text="", media=None, db_text=db_text)
+        return
     else:
-        # Ignore unsupported documents or stickers for AI analysis
+        # Ignore unsupported documents for AI analysis
         # But we still record that they sent something in the context
         db_text = f"*(User sent a {message.content_type})*"
         if message.caption:

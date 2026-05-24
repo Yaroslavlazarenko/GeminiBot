@@ -21,8 +21,14 @@ class StickerBatchResult(BaseModel):
 class StickerService:
     @staticmethod
     async def sync_sticker_packs(bot: Bot, db: DatabaseManager, key_manager: GeminiKeyManager, pack_names: List[str]):
-        """Downloads missing stickers, sends them to Gemini for description, and caches them."""
+        """Downloads missing stickers, sends them to Gemini for description, and caches them. Also cleans up removed packs."""
         logger.info(f"Starting background sync for sticker packs: {pack_names}")
+        
+        # Cleanup removed packs (Keep 'user_discovered' safe)
+        if pack_names:
+            await db.stickers.delete_many({"pack_name": {"$nin": pack_names, "$ne": "user_discovered"}})
+        else:
+            await db.stickers.delete_many({"pack_name": {"$ne": "user_discovered"}})
         
         for pack_name in pack_names:
             try:
@@ -42,17 +48,115 @@ class StickerService:
                     
                 logger.info(f"Found {len(missing_stickers)} new stickers in pack '{pack_name}'. Analyzing with Gemini Vision...")
                 
-                # Batch processing to respect 3.5MB and token limits (e.g. 8 at a time)
-                batch_size = 8
-                for i in range(0, len(missing_stickers), batch_size):
-                    batch = missing_stickers[i:i+batch_size]
-                    await StickerService._process_batch(bot, db, key_manager, pack_name, batch)
-                    await asyncio.sleep(2) # Brief pause to prevent rate-limits
+                # Dynamic Batch processing to respect 3.5MB and token limits
+                current_batch = []
+                current_size = 0
+                max_size = 3.2 * 1024 * 1024 # 3.2 MB safety limit
+                max_items = 12
+                
+                for sticker in missing_stickers:
+                    file_id = sticker.file_id
+                    if sticker.is_animated or sticker.is_video:
+                        if sticker.thumbnail:
+                            file_id = sticker.thumbnail.file_id
+                        else:
+                            await db.stickers.insert_one({
+                                "_id": sticker.file_unique_id,
+                                "file_id": sticker.file_id,
+                                "pack_name": pack_name,
+                                "emoji": sticker.emoji,
+                                "description": f"[{sticker.emoji}] Animated/Video sticker (No description available)"
+                            })
+                            continue
+                            
+                    try:
+                        file = await bot.get_file(file_id)
+                        size = file.file_size
+                        
+                        if current_size + size > max_size or len(current_batch) >= max_items:
+                            # Process current batch
+                            await StickerService._process_batch(bot, db, key_manager, pack_name, current_batch)
+                            current_batch = []
+                            current_size = 0
+                            await asyncio.sleep(2.5) # Prevent rate limits
+                            
+                        current_batch.append((sticker, file))
+                        current_size += size
+                    except Exception as e:
+                        logger.error(f"Error fetching file info for sticker {sticker.file_unique_id}: {e}")
+                        
+                # Process remaining
+                if current_batch:
+                    await StickerService._process_batch(bot, db, key_manager, pack_name, current_batch)
                     
                 logger.info(f"Finished analyzing pack '{pack_name}'.")
                     
             except Exception as e:
                 logger.error(f"Error syncing pack {pack_name}: {e}")
+
+    @staticmethod
+    async def analyze_single_sticker(bot: Bot, db: DatabaseManager, key_manager: GeminiKeyManager, sticker) -> str:
+        """Analyzes a single user-sent sticker on the fly."""
+        existing = await db.stickers.find_one({"_id": sticker.file_unique_id})
+        if existing:
+            return existing.get("description", f"[{sticker.emoji}] Sticker")
+            
+        logger.info(f"Analyzing new user-sent sticker: {sticker.file_unique_id}")
+        
+        file_id = sticker.file_id
+        if sticker.is_animated or sticker.is_video:
+            if sticker.thumbnail:
+                file_id = sticker.thumbnail.file_id
+            else:
+                desc = f"[{sticker.emoji}] Animated/Video sticker (No description available)"
+                await db.stickers.insert_one({
+                    "_id": sticker.file_unique_id,
+                    "file_id": sticker.file_id,
+                    "pack_name": "user_discovered",
+                    "emoji": sticker.emoji,
+                    "description": desc
+                })
+                return desc
+                
+        try:
+            file = await bot.get_file(file_id)
+            if file.file_size > 3.5 * 1024 * 1024:
+                return f"[{sticker.emoji}] Sticker (Too large to analyze)"
+                
+            downloaded_bytes = io.BytesIO()
+            await bot.download_file(file.file_path, destination=downloaded_bytes)
+            img_data = downloaded_bytes.getvalue()
+            mime_type = "image/webp" if file.file_path.endswith('.webp') else "image/jpeg"
+            
+            prompt_text = (
+                "Provide a brief 1-sentence visual description of this character/sticker and what emotion they are expressing. "
+                "Keep it concise. E.g., 'A white cat wearing sunglasses, looking cool.'"
+            )
+            
+            settings = await db.get_system_settings()
+            model_name = settings.get("gemini_api_model") or "gemini-3.5-flash"
+            
+            response = key_manager.generate_content(
+                model=model_name,
+                contents=[prompt_text, Part.from_bytes(data=img_data, mime_type=mime_type)],
+                config=GenerateContentConfig(temperature=0.2)
+            )
+            
+            desc = response.text.strip() if response.text else f"[{sticker.emoji}] Sticker"
+            
+            # Save it permanently
+            await db.stickers.insert_one({
+                "_id": sticker.file_unique_id,
+                "file_id": sticker.file_id,
+                "pack_name": "user_discovered",
+                "emoji": sticker.emoji,
+                "description": desc
+            })
+            
+            return desc
+        except Exception as e:
+            logger.error(f"Error analyzing user sticker {sticker.file_unique_id}: {e}")
+            return f"[{sticker.emoji}] Sticker"
 
     @staticmethod
     async def _process_batch(bot: Bot, db: DatabaseManager, key_manager: GeminiKeyManager, pack_name: str, batch: list):
@@ -65,33 +169,8 @@ class StickerService:
         contents = [prompt_text]
         valid_stickers = []
         
-        total_size = 0
-        max_size = 3.5 * 1024 * 1024 # 3.5 MB limit
-        
-        for idx, sticker in enumerate(batch):
+        for idx, (sticker, file) in enumerate(batch):
             try:
-                # Use static representation if animated/video
-                file_id = sticker.file_id
-                if sticker.is_animated or sticker.is_video:
-                    if sticker.thumbnail:
-                        file_id = sticker.thumbnail.file_id
-                    else:
-                        # Fallback for animated with no thumb
-                        await db.stickers.insert_one({
-                            "_id": sticker.file_unique_id,
-                            "file_id": sticker.file_id,
-                            "pack_name": pack_name,
-                            "emoji": sticker.emoji,
-                            "description": f"[{sticker.emoji}] Animated/Video sticker (No description available)"
-                        })
-                        continue
-                        
-                file = await bot.get_file(file_id)
-                
-                if total_size + file.file_size > max_size:
-                    logger.warning(f"Batch size limit reached. Processed {len(valid_stickers)} out of {len(batch)}.")
-                    break
-                    
                 downloaded_bytes = io.BytesIO()
                 await bot.download_file(file.file_path, destination=downloaded_bytes)
                 img_data = downloaded_bytes.getvalue()
@@ -101,9 +180,7 @@ class StickerService:
                 contents.append(f"Sticker Index: {idx}")
                 contents.append(Part.from_bytes(data=img_data, mime_type=mime_type))
                 
-                total_size += file.file_size
                 valid_stickers.append((idx, sticker))
-                
             except Exception as e:
                 logger.error(f"Error downloading sticker {sticker.file_unique_id}: {e}")
 
