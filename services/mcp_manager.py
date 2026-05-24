@@ -109,6 +109,9 @@ class MCPConnectionManager:
             logger.error(f"Failed to parse MCP config: {e}")
             return
 
+        server_data = []
+        tool_name_counts = {}
+
         for name, config in connections.items():
             transport_ctx = self._create_transport_context(name, config)
             if not transport_ctx:
@@ -128,54 +131,79 @@ class MCPConnectionManager:
                 
                 tools_response = await asyncio.wait_for(session.list_tools(), timeout=20.0)
                 
-                for t in tools_response.tools:
-                    # Prefix to avoid collisions if multiple servers have the same tool name
-                    mapped_name = f"{safe_server_name}_{t.name}"
-                    adapter.register_tool(t.name, mapped_name)
-                    self.adapters_map[mapped_name] = adapter
-                    
-                    input_schema = t.inputSchema if hasattr(t, "inputSchema") else t.input_schema
-                    if "type" not in input_schema:
-                        input_schema["type"] = "object"
-                        
-                    self.mcp_declarations.append(types.FunctionDeclaration(
-                        name=mapped_name,
-                        description=t.description or "",
-                        parameters_json_schema=input_schema
-                    ))
-                    
                 capabilities = session.get_server_capabilities()
                 has_resources = bool(capabilities and getattr(capabilities, "resources", None))
                 
+                # Count tool names to detect collisions across all servers
+                for t in tools_response.tools:
+                    tool_name_counts[t.name] = tool_name_counts.get(t.name, 0) + 1
+                    
                 if has_resources:
-                    list_name = f"{safe_server_name}_list_resources"
-                    read_name = f"{safe_server_name}_read_resource"
-                    
-                    adapter.register_resource_tools(list_name, read_name)
-                    
-                    self.adapters_map[list_name] = adapter
-                    self.mcp_declarations.append(types.FunctionDeclaration(
-                        name=list_name,
-                        description=f"List available resources from the {name} server.",
-                        parameters_json_schema={"type": "object", "properties": {}}
-                    ))
-                    
-                    self.adapters_map[read_name] = adapter
-                    self.mcp_declarations.append(types.FunctionDeclaration(
-                        name=read_name,
-                        description=f"Read a specific resource from the {name} server using its URI.",
-                        parameters_json_schema={
-                            "type": "object",
-                            "properties": {"uri": {"type": "string", "description": "The URI of the resource to read"}},
-                            "required": ["uri"]
-                        }
-                    ))
-                    
+                    tool_name_counts["list_resources"] = tool_name_counts.get("list_resources", 0) + 1
+                    tool_name_counts["read_resource"] = tool_name_counts.get("read_resource", 0) + 1
+
+                server_data.append({
+                    "name": name,
+                    "safe_name": safe_server_name,
+                    "adapter": adapter,
+                    "tools": tools_response.tools,
+                    "has_resources": has_resources,
+                    "stack": server_stack
+                })
+                
                 self.server_stacks.append(server_stack)
-                logger.info(f"Connected to MCP server: {name} (loaded {len(tools_response.tools)} tools, resources: {has_resources})")
             except Exception as e:
                 logger.error(f"Failed to connect to MCP server {name}: {e}")
                 await server_stack.aclose()
+
+        # Registration phase (only prefix if there's a collision)
+        for data in server_data:
+            server_name = data["name"]
+            safe_name = data["safe_name"]
+            adapter = data["adapter"]
+            
+            for tool in data["tools"]:
+                # If tool name is unique, use it. If collision, prefix with safe_name
+                mapped_name = f"{safe_name}_{tool.name}" if tool_name_counts[tool.name] > 1 else tool.name
+                
+                adapter.register_tool(tool.name, mapped_name)
+                self.adapters_map[mapped_name] = adapter
+                
+                input_schema = tool.inputSchema if hasattr(tool, "inputSchema") else tool.input_schema
+                if "type" not in input_schema:
+                    input_schema["type"] = "object"
+                    
+                self.mcp_declarations.append(types.FunctionDeclaration(
+                    name=mapped_name,
+                    description=tool.description or "",
+                    parameters_json_schema=input_schema
+                ))
+            
+            if data["has_resources"]:
+                list_name = f"{safe_name}_list_resources" if tool_name_counts.get("list_resources", 0) > 1 else "list_resources"
+                read_name = f"{safe_name}_read_resource" if tool_name_counts.get("read_resource", 0) > 1 else "read_resource"
+                
+                adapter.register_resource_tools(list_name, read_name)
+                
+                self.adapters_map[list_name] = adapter
+                self.mcp_declarations.append(types.FunctionDeclaration(
+                    name=list_name,
+                    description=f"List available resources from the {server_name} server.",
+                    parameters_json_schema={"type": "object", "properties": {}}
+                ))
+                
+                self.adapters_map[read_name] = adapter
+                self.mcp_declarations.append(types.FunctionDeclaration(
+                    name=read_name,
+                    description=f"Read a specific resource from the {server_name} server using its URI.",
+                    parameters_json_schema={
+                        "type": "object",
+                        "properties": {"uri": {"type": "string", "description": "The URI of the resource to read"}},
+                        "required": ["uri"]
+                    }
+                ))
+                
+            logger.info(f"Connected to MCP server: {server_name} (loaded {len(data['tools'])} tools, resources: {data['has_resources']})")
                 
         self._connected = True
 
