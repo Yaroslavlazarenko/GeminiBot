@@ -1,317 +1,106 @@
-# GeminiBot - Telegram AI Assistant
+# Mia - Advanced Telegram AI Assistant
 
-![Python](https://img.shields.io/badge/Python-3.11%2B-blue)
-![PostgreSQL](https://img.shields.io/badge/PostgreSQL-14%2B-blue)
-![License](https://img.shields.io/badge/License-MIT-green)
+Mia is a highly sophisticated, persona-driven Telegram bot built on top of the **Google Gemini API** (GenAI SDK) and **FastMCP**. It utilizes a modern, clean architecture backed by MongoDB and features a dual-model "Gatekeeper" routing system, dynamic tool orchestration, and a secure Web Admin panel.
 
-Telegram бот на базе Google Gemini AI с расширенными возможностями обработки текста, голоса и изображений.
+## 🌟 Core Features
 
-## 🚀 Полный список возможностей
+- **Dual-Model Architecture (Gatekeeper Pattern):** 
+  - A fast, lightweight model (`gemini-2.5-flash-8b`) analyzes every incoming message to determine if it's white noise, if the bot should be silenced, or if a response is needed.
+  - The main persona model (`gemini-2.5-flash`) is only invoked when necessary, saving tokens and preventing hallucinations in busy group chats.
+- **Native FastMCP Integration:**
+  - **Local Tools:** Mia natively uses tools to send Telegram reactions, reply to specific messages, send stickers, and generate **real voice messages** (via ElevenLabs TTS).
+  - **Remote MCP Servers:** Connect the bot to external HTTP/SSE MCP servers (like Exa Search, File systems, Math solvers). The proxy fetches tools dynamically, handles name collisions, and orchestrates the function-calling loop autonomously.
+- **Document-Oriented Storage:** Powered by MongoDB. Chat histories and user/group preferences are stored in clean JSON documents, matching Gemini's native API format perfectly. No more complex relational migrations.
+- **Secure Web Admin Panel:** Manage models, the Gemini Base URL (proxy support), MCP server configurations, and edit Mia's System Prompt on the fly. Access is strictly secured via one-time tokens generated in Telegram.
+- **100% Dockerized:** No manual environment setups or OS-specific scripts required.
 
-### 💬 Текстовые сообщения
-- Интеллектуальные ответы на текстовые сообщения
-- Поддержка контекста разговора
-- Обработка ответов на сообщения (reply)
-- Возможность включения/выключения ответов на текст
-- Форматирование ответов (HTML)
-- Поддержка эмодзи и специальных символов
-- Учет имени отправителя в контексте
-- Учет времени отправки сообщения
-- Возможность добавления реакций (эмодзи) к сообщениям
-- Поддержка всех типов форматирования Telegram:
-  - Жирный текст
-  - Курсив
-  - Подчеркивание
-  - Зачеркивание
-  - Ссылки
-  - Код
-  - Предварительно отформатированный текст
-  - Скрытый текст (спойлеры)
+---
 
-### 🎤 Голосовые сообщения
-- Распознавание голосовых сообщений
-- Два режима работы с голосом:
-  - 📝 Только транскрипция (преобразование голоса в текст)
-  - 💬 Полноценные ответы на содержание голосового сообщения
-- Обработка пересланных голосовых сообщений
-- Возможность включения/выключения обработки голоса
-- Поддержка различных форматов аудио
-- Учет контекста голосового сообщения
+## 🚀 Quick Start (Docker)
 
-### 📸 Обработка изображений
-- Анализ и описание изображений
-- Ответы на вопросы по содержанию изображений
-- Обработка медиагрупп (несколько фото в одном сообщении)
-- Автоматическое определение лучшего качества изображения
-- Возможность включения/выключения обработки изображений
-- Поддержка различных форматов изображений
-- Учет контекста изображения в разговоре
+Deployment is strictly handled via Docker and Docker Compose.
 
-### 📹 Видео-сообщения (Video Notes)
-- Обработка кружочков (video notes)
-- Анализ визуального и аудио содержимого
-- Возможность включения/выключения обработки видео-сообщений
-- Поддержка различных форматов видео
-- Учет контекста видео-сообщения
+### 1. Prerequisites
+- Docker & Docker Compose installed on your server.
+- A Telegram Bot Token (from [@BotFather](https://t.me/BotFather)).
+- A Google Gemini API Key (from [Google AI Studio](https://aistudio.google.com/)).
+- Your Telegram User ID (to access the admin panel).
 
-### 👥 Групповые чаты
-- Отдельные настройки для групповых чатов
-- Управление правами доступа
-- Индивидуальные настройки для каждого чата
-- Поддержка администраторов групп
-- Очистка истории сообщений в группе
-- Учет ролей участников группы
-- Поддержка групповых команд
+### 2. Installation
 
-### ⚙️ Настройки пользователя
-- Индивидуальные настройки для каждого пользователя
-- Управление функциями:
-  - Включение/выключение ответов на текст
-  - Включение/выключение обработки голоса
-  - Включение/выключение обработки изображений
-  - Включение/выключение обработки видео-сообщений
-  - Глобальное включение/выключение всех ответов бота
-- Режимы работы с голосом:
-  - Только транскрипция
-  - Полноценные ответы
-- Управление историей:
-  - Очистка личной истории
-  - Очистка групповой истории
-  - Выборочное удаление сообщений
-- Настройки форматирования ответов
-- Управление реакциями
-
-### 📊 Система логирования
-- Многоуровневое логирование:
-  - CRITICAL - Критические ошибки
-  - ERROR - Ошибки в работе
-  - INFO - Информационные сообщения
-  - DEBUG - Отладочная информация
-- Логирование в файл
-- Интеграция с systemd (Linux)
-- Мониторинг состояния бота
-
-### 🔄 Автоматическое обновление
-- Автоматическая проверка обновлений
-- Обновление через Docker
-- Обновление через скрипты для Windows и Linux
-- Сохранение настроек при обновлении
-
-### 🛠 Технические особенности
-- Асинхронная архитектура на базе aiogram 3.x
-- PostgreSQL для хранения данных
-- Alembic для управления миграциями
-- Поддержка Docker
-- Кроссплатформенность (Windows/Linux)
-- Оптимизированная работа с медиафайлами
-- Кэширование и оптимизация запросов
-
-### 📋 Команды управления
-- `/start` - Начало работы с ботом
-- `/menu` - Открытие меню настроек
-- `/help` - Показать справку
-- `/clear` - Очистка истории
-- Настройки через инлайн-кнопки
-
-## 📋 Требования
-
-### Системные требования
-- Python 3.11 или выше
-- PostgreSQL 14 или выше
-- FFmpeg (для обработки голосовых сообщений)
-- 512MB RAM минимум
-- 1GB свободного места на диске
-
-### API ключи
-- Telegram Bot Token ([@BotFather](https://t.me/BotFather))
-- Gemini API Key ([Google AI Studio](https://makersuite.google.com/app/apikey))
-
-## 🚀 Основные возможности
-
-### 💬 Текстовые сообщения
-- Интеллектуальные ответы на текстовые сообщения
-- Поддержка контекста разговора
-- Возможность включения/выключения ответов на текст
-
-### 🎤 Голосовые сообщения
-- Распознавание голосовых сообщений
-- Два режима работы с голосом:
-  - 📝 Только транскрипция (преобразование голоса в текст)
-  - 💬 Полноценные ответы на содержание голосового сообщения
-- Возможность включения/выключения обработки голоса
-
-### 📸 Обработка изображений
-- Анализ и описание изображений
-- Ответы на вопросы по содержанию изображений
-- Возможность включения/выключения обработки изображений
-
-## ⚙️ Настройки пользователя
-
-Бот предоставляет гибкие настройки для каждого пользователя:
-
-1. **Включение/выключение функций**:
-   - Ответы на текстовые сообщения
-   - Обработка голосовых сообщений
-   - Обработка изображений
-
-2. **Режимы работы с голосом**:
-   - Только транскрипция
-   - Полноценные ответы
-
-3. **Управление историей**:
-   - Очистка истории сообщений
-   - Возможность очистки как личной, так и групповой истории
-
-## 🛠 Технические особенности
-
-- Асинхронная архитектура на базе aiogram 3.x
-- PostgreSQL для хранения данных
-- Alembic для управления миграциями базы данных
-- Структурированное логирование
-- Поддержка групповых чатов
-- Автоматическое обновление
-
-## 📋 Команды
-
-- `menu` - Shows interactive menu for bot settings management
-- `clear` - Clears message history (with various options)
-- `help` - Shows detailed help about available commands
-
-## 🔧 Установка
-
-### Windows
-
-1. Скачайте и установите:
-   - [Python 3.11+](https://www.python.org/downloads/)
-   - [PostgreSQL 14+](https://www.postgresql.org/download/windows/)
-   - [FFmpeg](https://ffmpeg.org/download.html)
-
-2. Скачайте бота:
-```powershell
-git clone https://github.com/yourusername/geminibot.git
-cd geminibot
-```
-
-3. Запустите установку:
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\install_windows.ps1
-```
-
-4. Настройте `.env` файл:
-```env
-bot_token = 'ваш_токен_бота'
-gemini_api_key = 'ваш_ключ_gemini'
-gemini_api_model = 'gemini-2.0-flash'
-db_user = 'postgres'
-db_password = 'ваш_пароль'
-db_name = 'geminibot'
-db_host = 'localhost'
-```
-
-5. Запустите бота:
-```powershell
-.\venv\Scripts\python main.py
-```
-
-### Linux (Ubuntu/Debian)
-
-1. Установите зависимости:
+Clone the repository:
 ```bash
-sudo apt update
-sudo apt install -y python3.11 python3.11-venv python3.11-dev postgresql postgresql-contrib ffmpeg git
+git clone https://github.com/Yaroslavlazarenko/GeminiBot.git
+cd GeminiBot
 ```
 
-2. Скачайте и установите бота:
-```bash
-git clone https://github.com/yourusername/geminibot.git
-cd geminibot
-chmod +x scripts/install.sh
-sudo ./scripts/install.sh
-```
-
-3. Настройте `.env` файл:
+Configure your environment variables:
 ```bash
 cp .env.example .env
-nano .env  # Отредактируйте файл
+nano .env
 ```
 
-4. Создайте базу данных:
+**Required `.env` fields:**
+```env
+BOT_TOKEN=1234567890:YOUR_TELEGRAM_BOT_TOKEN
+GEMINI_API_KEY=YOUR_GEMINI_API_KEY
+ADMIN_TELEGRAM_ID=YOUR_PERSONAL_TELEGRAM_ID # e.g., 123456789
+
+# Optional: For voice message generation
+ELEVENLABS_API_KEY=your_elevenlabs_api_key_here
+```
+
+### 3. Run the Bot
 ```bash
-sudo -u postgres psql -c "CREATE DATABASE geminibot;"
-sudo -u postgres psql -c "CREATE USER geminibot WITH PASSWORD 'ваш_пароль';"
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE geminibot TO geminibot;"
+docker compose up -d --build
 ```
+This will start two containers: `mongodb` and the `bot`.
 
-5. Примените миграции:
-```bash
-alembic upgrade head
+---
+
+## 🔐 Web Admin Panel
+
+Mia includes an embedded Web UI (running on port `8081` by default) to manage the bot dynamically without restarting Docker.
+
+### How to access:
+1. Ensure your `ADMIN_TELEGRAM_ID` is set in `.env`.
+2. Send the command `/admin` to Mia in Telegram.
+3. The bot will generate a secure, one-time access link:
+   `http://<YOUR_SERVER_IP>:8081/?token=SECRET_HASH`
+4. Click the link. The browser will securely authenticate you via HTTP cookies.
+
+### What you can configure:
+- **System Instruction:** Edit Mia's persona, backstory, and behavioral rules.
+- **Models:** Change the Gatekeeper or Persona models on the fly.
+- **Gemini Base URL:** Override the default Google API endpoint (e.g., to route traffic through a custom proxy).
+- **MCP Servers Config:** Connect remote MCP servers using a JSON configuration.
+
+#### MCP Servers Config Example:
+```json
+{
+  "math_server": {
+    "url": "https://mathematics.fastmcp.app/mcp"
+  },
+  "search_server": {
+    "url": "https://mcp.exa.ai/mcp",
+    "type": "sse",
+    "headers": {
+      "Authorization": "Bearer YOUR_API_KEY"
+    }
+  }
+}
 ```
+*When you click "Save" in the panel, the bot will dynamically reconnect to the new MCP servers, fetch their schemas, and inject them into Mia's brain without dropping a single Telegram message.*
 
-6. Запустите бота:
-```bash
-sudo systemctl start geminibot
-```
+---
 
-### Docker
+## 🧠 Architecture Overview
 
-1. Установите Docker и Docker Compose:
-```bash
-# Ubuntu/Debian
-sudo apt install docker.io docker-compose
-# Windows
-# Скачайте Docker Desktop с официального сайта
-```
-
-2. Запустите бота:
-```bash
-docker-compose up -d
-```
-
-## 📝 Логирование
-
-Бот использует структурированное логирование с разными уровнями:
-- CRITICAL - Критические ошибки, требующие немедленного внимания
-- ERROR - Ошибки, влияющие на работу бота
-- INFO - Информационные сообщения о важных событиях
-
-### Просмотр логов
-
-Windows:
-```powershell
-Get-Content -Path "bot.log" -Wait
-```
-
-Linux:
-```bash
-journalctl -u geminibot -f
-```
-
-Docker:
-```bash
-docker-compose logs -f
-```
-
-## 🔄 Обновление
-
-### Windows
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\update.py
-```
-
-### Linux
-```bash
-sudo ./scripts/update.sh
-```
-
-### Docker
-```bash
-docker-compose pull && docker-compose up -d
-```
-
-## 🤝 Поддержка
-
-По всем вопросам и предложениям обращайтесь в Issues репозитория.
-
-## 📄 Лицензия
-
-MIT License
+The project follows a Pragmatic Clean Architecture approach:
+- **`core/`**: Centralized configurations, database connection (`motor`), enums, and logging.
+- **`services/`**:
+  - `ai_service.py`: Orchestrates the main Gemini model and the autonomous MCP tool execution loop.
+  - `gatekeeper_service.py`: Evaluates incoming context and decides `RESPOND`, `IGNORE`, or `DISABLE_RESPONSES`.
+  - `mcp_manager.py`: Handles dynamic HTTP/SSE connections to remote MCP servers and collision resolution.
+  - `tts_service.py`: Generates audio bytes via ElevenLabs.
+- **`bot/`**: Telegram presentation layer. `handlers.py` maps Telegram events to the unified `ChatContext` abstraction.
