@@ -140,7 +140,7 @@ class AIService:
 
                 # Fetch known facts
                 try:
-                    facts = await chat_context._db.get_user_facts(user_id) if user_id != "Unknown" else []
+                    facts = await chat_context._db.get_user_facts(user_id, chat_context.id) if user_id != "Unknown" else []
                     facts_str = "\n".join([f"- {f['date'].strftime('%Y-%m-%d')}: {f['fact']} (Source: {f['source']})" for f in facts]) if facts else "No known facts yet."
                 except Exception as e:
                     logger.error(f"Failed to fetch user facts: {e}")
@@ -394,12 +394,13 @@ class AIService:
                         elif call.name == ToolName.SAVE_USER_FACT.value:
                             user_id = call.args.get("user_id")
                             fact = call.args.get("fact", "")
+                            is_global = call.args.get("is_global", False)
                             chat_title = sender_info.get("chat_title", "Unknown Context") if sender_info else "Unknown Context"
                             
                             try:
                                 if not user_id or not fact:
                                     raise ValueError("Missing user_id or fact")
-                                await chat_context._db.save_user_fact(int(user_id), fact, chat_title)
+                                await chat_context._db.save_user_fact(int(user_id), fact, chat_title, chat_context.id, is_global)
                                 response_parts.append(
                                     Part.from_function_response(
                                         name=call.name,
@@ -420,7 +421,7 @@ class AIService:
                             try:
                                 if not user_id:
                                     raise ValueError("Missing user_id")
-                                facts = await chat_context._db.get_user_facts(int(user_id))
+                                facts = await chat_context._db.get_user_facts(int(user_id), chat_context.id)
                                 formatted_facts = [f"- {f['date'].strftime('%Y-%m-%d')}: {f['fact']} (Source: {f['source']})" for f in facts]
                                 response_parts.append(
                                     Part.from_function_response(

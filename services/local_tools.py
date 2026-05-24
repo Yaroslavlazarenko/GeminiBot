@@ -89,11 +89,12 @@ def get_group_info() -> str:
     return f"Getting group info..."
 
 @mcp.tool(name=ToolName.SAVE_USER_FACT.value)
-def save_user_fact(user_id: int, fact: str) -> str:
-    """Save an important fact about a user permanently into your memory. Use this to remember their preferences, life events, secrets, or personality traits across all chats.
+def save_user_fact(user_id: int, fact: str, is_global: bool = False) -> str:
+    """Save an important fact about a user permanently into your memory.
     Args:
         user_id: The exact Telegram ID of the user. You can find this in the [INTERLOCUTOR INFO] section.
         fact: A concise, clear sentence describing what you learned about the user.
+        is_global: Set to True ONLY IF this is a completely harmless, public fact (e.g. 'likes pizza') that is safe to bring up in public group chats. Set to False if this is a personal secret, private context, or sensitive info.
     """
     return f"Saving fact for user {user_id}"
 

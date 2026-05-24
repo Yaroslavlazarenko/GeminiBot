@@ -222,23 +222,30 @@ class DatabaseManager:
             {"$set": {f"settings.{k}": v for k, v in settings.items()}}
         )
 
-    async def save_user_fact(self, telegram_id: int, fact: str, source: str):
-        """Save a persistent fact about a user."""
+    async def save_user_fact(self, telegram_id: int, fact: str, source: str, chat_id: int, is_global: bool = False):
+        """Save a persistent fact about a user. Scoped by chat_id to prevent leaking private info to groups."""
         await self.users.update_one(
             {"telegram_id": telegram_id},
             {"$push": {
                 "facts": {
                     "fact": fact,
                     "source": source,
+                    "chat_id": chat_id,
+                    "is_global": is_global,
                     "date": datetime.utcnow()
                 }
             }}
         )
 
-    async def get_user_facts(self, telegram_id: int) -> List[Dict[str, Any]]:
-        """Retrieve all persistent facts about a user."""
+    async def get_user_facts(self, telegram_id: int, current_chat_id: int) -> List[Dict[str, Any]]:
+        """Retrieve facts about a user that are either global or explicitly scoped to the current chat."""
         user = await self.users.find_one({"telegram_id": telegram_id})
-        return user.get("facts", []) if user else []
+        if not user:
+            return []
+            
+        all_facts = user.get("facts", [])
+        # Filter facts: Only return if it was learned in this exact chat, OR if it's explicitly marked as harmless/global
+        return [f for f in all_facts if f.get("chat_id") == current_chat_id or f.get("is_global", False)]
 
     async def append_user_history(self, telegram_id: int, message: Dict[str, Any], max_history: int = 50):
         await self.users.update_one(
