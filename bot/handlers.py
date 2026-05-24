@@ -2,6 +2,7 @@ import logging
 import asyncio
 from aiogram import Router, filters, F
 from aiogram.types import Message, BufferedInputFile, MessageReactionUpdated
+from aiogram.utils.chat_action import ChatActionSender
 from core.database import ChatContext
 from services.ai_service import get_ai_service
 from services.gatekeeper_service import get_gatekeeper
@@ -47,34 +48,33 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
         return
 
     # 2. Proceed with Persona response
-    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+        # Update user in DB with latest metadata dynamically
+        await chat_context._db.get_or_create_user(
+            telegram_id=message.from_user.id,
+            username=message.from_user.username,
+            first_name=message.from_user.first_name,
+            last_name=message.from_user.last_name
+        )
 
-    # Update user in DB with latest metadata dynamically
-    await chat_context._db.get_or_create_user(
-        telegram_id=message.from_user.id,
-        username=message.from_user.username,
-        first_name=message.from_user.first_name,
-        last_name=message.from_user.last_name
-    )
+        # Get avatar description (cached or live using Gemini Vision)
+        avatar_desc = await AvatarService.get_and_describe_avatar(
+            bot=message.bot,
+            user_id=message.from_user.id,
+            db_manager=chat_context._db
+        )
 
-    # Get avatar description (cached or live using Gemini Vision)
-    avatar_desc = await AvatarService.get_and_describe_avatar(
-        bot=message.bot,
-        user_id=message.from_user.id,
-        db_manager=chat_context._db
-    )
+        # Build sender_info context dictionary
+        sender_info = {
+            "first_name": message.from_user.first_name,
+            "last_name": message.from_user.last_name,
+            "username": message.from_user.username,
+            "language_code": message.from_user.language_code,
+            "avatar_description": avatar_desc
+        }
 
-    # Build sender_info context dictionary
-    sender_info = {
-        "first_name": message.from_user.first_name,
-        "last_name": message.from_user.last_name,
-        "username": message.from_user.username,
-        "language_code": message.from_user.language_code,
-        "avatar_description": avatar_desc
-    }
-
-    # Generate Response
-    response_text, tool_calls = await ai_service.generate_response(text, chat_context, media, sender_info)
+        # Generate Response
+        response_text, tool_calls = await ai_service.generate_response(text, chat_context, media, sender_info)
 
     db_response_text = ""
     bot_msg_to_save = None
@@ -155,11 +155,9 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
         elif call.name == ToolName.SEND_VOICE.value:
             text_to_speak = call.args.get("text_to_speak", "")
             
-            # Show "recording voice" action
-            await message.bot.send_chat_action(chat_id=message.chat.id, action="record_voice")
-            
-            # Generate the voice using ElevenLabs
-            audio_bytes = await tts_service.generate_voice(text_to_speak)
+            async with ChatActionSender.record_voice(bot=message.bot, chat_id=message.chat.id):
+                # Generate the voice using ElevenLabs
+                audio_bytes = await tts_service.generate_voice(text_to_speak)
             
             if audio_bytes:
                 voice_file = BufferedInputFile(audio_bytes, filename="voice.ogg")
@@ -323,8 +321,6 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
 
     # Process media
     try:
-        await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
-        
         if mime_type.startswith('image/'):
             media_bytes = await MediaService.process_image(message.bot, file_id, file_size)
             if media_bytes:
