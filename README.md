@@ -1,6 +1,6 @@
 [🇬🇧 English](README.md) | [🇷🇺 Русский](README.ru.md) | [🇺🇦 Українська](README.uk.md)
 
-# 🧠 Mia - Advanced Multimodal Telegram AI Assistant
+# Mia - Advanced Multimodal Telegram AI Assistant
 
 Mia is a highly sophisticated, persona-driven Telegram bot built on the **Google Gemini API** (GenAI SDK) and **FastMCP**. Designed to feel like a real conversational partner, Mia possesses long-term memory, can see and analyze photos, watch video notes, listen to voice messages, and reply with real voice audio. 
 
@@ -8,28 +8,28 @@ Under the hood, Mia uses a modern, containerized architecture with MongoDB, feat
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-### 🛡️ Dual-Model Gatekeeper (Group Chat Optimization)
+### Dual-Model Gatekeeper (Group Chat Optimization)
 Running an AI in a busy group chat can be expensive and spammy. Mia solves this using a two-tier model approach:
 - **The Gatekeeper (`gemini-3.1-flash-lite`):** A fast, cheap model that reads every incoming group message. It evaluates the conversational context, searches chat history if needed, and decides whether Mia should *Respond*, *Ignore*, or *Disable* herself temporarily.
 - **The Persona (`gemini-3.5-flash`):** The heavier, smarter model that generates Mia's actual responses only when the Gatekeeper approves the interaction.
 
-### 🤫 Structured Thought Isolation (Zero Prompt Leaks)
+### Structured Thought Isolation (Zero Prompt Leaks)
 Mia generates responses using **Structured Outputs (JSON Schema)**. She is forced to separate her internal reasoning, image analysis, and drafts into a hidden `internal_monologue` field. Only the polished `message` field is routed to Telegram. This completely eliminates "prompt leaking" (e.g., the AI accidentally sending `/thought` or raw analytical metadata into the chat).
 
-### 👁️ Multimodality: Vision, Voice, and Video
+### Multimodality: Vision, Voice, and Video
 - **Video Notes & Audio:** Automatically transcribes voice messages and video notes ("кружочки") using the ultra-fast **Groq Whisper API**. Video notes are also run through Gemini Vision for inline visual analysis.
 - **Cascading Image Compression:** When receiving massive photos, the bot gracefully cascades compressions (2K -> 1080p -> 720p). This ensures the highest possible quality is sent to the LLM without ever exceeding the 4.5MB context limit.
 - **Sticker Catalog Vision:** Background workers download your configured Telegram sticker packs, run them through Gemini Vision to generate emotional/visual descriptions, and cache them in the DB. Mia then uses a local tool to pick and send the perfect sticker.
 - **Real Voice Replies:** Mia can send authentic voice messages using the **ElevenLabs TTS API**.
 
-### 🧠 Persistent Memory & Context
+### Persistent Memory & Context
 - **Immutable History:** Full chat logs are stored in MongoDB. Mia can actively use tools to search past conversations by keywords or specific dates.
 - **Isolated User Memory:** Mia proactively observes and saves user facts, preferences, and traits. Strict programmatic privacy boundaries ensure that sensitive facts learned in a private chat never leak into public groups.
 - **Contextual Awareness:** Intercepts Telegram's native `reply` and `forward` attributes, injecting exact speaker attributions so the AI perfectly understands complex conversational flows.
 
-### 🔌 MCP Extensibility & Media Bridging
+### MCP Extensibility & Media Bridging
 Extend Mia's capabilities endlessly without modifying her core code:
 - **Local Native Tools:** Mia autonomously reacts to messages, replies to specific quotes, searches/sends stickers, and saves memory facts.
 - **Shared Volume Media Bridging:** Telegram files exist in RAM. If an external MCP server (like Google Reverse Image Search) requires an absolute file path, Mia organically discovers the `download_media_to_disk` tool, saves the image to a shared Docker volume (with automatic 1-hour cleanup), and passes the path to the external microservice seamlessly.
@@ -37,7 +37,7 @@ Extend Mia's capabilities endlessly without modifying her core code:
 
 ---
 
-## 🏗 Architecture Overview
+## Architecture Overview
 
 1. **Dockerized Environment:** The main bot runs in a Python 3.11 container. MongoDB runs in an adjacent container.
 2. **Shared Media Volume:** A dedicated Docker volume (`gemini_shared_media`) allows the bot to securely drop media payloads for adjacent external MCP bridges (e.g., Node.js tools requiring local filesystem access).
@@ -45,7 +45,7 @@ Extend Mia's capabilities endlessly without modifying her core code:
 
 ---
 
-## ⚙️ Prerequisites
+## Prerequisites
 
 - **Docker** and **Docker Compose** installed on your host.
 - A Telegram Bot Token from [@BotFather](https://t.me/BotFather).
@@ -55,7 +55,7 @@ Extend Mia's capabilities endlessly without modifying her core code:
 
 ---
 
-## 🚀 Installation & Quick Start
+## Installation & Quick Start
 
 ### 1. Clone & Configure
 ```bash
@@ -91,7 +91,7 @@ The bot will start, connect to MongoDB, build its database indexes, and begin po
 
 ---
 
-## 🤖 Interacting with Mia
+## Interacting with Mia
 
 - **Private Chats:** Simply send her a message, photo, or voice note. Mia processes bursts of messages (sent within 3 seconds) into a single thought context to avoid spamming you back.
 - **Group Chats:** Add Mia to a group. **Important:** For Mia to read all messages (so the Gatekeeper can analyze context), you must either make her an Admin or disable Group Privacy Mode via @BotFather.
@@ -101,7 +101,7 @@ The bot will start, connect to MongoDB, build its database indexes, and begin po
 
 ---
 
-## 🛠 Adding External MCP Servers (SSE)
+## Adding External MCP Servers (SSE)
 
 You can plug in third-party MCP servers (like web search, GitHub integration, or Reverse Image Search) seamlessly.
 
@@ -123,5 +123,9 @@ Mia will instantly inherit the new capabilities on her very next conversational 
 
 ---
 
-## 📄 License
+## License
 This project is licensed under the MIT License.
+---
+
+## Acknowledgments
+Special thanks to [GeminiMCPRelay](https://github.com/Kirillka999/GeminiMCPRelay.git) for the foundational MCP relay architecture.
