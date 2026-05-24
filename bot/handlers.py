@@ -1,4 +1,5 @@
 import logging
+import asyncio
 from aiogram import Router, filters, F
 from aiogram.types import Message, BufferedInputFile, MessageReactionUpdated
 from core.database import ChatContext
@@ -185,24 +186,31 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
 
     # Send text response if the model provided one
     if response_text:
-        # Determine how to send the message (reply vs normal answer)
+        # Split by paragraphs (\n\n) to avoid breaking markdown in lists or code blocks
+        parts = [p.strip() for p in response_text.split('\n\n') if p.strip()]
+        
         explicit_reply_id = getattr(message, 'reply_to_message_id', None)
-        if explicit_reply_id:
-            bot_message = await message.reply(
-                response_text,
-                reply_to_message_id=explicit_reply_id
-            )
-        else:
-            # Default behavior when no tool explicitly requested reply:
-            # In groups: reply to the user's message so they receive a notification.
-            # In private chat: send a normal message without a reply.
-            if chat_context.is_group:
-                bot_message = await message.reply(response_text)
+        
+        for i, part in enumerate(parts):
+            # Only reply to the specific message for the first part to avoid notification spam
+            if explicit_reply_id and i == 0:
+                bot_message = await message.reply(
+                    part,
+                    reply_to_message_id=explicit_reply_id
+                )
+            elif chat_context.is_group and i == 0:
+                bot_message = await message.reply(part)
             else:
-                bot_message = await message.answer(response_text)
+                bot_message = await message.answer(part)
                 
-        # Save Bot Message to DB
-        await chat_context.add_message("model", response_text, bot_message.message_id)
+            # Save Bot Message to DB
+            await chat_context.add_message("model", part, bot_message.message_id)
+            
+            # Brief pause between messages so they appear in correct order
+            if i < len(parts) - 1:
+                await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+                await asyncio.sleep(1.0)
+                
     elif db_response_text and bot_msg_to_save:
         # Save Voice or Sticker action to DB
         await chat_context.add_message("model", db_response_text, bot_msg_to_save.message_id)
