@@ -5,6 +5,7 @@ from core.key_manager import GeminiKeyManager, get_key_manager
 from google.genai.types import GenerateContentConfig, FunctionCall, Content, Tool, AutomaticFunctionCallingConfig, Part
 from typing import List, Dict, Any, Tuple
 from core.database import ChatContext
+from core.enums import ToolName
 from services.local_tools import local_tools_list
 from services.mcp_manager import MCPConnectionManager
 
