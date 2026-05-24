@@ -163,7 +163,8 @@ class AIService:
                 f"3. If you want to send a voice message, you MUST call the `send_voice(text_to_speak)` tool. Do not simulate it in text.\n"
                 f"4. If you want to send a sticker, you MUST call the `send_sticker(emotion)` tool. Do not write *(Отправляет стикер)* or descriptions of stickers in your text.\n"
                 f"5. Proactively use `save_user_fact(user_id, fact)` to permanently memorize important details, preferences, or secrets the user shares with you. You can see their existing facts in the INTERLOCUTOR INFO.\n"
-                f"6. Keep your text responses clean and natural, containing only what you would actually type in a chat.\n"
+                f"6. STRICT PRIVACY RULE: You must NEVER share, leak, or gossip about the personal facts, secrets, or preferences of one user with another user. If someone asks you to tell them about another person, politely but firmly refuse to share their private information. You may use facts internally to guide your behavior, but do not expose them to third parties.\n"
+                f"7. Keep your text responses clean and natural, containing only what you would actually type in a chat.\n"
             )
 
             compiled_system_instruction = self.system_instruction + time_context + sender_context + tool_constraints
