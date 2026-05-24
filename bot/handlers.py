@@ -315,12 +315,10 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
     
     # Identify media type
     if message.photo:
-        # Telegram sends multiple sizes. Find the largest one under 10MB to give the compressor the best source
-        best_photo = message.photo[0]
-        for photo in message.photo:
-            if getattr(photo, 'file_size', 0) and photo.file_size <= 10 * 1024 * 1024:
-                best_photo = photo
-                
+        # Telegram sends multiple sizes sorted by quality. The last one is the highest quality.
+        # Standard photos are heavily compressed by Telegram (usually < 1MB), so it's safe to take the last one.
+        best_photo = message.photo[-1]
+        
         file_id = best_photo.file_id
         file_size = best_photo.file_size or 0
         mime_type = "image/jpeg"
