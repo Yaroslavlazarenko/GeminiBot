@@ -3,6 +3,7 @@ import os
 from core.config import Config
 from core.key_manager import GeminiKeyManager, get_key_manager
 from google.genai.types import GenerateContentConfig, FunctionCall, Content, Tool, AutomaticFunctionCallingConfig, Part
+from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Tuple
 from core.database import ChatContext
 from core.enums import ToolName
@@ -10,6 +11,10 @@ from services.local_tools import local_tools_list
 from services.mcp_manager import MCPConnectionManager
 
 logger = logging.getLogger(__name__)
+
+class AIResponse(BaseModel):
+    internal_monologue: str = Field(description="Your hidden scratchpad. Use this to think step-by-step, analyze images, draft responses, and evaluate your persona constraints. This will NEVER be seen by the user.")
+    message: str = Field(description="The final, polished conversational response that Mia will send to the user. This MUST follow all formatting and persona rules.")
 
 class AIService:
     def __init__(self, config: Config):
@@ -192,7 +197,9 @@ class AIService:
                         system_instruction=compiled_system_instruction,
                         temperature=0.7,
                         tools=all_tools if all_tools else None,
-                        automatic_function_calling=AutomaticFunctionCallingConfig(disable=True)
+                        automatic_function_calling=AutomaticFunctionCallingConfig(disable=True),
+                        response_mime_type="application/json",
+                        response_schema=AIResponse
                     )
                 )
                 
@@ -200,12 +207,28 @@ class AIService:
                 if response.candidates and response.candidates[0].content:
                     current_contents.append(response.candidates[0].content)
                 
-                # Accumulate text across all turns
-                if response.text:
-                    if final_text:
-                        final_text += "\n" + response.text
-                    else:
-                        final_text = response.text
+                # Extract text using Pydantic schema
+                if response.parsed:
+                    ai_res: AIResponse = response.parsed
+                    if ai_res.message:
+                        if final_text:
+                            final_text += "\n" + ai_res.message
+                        else:
+                            final_text = ai_res.message
+                elif response.text:
+                    # Fallback if parsing failed
+                    try:
+                        import json
+                        data = json.loads(response.text)
+                        msg = data.get("message", "")
+                        if msg:
+                            if final_text:
+                                final_text += "\n" + msg
+                            else:
+                                final_text = msg
+                    except Exception:
+                        # Absolute fallback
+                        pass
                     
                 if not response.function_calls:
                     break
