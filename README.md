@@ -106,3 +106,9 @@ The project follows a Pragmatic Clean Architecture approach:
   - `mcp_manager.py`: Handles dynamic HTTP/SSE connections to remote MCP servers and collision resolution.
   - `tts_service.py`: Generates audio bytes via ElevenLabs.
 - **`bot/`**: Telegram presentation layer. `handlers.py` maps Telegram events to the unified `ChatContext` abstraction.
+
+---
+
+## 🙏 Acknowledgments
+
+Special thanks to the [GeminiMCPRelay](https://github.com/Kirillka999/GeminiMCPRelay) project by [Kirillka999](https://github.com/Kirillka999). The core MCP connection manager and autonomous `function_calling` orchestration loop used in Mia were heavily inspired by and adapted from their excellent relay architecture!
