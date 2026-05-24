@@ -408,7 +408,7 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
         return
         
     # How we store this interaction in the DB (text only, to save space!)
-    db_text = f"*(User sent a {media_type_name}"
+    db_text = f"*(User sent a {media_type_name}. FileID: {file_id}"
     if video_desc:
         db_text += f". Visuals: {video_desc}"
     db_text += ")*"

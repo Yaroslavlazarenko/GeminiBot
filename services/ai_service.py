@@ -437,6 +437,54 @@ class AIService:
                                         response={"error": str(e)}
                                     )
                                 )
+                                
+                        elif call.name == ToolName.ANALYZE_PAST_MEDIA.value:
+                            file_id = call.args.get("file_id")
+                            bot = sender_info.get("bot") if sender_info else None
+                            if not file_id or not bot:
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": "Missing file_id or bot context."}
+                                    )
+                                )
+                            else:
+                                try:
+                                    file = await bot.get_file(file_id)
+                                    if file.file_size > 15 * 1024 * 1024:
+                                        raise Exception("File too large (over 15MB limit).")
+                                        
+                                    import io
+                                    downloaded_bytes = io.BytesIO()
+                                    await bot.download_file(file.file_path, destination=downloaded_bytes)
+                                    media_data = downloaded_bytes.getvalue()
+                                    
+                                    # Guess MIME type (Gemini supports image/jpeg, image/png, image/webp, video/mp4, video/webm, etc.)
+                                    ext = file.file_path.split('.')[-1].lower() if '.' in file.file_path else 'jpeg'
+                                    mime_map = {
+                                        'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp',
+                                        'mp4': 'video/mp4', 'webm': 'video/webm'
+                                    }
+                                    mime_type = mime_map.get(ext, 'image/jpeg')
+                                    
+                                    # We provide a function response indicating success, AND append the raw media part
+                                    response_parts.append(
+                                        Part.from_function_response(
+                                            name=call.name,
+                                            response={"result": "Success. The requested raw media file is attached to this context turn."}
+                                        )
+                                    )
+                                    response_parts.append(
+                                        Part.from_bytes(data=media_data, mime_type=mime_type)
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to download/attach past media {file_id}: {e}")
+                                    response_parts.append(
+                                        Part.from_function_response(
+                                            name=call.name,
+                                            response={"error": f"Failed to retrieve file: {str(e)}"}
+                                        )
+                                    )
                             
                         else:
                             local_calls_to_return.append(call)

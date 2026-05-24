@@ -106,6 +106,15 @@ def get_user_facts(user_id: int) -> str:
     """
     return f"Fetching facts for user {user_id}"
 
+@mcp.tool(name=ToolName.ANALYZE_PAST_MEDIA.value)
+def analyze_past_media(file_id: str, specific_question: str = "") -> str:
+    """Fetch and view the full, original image or video from the chat history. Use this if you need to look closer at a photo or video sent previously that only has a text placeholder/summary in your history.
+    Args:
+        file_id: The exact Telegram FileID found in the history placeholder (e.g. FileID: AgAD...).
+        specific_question: Optional. What specifically do you want to look for in this image/video?
+    """
+    return f"Fetching raw media {file_id}..."
+
 # Export the raw functions for Gemini
 local_tools_list = [
     add_reaction,
@@ -119,7 +128,8 @@ local_tools_list = [
     ignore_message,
     get_group_info,
     save_user_fact,
-    get_user_facts
+    get_user_facts,
+    analyze_past_media
 ]
 
 # Tools safe for Gatekeeper to use (read-only)
