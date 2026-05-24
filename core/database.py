@@ -85,12 +85,19 @@ class DatabaseManager:
         """Get the global system settings, merging DB overrides with Config defaults if needed."""
         settings = await self.db['system_settings'].find_one({"_id": "global"})
         if not settings:
+            try:
+                with open("system_instructions.md", "r", encoding="utf-8") as f:
+                    default_prompt = f.read()
+            except Exception:
+                default_prompt = "You are Mia Zareva."
+
             settings = {
                 "_id": "global",
                 "gemini_api_model": "",
                 "gemini_gatekeeper_model": "",
                 "gemini_base_url": "",
-                "mcp_servers_config": "{}"
+                "mcp_servers_config": "{}",
+                "system_instruction": default_prompt
             }
             await self.db['system_settings'].insert_one(settings)
         return settings

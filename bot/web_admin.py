@@ -1,10 +1,21 @@
 import json
 import logging
+import secrets
 from aiohttp import web
 from core.database import DatabaseManager
 from core.config import Config
 
 logger = logging.getLogger(__name__)
+
+# Store valid tokens mapped to their expiry or just track active tokens
+# Format: { "token": True }
+VALID_TOKENS = {}
+
+def create_admin_session() -> str:
+    """Generate a one-time token for the admin panel."""
+    token = secrets.token_urlsafe(16)
+    VALID_TOKENS[token] = True
+    return token
 
 HTML_TEMPLATE = """
 <!DOCTYPE html>
@@ -25,8 +36,16 @@ HTML_TEMPLATE = """
         <div id="alert" class="hidden mb-4 p-4 rounded-md text-white text-center"></div>
 
         <form id="settings-form" class="bg-white shadow-md rounded px-8 pt-6 pb-8 mb-4">
-            <h2 class="text-xl font-semibold mb-4 border-b pb-2">AI Models & Endpoint</h2>
             
+            <h2 class="text-xl font-semibold mb-4 border-b pb-2">Persona & System Prompt</h2>
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="system_instruction">
+                    System Instruction (Prompt)
+                </label>
+                <textarea id="system_instruction" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" rows="12"></textarea>
+            </div>
+
+            <h2 class="text-xl font-semibold mb-4 border-b pb-2">AI Models & Endpoint</h2>
             <div class="mb-4">
                 <label class="block text-gray-700 text-sm font-bold mb-2" for="gemini_api_model">
                     Main Persona Model (Mia)
@@ -70,6 +89,7 @@ HTML_TEMPLATE = """
                 document.getElementById('gemini_api_model').value = data.gemini_api_model || '';
                 document.getElementById('gemini_gatekeeper_model').value = data.gemini_gatekeeper_model || '';
                 document.getElementById('gemini_base_url').value = data.gemini_base_url || '';
+                document.getElementById('system_instruction').value = data.system_instruction || '';
                 
                 let mcpJson = data.mcp_servers_config || '{}';
                 try { mcpJson = JSON.stringify(JSON.parse(mcpJson), null, 4); } catch(e) {}
@@ -106,6 +126,7 @@ HTML_TEMPLATE = """
                 gemini_api_model: document.getElementById('gemini_api_model').value.trim(),
                 gemini_gatekeeper_model: document.getElementById('gemini_gatekeeper_model').value.trim(),
                 gemini_base_url: document.getElementById('gemini_base_url').value.trim(),
+                system_instruction: document.getElementById('system_instruction').value,
                 mcp_servers_config: mcpConfig
             };
 
@@ -135,57 +156,58 @@ HTML_TEMPLATE = """
 def setup_admin_app(db: DatabaseManager, config: Config) -> web.Application:
     app = web.Application()
     
-    # Basic Auth Middleware
-    import base64
-    
     @web.middleware
-    async def basic_auth(request, handler):
-        auth_header = request.headers.get("Authorization")
-        if not auth_header or not auth_header.startswith("Basic "):
-            return web.Response(
-                status=401, 
-                headers={"WWW-Authenticate": 'Basic realm="Admin Panel"'},
-                text="Unauthorized"
-            )
-            
-        encoded_creds = auth_header[6:]
-        try:
-            decoded_creds = base64.b64decode(encoded_creds).decode("utf-8")
-            username, password = decoded_creds.split(":", 1)
-            if username != config.admin_username or password != config.admin_password:
-                raise ValueError()
-        except Exception:
-            return web.Response(
-                status=401, 
-                headers={"WWW-Authenticate": 'Basic realm="Admin Panel"'},
-                text="Unauthorized"
-            )
-            
-        return await handler(request)
+    async def token_auth_middleware(request, handler):
+        # 1. Check if token is in URL query params
+        query_token = request.query.get("token")
+        
+        # 2. Check if token is in cookies
+        cookie_token = request.cookies.get("admin_session")
 
-    app.middlewares.append(basic_auth)
+        valid_token = None
+        if query_token and query_token in VALID_TOKENS:
+            valid_token = query_token
+        elif cookie_token and cookie_token in VALID_TOKENS:
+            valid_token = cookie_token
+
+        if not valid_token:
+            return web.Response(
+                status=401, 
+                text="Unauthorized. Please use the /admin command in Telegram to generate a secure access link."
+            )
+            
+        # Proceed with request
+        response = await handler(request)
+        
+        # If authenticated via URL, set cookie so they can refresh
+        if query_token and not cookie_token:
+            response.set_cookie("admin_session", valid_token, max_age=86400, httponly=True)
+            
+        return response
+
+    app.middlewares.append(token_auth_middleware)
 
     async def handle_index(request):
         return web.Response(text=HTML_TEMPLATE, content_type='text/html')
 
     async def handle_get_settings(request):
         settings = await db.get_system_settings()
-        # Merge with defaults from .env if DB is empty
         return web.json_response({
             "gemini_api_model": settings.get("gemini_api_model") or config.gemini_api_model,
             "gemini_gatekeeper_model": settings.get("gemini_gatekeeper_model") or config.gemini_gatekeeper_model,
             "gemini_base_url": settings.get("gemini_base_url") or (config.gemini_base_url if config.gemini_base_url else ""),
+            "system_instruction": settings.get("system_instruction") or "",
             "mcp_servers_config": settings.get("mcp_servers_config") or config.mcp_servers_config
         })
 
     async def handle_post_settings(request):
         try:
             data = await request.json()
-            # Clean up empty strings to None/default mapping logic
             updates = {
                 "gemini_api_model": data.get("gemini_api_model", ""),
                 "gemini_gatekeeper_model": data.get("gemini_gatekeeper_model", ""),
                 "gemini_base_url": data.get("gemini_base_url", ""),
+                "system_instruction": data.get("system_instruction", ""),
                 "mcp_servers_config": data.get("mcp_servers_config", "{}")
             }
             await db.update_system_settings(updates)

@@ -19,18 +19,10 @@ class AIService:
         http_opts = {"base_url": self.current_base_url} if self.current_base_url else None
         self.client = genai.Client(api_key=config.gemini_api_key, http_options=http_opts)
         
-        self.system_instruction = self._load_system_instructions()
+        self.system_instruction = "You are Mia Zareva." # Will be updated from DB
         
         self.current_mcp_config = config.mcp_servers_config
         self.mcp_manager = MCPConnectionManager(self.current_mcp_config)
-
-    def _load_system_instructions(self) -> str:
-        try:
-            with open("system_instructions.md", "r", encoding="utf-8") as f:
-                return f.read()
-        except Exception as e:
-            logger.error(f"Failed to load system_instructions.md: {e}")
-            return "You are Mia Zareva."
 
     def _convert_history_to_gemini(self, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         formatted = []
@@ -51,7 +43,11 @@ class AIService:
         db_base_url = settings.get("gemini_base_url") or self.config.gemini_base_url
         db_api_model = settings.get("gemini_api_model") or self.config.gemini_api_model
         db_mcp_config = settings.get("mcp_servers_config") or self.config.mcp_servers_config
+        db_sys_prompt = settings.get("system_instruction")
 
+        if db_sys_prompt and self.system_instruction != db_sys_prompt:
+            self.system_instruction = db_sys_prompt
+            
         if self.current_base_url != db_base_url:
             logger.info("Detected base_url change, recreating Gemini client...")
             self.current_base_url = db_base_url

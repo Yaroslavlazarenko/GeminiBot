@@ -5,7 +5,8 @@ from core.database import ChatContext
 from services.ai_service import get_ai_service
 from services.gatekeeper_service import get_gatekeeper
 from services.tts_service import get_tts_service
-from core.enums import GatekeeperAction, ToolName
+from core.config import Config
+from bot.web_admin import create_admin_session
 
 logger = logging.getLogger(__name__)
 
@@ -14,6 +15,24 @@ router = Router()
 ai_service = get_ai_service()
 gatekeeper = get_gatekeeper()
 tts_service = get_tts_service()
+config = Config()
+
+@router.message(filters.Command("admin"))
+async def admin_command(message: Message, chat_context: ChatContext):
+    # Check if the user is the authorized admin
+    if message.from_user.id != config.admin_telegram_id:
+        return
+        
+    token = create_admin_session()
+    
+    # We provide a hint that they need to replace the IP with their server's actual IP
+    text = (
+        f"🔐 **Admin Panel Access**\n\n"
+        f"Here is your temporary, secure access link. Please open it in your browser:\n\n"
+        f"`http://<YOUR_SERVER_IP>:{config.admin_port}/?token={token}`\n\n"
+        f"_(Replace <YOUR_SERVER_IP> with the actual IP address of your server)._"
+    )
+    await message.answer(text, parse_mode="Markdown")
 
 @router.message(filters.Command("start", "help"))
 async def start_command(message: Message, chat_context: ChatContext):
