@@ -90,6 +90,7 @@ async def main():
         # Register middlewares
         dp.message.middleware(DatabaseMiddleware(db_manager))
         dp.callback_query.middleware(DatabaseMiddleware(db_manager))
+        dp.message_reaction.middleware(DatabaseMiddleware(db_manager))
         
         # Include main router
         dp.include_router(main_router)

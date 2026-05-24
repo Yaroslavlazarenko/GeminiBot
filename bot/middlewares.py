@@ -10,16 +10,19 @@ class DatabaseMiddleware(BaseMiddleware):
 
     async def __call__(
         self,
-        handler: Callable[[Message | CallbackQuery, Dict[str, Any]], Awaitable[Any]],
-        event: Message | CallbackQuery,
+        handler: Callable[[Any, Dict[str, Any]], Awaitable[Any]],
+        event: Any,
         data: Dict[str, Any]
     ) -> Any:
         
         chat_context = None
         
-        # Check if the event happened in a group
-        chat = event.chat if isinstance(event, Message) else event.message.chat if isinstance(event, CallbackQuery) else None
-        from_user = event.from_user if isinstance(event, Message) else event.from_user if isinstance(event, CallbackQuery) else None
+        # Resolve chat and from_user in a generic way
+        chat = getattr(event, "chat", None)
+        if not chat and hasattr(event, "message") and event.message:
+            chat = getattr(event.message, "chat", None)
+            
+        from_user = getattr(event, "from_user", None) or getattr(event, "user", None)
 
         if chat and chat.type in ['group', 'supergroup']:
             doc = await self.db_manager.get_or_create_group(

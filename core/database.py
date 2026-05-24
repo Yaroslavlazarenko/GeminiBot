@@ -22,9 +22,13 @@ class ChatContext:
         """Check if the context allows responding to a specific message type (e.g., 'text', 'voice')."""
         return self.settings.get(f"responds_to_{msg_type}", True)
 
-    async def add_message(self, role: str, text: str, message_id: int):
+    async def add_message(self, role: str, text: str, message_id: int, timestamp: str = None, reactions: list = None):
         """Add a message to the history."""
         msg = {"role": role, "text": text, "message_id": message_id}
+        if timestamp:
+            msg["timestamp"] = timestamp
+        if reactions:
+            msg["reactions"] = reactions
         if self.is_group:
             await self._db.append_group_history(self.id, msg)
         else:
@@ -52,6 +56,16 @@ class ChatContext:
                 {"$set": {"history": new_history}}
             )
         self.history = new_history
+
+    async def update_message_reactions(self, message_id: int, reactions: list):
+        """Update reactions for a message in local memory and database."""
+        # Update in-memory
+        for msg in self.history:
+            if msg.get("message_id") == message_id:
+                msg["reactions"] = reactions
+                break
+        # Update in database
+        await self._db.update_message_reactions(self.id, self.is_group, message_id, reactions)
 
 
 class DatabaseManager:
@@ -90,6 +104,14 @@ class DatabaseManager:
     async def get_system_settings(self) -> Dict[str, Any]:
         """Get the global system settings, merging DB overrides with Config defaults if needed."""
         settings = await self.db['system_settings'].find_one({"_id": "global"})
+        
+        default_avatar_prompt = (
+            "Опиши эту аватарку пользователя в Telegram в 2-3 предложениях. "
+            "Что на ней изображено, какой стиль, цвета, атмосфера? "
+            "Пиши от первого лица (ты — Мия Zareva), как будто ты сама смотришь на неё. "
+            "Будь дружелюбной и подмечай интересные детали."
+        )
+        
         if not settings:
             try:
                 with open("system_instructions.md", "r", encoding="utf-8") as f:
@@ -102,10 +124,32 @@ class DatabaseManager:
                 "gemini_api_model": "",
                 "gemini_gatekeeper_model": "",
                 "gemini_base_url": "",
+                "gemini_api_key": "",
+                "gemini_api_keys": "",
                 "mcp_servers_config": "{}",
-                "system_instruction": default_prompt
+                "system_instruction": default_prompt,
+                "sticker_set_name": "MelieTheCat",
+                "avatar_prompt": default_avatar_prompt
             }
             await self.db['system_settings'].insert_one(settings)
+        else:
+            # Ensure defaults exist
+            updates = {}
+            if "sticker_set_name" not in settings:
+                updates["sticker_set_name"] = "MelieTheCat"
+                settings["sticker_set_name"] = "MelieTheCat"
+            if "avatar_prompt" not in settings:
+                updates["avatar_prompt"] = default_avatar_prompt
+                settings["avatar_prompt"] = default_avatar_prompt
+            if "gemini_api_key" not in settings:
+                updates["gemini_api_key"] = ""
+                settings["gemini_api_key"] = ""
+            if "gemini_api_keys" not in settings:
+                updates["gemini_api_keys"] = ""
+                settings["gemini_api_keys"] = ""
+                
+            if updates:
+                await self.db['system_settings'].update_one({"_id": "global"}, {"$set": updates})
         return settings
 
     async def update_system_settings(self, updates: Dict[str, Any]):
@@ -134,9 +178,25 @@ class DatabaseManager:
                     "responds_to_video_note": True,
                     "responds_to_sticker": True,
                 },
+                "avatar_file_unique_id": None,
+                "avatar_description": None,
+                "avatar_last_checked": None,
                 "history": []
             }
             await self.users.insert_one(user)
+        else:
+            # Dynamically update user metadata if changed
+            updates = {}
+            if user.get("username") != username:
+                updates["username"] = username
+            if user.get("first_name") != first_name:
+                updates["first_name"] = first_name
+            if user.get("last_name") != last_name:
+                updates["last_name"] = last_name
+            
+            if updates:
+                await self.users.update_one({"telegram_id": telegram_id}, {"$set": updates})
+                user.update(updates)
         return user
 
     async def update_user_settings(self, telegram_id: int, settings: Dict[str, Any]):
@@ -183,6 +243,10 @@ class DatabaseManager:
                 "history": []
             }
             await self.groups.insert_one(group)
+        else:
+            if group.get("name") != name:
+                await self.groups.update_one({"telegram_chat_id": telegram_chat_id}, {"$set": {"name": name}})
+                group["name"] = name
         return group
 
     async def update_group_settings(self, telegram_chat_id: int, settings: Dict[str, Any]):
@@ -208,4 +272,15 @@ class DatabaseManager:
         await self.groups.update_one(
             {"telegram_chat_id": telegram_chat_id},
             {"$set": {"history": []}}
+        )
+
+    async def update_message_reactions(self, chat_id: int, is_group: bool, message_id: int, reactions: list):
+        """Update reactions for a specific message in history."""
+        collection = self.groups if is_group else self.users
+        query_field = "telegram_chat_id" if is_group else "telegram_id"
+        
+        # Positional operator $ updates the specific element in the 'history' array matching message_id
+        await collection.update_one(
+            {query_field: chat_id, "history.message_id": message_id},
+            {"$set": {"history.$.reactions": reactions}}
         )

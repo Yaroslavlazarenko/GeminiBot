@@ -1,6 +1,6 @@
 import logging
 from core.config import Config
-from google import genai
+from core.key_manager import get_key_manager
 from google.genai.types import GenerateContentConfig
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
@@ -19,8 +19,7 @@ class GatekeeperService:
         self.current_base_url = config.gemini_base_url
         self.current_gatekeeper_model = config.gemini_gatekeeper_model
         
-        http_opts = {"base_url": self.current_base_url} if self.current_base_url else None
-        self.client = genai.Client(api_key=config.gemini_api_key, http_options=http_opts)
+        self.key_manager = get_key_manager()
         
         self.system_instruction = (
             "You are the Gatekeeper for a Telegram bot persona named Mia. "
@@ -35,11 +34,13 @@ class GatekeeperService:
         settings = await db_manager.get_system_settings()
         db_base_url = settings.get("gemini_base_url") or self.config.gemini_base_url
         db_gatekeeper_model = settings.get("gemini_gatekeeper_model") or self.config.gemini_gatekeeper_model
+        
+        db_api_key = settings.get("gemini_api_key") or self.config.gemini_api_key
+        db_api_keys = settings.get("gemini_api_keys") or self.config.gemini_api_keys
 
-        if self.current_base_url != db_base_url:
-            self.current_base_url = db_base_url
-            http_opts = {"base_url": db_base_url} if db_base_url else None
-            self.client = genai.Client(api_key=self.config.gemini_api_key, http_options=http_opts)
+        # Update key manager with latest keys pool and base URL
+        self.key_manager.update_settings(db_api_key, db_api_keys, db_base_url)
+        self.current_base_url = db_base_url
             
         if self.current_gatekeeper_model != db_gatekeeper_model:
             self.current_gatekeeper_model = db_gatekeeper_model
@@ -61,7 +62,7 @@ class GatekeeperService:
             history_text = self._format_history(chat_context.history)
             prompt = f"Chat History:\n{history_text}\n\nNew Message: {text}"
             
-            response = self.client.models.generate_content(
+            response = self.key_manager.generate_content(
                 model=self.current_gatekeeper_model,
                 contents=prompt,
                 config=GenerateContentConfig(
@@ -106,7 +107,7 @@ class GatekeeperService:
                 f"History:\n{history_text}"
             )
 
-            response = self.client.models.generate_content(
+            response = self.key_manager.generate_content(
                 model=self.current_gatekeeper_model,
                 contents=prompt,
                 config=GenerateContentConfig(

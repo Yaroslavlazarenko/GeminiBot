@@ -1,14 +1,17 @@
 import logging
 from aiogram import Router, filters, F
-from aiogram.types import Message, BufferedInputFile
+from aiogram.types import Message, BufferedInputFile, MessageReactionUpdated
 from core.database import ChatContext
 from services.ai_service import get_ai_service
 from services.gatekeeper_service import get_gatekeeper
 from services.tts_service import get_tts_service
 from services.media_service import MediaService
+from services.transcription_service import get_transcription_service
 from core.config import Config
 from bot.web_admin import create_admin_session
 from core.enums import GatekeeperAction, ToolName
+
+from services.avatar_service import AvatarService
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +20,7 @@ router = Router()
 ai_service = get_ai_service()
 gatekeeper = get_gatekeeper()
 tts_service = get_tts_service()
+transcription_service = get_transcription_service()
 config = Config()
 
 async def trigger_summarization_if_needed(chat_context: ChatContext, gatekeeper):
@@ -49,8 +53,35 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
     # 2. Proceed with Persona response
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
+    # Update user in DB with latest metadata dynamically
+    await chat_context._db.get_or_create_user(
+        telegram_id=message.from_user.id,
+        username=message.from_user.username,
+        first_name=message.from_user.first_name,
+        last_name=message.from_user.last_name
+    )
+
+    # Get avatar description (cached or live using Gemini Vision)
+    avatar_desc = await AvatarService.get_and_describe_avatar(
+        bot=message.bot,
+        user_id=message.from_user.id,
+        db_manager=chat_context._db
+    )
+
+    # Build sender_info context dictionary
+    sender_info = {
+        "first_name": message.from_user.first_name,
+        "last_name": message.from_user.last_name,
+        "username": message.from_user.username,
+        "language_code": message.from_user.language_code,
+        "avatar_description": avatar_desc
+    }
+
     # Generate Response
-    response_text, tool_calls = await ai_service.generate_response(text, chat_context, media)
+    response_text, tool_calls = await ai_service.generate_response(text, chat_context, media, sender_info)
+
+    db_response_text = ""
+    bot_msg_to_save = None
 
     # Handle native Tool Calls via Enums
     for call in tool_calls:
@@ -76,9 +107,54 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
             message.reply_to_message_id = call.args.get("message_id")
             
         elif call.name == ToolName.SEND_STICKER.value:
-            emotion = call.args.get("emotion", "happy")
-            # We will map emotions to a sticker later, for now we can send a mock message
-            await message.answer(f"*(Отправляет {emotion} стикер)*", parse_mode="Markdown")
+            emotion = call.args.get("emotion", "happy").lower()
+            logger.info(f"LLM requested sending a sticker with emotion: {emotion}")
+            
+            emotion_emoji_map = {
+                "happy": ["😊", "🙂", "😁", "😄", "🥰", "😸", "😺"],
+                "sad": ["😢", "😭", "😔", "☹️", "🥺", "😿"],
+                "love": ["❤️", "🥰", "😍", "😘", "😻"],
+                "angry": ["😠", "😡", "🤬", "😾"],
+                "laughing": ["😂", "🤣", "😆", "😸"],
+                "surprised": ["😮", "😱", "😳", "🤯", "🙀"],
+                "cool": ["😎", "😏", "😼"],
+            }
+            
+            target_emojis = emotion_emoji_map.get(emotion, ["😊", "🥰", "🙂"])
+            
+            # Fetch sticker set from settings
+            settings = await chat_context._db.get_system_settings()
+            sticker_set_name = settings.get("sticker_set_name") or "MelieTheCat"
+            
+            sent_msg = None
+            try:
+                sticker_set = await message.bot.get_sticker_set(name=sticker_set_name)
+                if sticker_set and sticker_set.stickers:
+                    matching_sticker = None
+                    for sticker in sticker_set.stickers:
+                        if sticker.emoji:
+                            clean_sticker_emoji = sticker.emoji.replace("\ufe0f", "")
+                            clean_targets = [te.replace("\ufe0f", "") for te in target_emojis]
+                            if clean_sticker_emoji in clean_targets:
+                                matching_sticker = sticker
+                                break
+                    
+                    if not matching_sticker:
+                        matching_sticker = sticker_set.stickers[0]
+                        
+                    if matching_sticker:
+                        sent_msg = await message.answer_sticker(sticker=matching_sticker.file_id)
+            except Exception as se:
+                logger.error(f"Failed to send sticker from set {sticker_set_name}: {se}")
+                
+            if not sent_msg:
+                # Fallback to plain emoji
+                fallback_emoji = target_emojis[0] if target_emojis else "😊"
+                sent_msg = await message.answer(fallback_emoji)
+                
+            db_response_text = f"*(Отправила стикер с эмоцией {emotion})*"
+            bot_msg_to_save = sent_msg
+            response_text = ""
             
         elif call.name == ToolName.SEND_VOICE.value:
             text_to_speak = call.args.get("text_to_speak", "")
@@ -91,26 +167,57 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
             
             if audio_bytes:
                 voice_file = BufferedInputFile(audio_bytes, filename="voice.ogg")
-                await message.answer_voice(voice=voice_file)
+                sent_msg = await message.answer_voice(voice=voice_file)
             else:
                 # Fallback to text if TTS fails or isn't configured
-                await message.answer(f"*(Голосовое сообщение)*: {text_to_speak}", parse_mode="Markdown")
+                sent_msg = await message.answer(f"*(Голосовое сообщение)*: {text_to_speak}", parse_mode="Markdown")
                 
-            # We don't want to send this as normal text too, so we clear the response_text
+            db_response_text = f"🎤 [Голосовое]: {text_to_speak}"
+            bot_msg_to_save = sent_msg
             response_text = ""
 
-    # Save User Message to DB via the Context abstraction. 
-    # Use db_text if provided (for media), otherwise use actual text
-    await chat_context.add_message("user", db_text if db_text else text, message.message_id)
+    # Save User Message to DB via the Context abstraction.
+    # Use db_text if provided (for media), otherwise use actual text.
+    # Enrich with timestamp and any existing reactions on the message.
+    msg_timestamp = message.date.strftime("%H:%M") if message.date else None
+    msg_reactions = []
+    if message.reactions:
+        for reaction_count in message.reactions.reactions:
+            emoji = getattr(reaction_count.type, 'emoji', None)
+            count = getattr(reaction_count, 'count', 1)
+            if emoji:
+                msg_reactions.extend([emoji] * count)
+    await chat_context.add_message(
+        "user",
+        db_text if db_text else text,
+        message.message_id,
+        timestamp=msg_timestamp,
+        reactions=msg_reactions if msg_reactions else None
+    )
 
     # Send text response if the model provided one
     if response_text:
-        bot_message = await message.reply(
-            response_text, 
-            reply_to_message_id=getattr(message, 'reply_to_message_id', None)
-        )
+        # Determine how to send the message (reply vs normal answer)
+        explicit_reply_id = getattr(message, 'reply_to_message_id', None)
+        if explicit_reply_id:
+            bot_message = await message.reply(
+                response_text,
+                reply_to_message_id=explicit_reply_id
+            )
+        else:
+            # Default behavior when no tool explicitly requested reply:
+            # In groups: reply to the user's message so they receive a notification.
+            # In private chat: send a normal message without a reply.
+            if chat_context.is_group:
+                bot_message = await message.reply(response_text)
+            else:
+                bot_message = await message.answer(response_text)
+                
         # Save Bot Message to DB
         await chat_context.add_message("model", response_text, bot_message.message_id)
+    elif db_response_text and bot_msg_to_save:
+        # Save Voice or Sticker action to DB
+        await chat_context.add_message("model", db_response_text, bot_msg_to_save.message_id)
 
     # History Optimization
     await trigger_summarization_if_needed(chat_context, gatekeeper)
@@ -232,6 +339,21 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
         else:
             media_bytes = await MediaService.process_audio_video(message.bot, file_id, file_size)
             if media_bytes:
+                if message.voice and transcription_service.is_configured:
+                    transcription = await transcription_service.transcribe_audio(media_bytes)
+                    if transcription:
+                        lang = message.from_user.language_code or 'en'
+                        if lang.startswith('ru'):
+                            prefix = "🎤 [Голосовое]: "
+                        elif lang.startswith('uk'):
+                            prefix = "🎤 [Голосове]: "
+                        else:
+                            prefix = "🎤 [Voice]: "
+                        
+                        transcribed_text = f"{prefix}{transcription}"
+                        await _process_bot_turn(message, chat_context, text=transcribed_text, media=None, db_text=transcribed_text)
+                        return
+                
                 media = {"mime_type": mime_type, "data": media_bytes}
     except Exception as e:
         logger.error(f"Error processing media: {e}")
@@ -250,3 +372,19 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
         db_text += f"\nCaption: {text}"
         
     await _process_bot_turn(message, chat_context, text=text, media=media, db_text=db_text)
+
+@router.message_reaction()
+async def handle_message_reaction(event: MessageReactionUpdated, chat_context: ChatContext):
+    """Handle reaction updates on messages and sync them to history."""
+    emojis = []
+    for r in event.new_reaction:
+        emoji = getattr(r, "emoji", None)
+        if emoji:
+            emojis.append(emoji)
+        else:
+            custom_id = getattr(r, "custom_emoji_id", None)
+            if custom_id:
+                emojis.append("⭐️")
+                
+    await chat_context.update_message_reactions(event.message_id, emojis if emojis else None)
+    logger.debug(f"Updated reactions for message {event.message_id} in chat {chat_context.id}: {emojis}")
