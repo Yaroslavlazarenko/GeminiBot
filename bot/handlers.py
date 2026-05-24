@@ -1,7 +1,7 @@
 import logging
 import asyncio
 from aiogram import Router, filters, F
-from aiogram.types import Message, BufferedInputFile, MessageReactionUpdated
+from aiogram.types import Message, BufferedInputFile, MessageReactionUpdated, ReplyParameters
 from aiogram.utils.chat_action import ChatActionSender
 from core.database import ChatContext
 from services.ai_service import get_ai_service
@@ -134,6 +134,8 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
                     
         elif call.name == ToolName.REPLY_TO_MESSAGE.value:
             message.reply_to_message_id = call.args.get("message_id")
+            # Store the optional quote locally on the message object for later use
+            message.reply_quote = call.args.get("quote", "")
             
         elif call.name == ToolName.SEND_SPECIFIC_STICKER.value:
             sticker_id = call.args.get("sticker_id", "")
@@ -264,13 +266,19 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
         parts = [p.strip() for p in response_text.split('\n\n') if p.strip()]
         
         explicit_reply_id = getattr(message, 'reply_to_message_id', None)
+        explicit_reply_quote = getattr(message, 'reply_quote', None)
         
         for i, part in enumerate(parts):
             # Only reply to the specific message for the first part to avoid notification spam
             if explicit_reply_id and i == 0:
-                bot_message = await message.reply(
-                    part,
-                    reply_to_message_id=explicit_reply_id
+                reply_params = ReplyParameters(message_id=explicit_reply_id)
+                if explicit_reply_quote:
+                    reply_params.quote = explicit_reply_quote
+                    
+                bot_message = await message.bot.send_message(
+                    chat_id=message.chat.id,
+                    text=part,
+                    reply_parameters=reply_params
                 )
             elif chat_context.is_group and i == 0:
                 bot_message = await message.reply(part)

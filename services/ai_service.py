@@ -32,17 +32,22 @@ class AIService:
             if not text:
                 continue
 
-            # Build compact metadata prefix so the model knows send time and reactions
+            # Build compact metadata prefix so the model knows send time, message ID, and reactions
             meta_parts = []
+            
+            msg_id = msg.get("message_id")
+            if msg_id:
+                meta_parts.append(f"[MsgID: {msg_id}]")
+                
             ts = msg.get("timestamp")
             if ts:
                 meta_parts.append(f"[{ts}]")
+                
             reactions = msg.get("reactions")
             if reactions:
                 meta_parts.append(f"[реакции: {' '.join(reactions)}]")
 
-            if meta_parts and role == "user":
-                # Prepend metadata only to user messages (model messages don't have reactions)
+            if meta_parts:
                 text = " ".join(meta_parts) + " " + text
 
             formatted.append({
@@ -250,7 +255,8 @@ class AIService:
                                 
                                 async for msg in cursor:
                                     date_str = msg["date"].strftime("%Y-%m-%d %H:%M") if "date" in msg else "Unknown"
-                                    results.append(f"[{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
+                                    msg_id = msg.get("message_id", "?")
+                                    results.append(f"[MsgID: {msg_id}] [{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
                                     
                             response_parts.append(
                                 Part.from_function_response(
@@ -276,7 +282,8 @@ class AIService:
                             results = []
                             async for msg in cursor:
                                 date_str = msg["date"].strftime("%Y-%m-%d %H:%M") if "date" in msg else "Unknown"
-                                results.append(f"[{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
+                                msg_id = msg.get("message_id", "?")
+                                results.append(f"[MsgID: {msg_id}] [{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
                                 
                             # Reverse so chronological
                             results.reverse()

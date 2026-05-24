@@ -15,12 +15,13 @@ def add_reaction(emoji: str, message_ids: Optional[List[int]] = None) -> str:
     return f"Reacted with {emoji}"
 
 @mcp.tool(name=ToolName.REPLY_TO_MESSAGE.value)
-def reply_to_message(message_id: int) -> str:
+def reply_to_message(message_id: int, quote: str = "") -> str:
     """Reply to a specific message by its Telegram message ID. Use this when you want to reference or respond to a particular message from the chat history.
     Args:
         message_id: The Telegram message ID to reply to.
+        quote: Optional. A specific text quote from the message to highlight exactly what you are replying to.
     """
-    return f"Replying to {message_id}"
+    return f"Replying to {message_id} with quote: {quote}"
 
 @mcp.tool(name=ToolName.SEND_STICKER.value)
 def send_sticker(emotion: str) -> str:
