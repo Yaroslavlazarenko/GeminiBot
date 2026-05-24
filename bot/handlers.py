@@ -113,6 +113,10 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
 
     db_response_text = ""
     bot_msg_to_save = None
+    
+    # Store requested reply parameters locally (Message object is frozen)
+    requested_reply_id = None
+    requested_reply_quote = ""
 
     # Handle native Tool Calls via Enums
     for call in tool_calls:
@@ -128,16 +132,15 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
                 try:
                     await message.bot.set_message_reaction(
                         chat_id=message.chat.id, 
-                        message_id=m_id, 
+                        message_id=int(m_id), 
                         reaction=[{"type": "emoji", "emoji": emoji}]
                     )
                 except Exception as e:
                     logger.error(f"Failed to add reaction {emoji} to {m_id}: {e}")
                     
         elif call.name == ToolName.REPLY_TO_MESSAGE.value:
-            message.reply_to_message_id = call.args.get("message_id")
-            # Store the optional quote locally on the message object for later use
-            message.reply_quote = call.args.get("quote", "")
+            requested_reply_id = int(call.args.get("message_id", 0)) if call.args.get("message_id") else None
+            requested_reply_quote = call.args.get("quote", "")
             
         elif call.name == ToolName.SEND_SPECIFIC_STICKER.value:
             sticker_id = call.args.get("sticker_id", "")
@@ -267,15 +270,12 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
         # Split by paragraphs (\n\n) to avoid breaking markdown in lists or code blocks
         parts = [p.strip() for p in response_text.split('\n\n') if p.strip()]
         
-        explicit_reply_id = getattr(message, 'reply_to_message_id', None)
-        explicit_reply_quote = getattr(message, 'reply_quote', None)
-        
         for i, part in enumerate(parts):
             # Only reply to the specific message for the first part to avoid notification spam
-            if explicit_reply_id and i == 0:
-                reply_params = ReplyParameters(message_id=explicit_reply_id)
-                if explicit_reply_quote:
-                    reply_params.quote = explicit_reply_quote
+            if requested_reply_id and i == 0:
+                reply_params = ReplyParameters(message_id=requested_reply_id)
+                if requested_reply_quote:
+                    reply_params.quote = requested_reply_quote
                     
                 bot_message = await message.bot.send_message(
                     chat_id=message.chat.id,
