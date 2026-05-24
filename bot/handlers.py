@@ -13,9 +13,14 @@ from core.config import Config
 from bot.web_admin import create_admin_session
 from core.enums import GatekeeperAction, ToolName
 
+import time
 from services.avatar_service import AvatarService
 
 logger = logging.getLogger(__name__)
+
+# Simple in-memory cache for sticker sets to prevent Telegram API rate limits
+sticker_cache = {}
+STICKER_CACHE_TTL = 3600 # 1 hour
 
 # Initialize the main router
 router = Router()
@@ -120,14 +125,27 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
             
             # Fetch sticker set from settings
             settings = await chat_context._db.get_system_settings()
-            sticker_set_name = settings.get("sticker_set_name") or "MelieTheCat"
+            sticker_set_name = settings.get("sticker_set_name") or "Animals"
             
             sent_msg = None
             try:
-                sticker_set = await message.bot.get_sticker_set(name=sticker_set_name)
-                if sticker_set and sticker_set.stickers:
+                # Check cache first
+                current_time = time.time()
+                cached_data = sticker_cache.get(sticker_set_name)
+                
+                if not cached_data or current_time - cached_data['timestamp'] > STICKER_CACHE_TTL:
+                    sticker_set = await message.bot.get_sticker_set(name=sticker_set_name)
+                    if sticker_set and sticker_set.stickers:
+                        sticker_cache[sticker_set_name] = {
+                            'stickers': sticker_set.stickers,
+                            'timestamp': current_time
+                        }
+                
+                cached_stickers = sticker_cache.get(sticker_set_name, {}).get('stickers', [])
+                
+                if cached_stickers:
                     matching_sticker = None
-                    for sticker in sticker_set.stickers:
+                    for sticker in cached_stickers:
                         if sticker.emoji:
                             clean_sticker_emoji = sticker.emoji.replace("\ufe0f", "")
                             clean_targets = [te.replace("\ufe0f", "") for te in target_emojis]
@@ -136,7 +154,7 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
                                 break
                     
                     if not matching_sticker:
-                        matching_sticker = sticker_set.stickers[0]
+                        matching_sticker = cached_stickers[0]
                         
                     if matching_sticker:
                         sent_msg = await message.answer_sticker(sticker=matching_sticker.file_id)
@@ -148,9 +166,9 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
                 fallback_emoji = target_emojis[0] if target_emojis else "😊"
                 sent_msg = await message.answer(fallback_emoji)
                 
-            db_response_text = f"*(Отправила стикер с эмоцией {emotion})*"
+            sticker_action = f"*(Отправила стикер с эмоцией {emotion})*"
+            db_response_text = db_response_text + f"\n{sticker_action}" if db_response_text else sticker_action
             bot_msg_to_save = sent_msg
-            response_text = ""
             
         elif call.name == ToolName.SEND_VOICE.value:
             text_to_speak = call.args.get("text_to_speak", "")
@@ -209,9 +227,9 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
                 await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
                 await asyncio.sleep(1.0)
                 
-    elif db_response_text and bot_msg_to_save:
+    if db_response_text and bot_msg_to_save:
         # Save Voice or Sticker action to DB
-        await chat_context.add_message("model", db_response_text, bot_msg_to_save.message_id)
+        await chat_context.add_message("model", db_response_text.strip(), bot_msg_to_save.message_id)
 
     # History Optimization
     await trigger_summarization_if_needed(chat_context, gatekeeper)
