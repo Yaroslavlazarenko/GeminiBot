@@ -16,8 +16,10 @@ class GatekeeperDecision(BaseModel):
 class GatekeeperService:
     def __init__(self, config: Config):
         self.config = config
+        self.current_base_url = config.gemini_base_url
+        self.current_gatekeeper_model = config.gemini_gatekeeper_model
         
-        http_opts = {"base_url": config.gemini_base_url} if config.gemini_base_url else None
+        http_opts = {"base_url": self.current_base_url} if self.current_base_url else None
         self.client = genai.Client(api_key=config.gemini_api_key, http_options=http_opts)
         
         self.system_instruction = (
@@ -28,6 +30,19 @@ class GatekeeperService:
             "2. Output 'IGNORE' if the message is casual chatter between other group members, meaningless noise, or explicitly doesn't require a response.\n"
             "3. Output 'DISABLE_RESPONSES' if the user is seriously offended, extremely toxic, or explicitly demands the bot to shut up and stop responding permanently."
         )
+
+    async def _sync_settings(self, db_manager):
+        settings = await db_manager.get_system_settings()
+        db_base_url = settings.get("gemini_base_url") or self.config.gemini_base_url
+        db_gatekeeper_model = settings.get("gemini_gatekeeper_model") or self.config.gemini_gatekeeper_model
+
+        if self.current_base_url != db_base_url:
+            self.current_base_url = db_base_url
+            http_opts = {"base_url": db_base_url} if db_base_url else None
+            self.client = genai.Client(api_key=self.config.gemini_api_key, http_options=http_opts)
+            
+        if self.current_gatekeeper_model != db_gatekeeper_model:
+            self.current_gatekeeper_model = db_gatekeeper_model
 
     def _format_history(self, history: List[Dict[str, Any]]) -> str:
         # Keep it lightweight for the gatekeeper
@@ -40,12 +55,14 @@ class GatekeeperService:
 
     async def decide(self, text: str, chat_context: ChatContext) -> GatekeeperAction:
         """Evaluate if the bot should process this message."""
+        await self._sync_settings(chat_context._db)
+        
         try:
             history_text = self._format_history(chat_context.history)
             prompt = f"Chat History:\n{history_text}\n\nNew Message: {text}"
             
             response = self.client.models.generate_content(
-                model=self.config.gemini_gatekeeper_model,
+                model=self.current_gatekeeper_model,
                 contents=prompt,
                 config=GenerateContentConfig(
                     system_instruction=self.system_instruction,

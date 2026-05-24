@@ -13,5 +13,9 @@ class Config(BaseSettings):
     
     mcp_servers_config: str = "{}"
 
+    admin_username: str = "admin"
+    admin_password: str = "admin123"
+    admin_port: int = 8081
+
     mongo_uri: str = "mongodb://localhost:27017"
     mongo_db_name: str = "gemini_bot"

@@ -13,13 +13,17 @@ logger = logging.getLogger(__name__)
 class AIService:
     def __init__(self, config: Config):
         self.config = config
+        self.current_base_url = config.gemini_base_url
+        self.current_api_model = config.gemini_api_model
         
-        http_opts = {"base_url": config.gemini_base_url} if config.gemini_base_url else None
+        http_opts = {"base_url": self.current_base_url} if self.current_base_url else None
         self.client = genai.Client(api_key=config.gemini_api_key, http_options=http_opts)
         
         self.system_instruction = self._load_system_instructions()
-        self.mcp_manager = MCPConnectionManager(config.mcp_servers_config)
         
+        self.current_mcp_config = config.mcp_servers_config
+        self.mcp_manager = MCPConnectionManager(self.current_mcp_config)
+
     def _load_system_instructions(self) -> str:
         try:
             with open("system_instructions.md", "r", encoding="utf-8") as f:
@@ -29,14 +33,10 @@ class AIService:
             return "You are Mia Zareva."
 
     def _convert_history_to_gemini(self, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Convert MongoDB history dicts to Gemini API format."""
         formatted = []
         for msg in history:
             role = "user" if msg.get("role") == "user" else "model"
             text = msg.get("text", "")
-            
-            # Note: We omit tool calls from history here to keep the history lightweight,
-            # but we could serialize them if needed in the future.
             if text:
                 formatted.append({
                     "role": role,
@@ -44,8 +44,33 @@ class AIService:
                 })
         return formatted
 
+    async def _sync_settings(self, db_manager):
+        """Update clients and managers dynamically if DB settings changed via Admin Panel."""
+        settings = await db_manager.get_system_settings()
+        
+        db_base_url = settings.get("gemini_base_url") or self.config.gemini_base_url
+        db_api_model = settings.get("gemini_api_model") or self.config.gemini_api_model
+        db_mcp_config = settings.get("mcp_servers_config") or self.config.mcp_servers_config
+
+        if self.current_base_url != db_base_url:
+            logger.info("Detected base_url change, recreating Gemini client...")
+            self.current_base_url = db_base_url
+            http_opts = {"base_url": db_base_url} if db_base_url else None
+            self.client = genai.Client(api_key=self.config.gemini_api_key, http_options=http_opts)
+            
+        if self.current_api_model != db_api_model:
+            logger.info(f"Detected api_model change to {db_api_model}")
+            self.current_api_model = db_api_model
+            
+        if self.current_mcp_config != db_mcp_config:
+            logger.info("Detected MCP config change, recreating MCP Manager...")
+            await self.mcp_manager.close()
+            self.mcp_manager = MCPConnectionManager(db_mcp_config)
+            self.current_mcp_config = db_mcp_config
+
     async def generate_response(self, text: str, chat_context: ChatContext) -> Tuple[str, List[FunctionCall]]:
         """Generate a response using Gemini based on the ChatContext. Returns (text, local_tool_calls)."""
+        await self._sync_settings(chat_context._db)
         await self.mcp_manager.connect()
         
         all_tools = []
@@ -67,7 +92,7 @@ class AIService:
             while turn < max_turns:
                 turn += 1
                 response = self.client.models.generate_content(
-                    model=self.config.gemini_api_model,
+                    model=self.current_api_model,
                     contents=current_contents,
                     config=GenerateContentConfig(
                         system_instruction=self.system_instruction,

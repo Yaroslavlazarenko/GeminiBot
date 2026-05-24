@@ -80,6 +80,29 @@ class DatabaseManager:
         self.client.close()
         logger.info("MongoDB connection closed.")
 
+    # --- System Settings ---
+    async def get_system_settings(self) -> Dict[str, Any]:
+        """Get the global system settings, merging DB overrides with Config defaults if needed."""
+        settings = await self.db['system_settings'].find_one({"_id": "global"})
+        if not settings:
+            settings = {
+                "_id": "global",
+                "gemini_api_model": "",
+                "gemini_gatekeeper_model": "",
+                "gemini_base_url": "",
+                "mcp_servers_config": "{}"
+            }
+            await self.db['system_settings'].insert_one(settings)
+        return settings
+
+    async def update_system_settings(self, updates: Dict[str, Any]):
+        """Update the global system settings."""
+        await self.db['system_settings'].update_one(
+            {"_id": "global"},
+            {"$set": updates},
+            upsert=True
+        )
+
     # --- User Methods ---
 
     async def get_or_create_user(self, telegram_id: int, username: str = None, first_name: str = None, last_name: str = None) -> Dict[str, Any]:

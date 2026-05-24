@@ -1,7 +1,7 @@
 import asyncio
 import logging
 import signal
-import sys
+from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -11,11 +11,13 @@ from bot.handlers import router as main_router
 from bot.middlewares import DatabaseMiddleware
 from core.database import DatabaseManager
 from core.logger import setup_logging
+from bot.web_admin import setup_admin_app
 
 # Global objects
 dp = None
 bot = None
 db_manager = None
+runner = None
 
 async def shutdown():
     """Graceful shutdown"""
@@ -23,6 +25,10 @@ async def shutdown():
     logger.info("Starting shutdown...")
     
     try:
+        if runner:
+            logger.info("Stopping web admin server...")
+            await runner.cleanup()
+            
         if dp:
             logger.info("Stopping dispatcher...")
             try:
@@ -56,7 +62,7 @@ def signal_handler(signum, frame):
         asyncio.create_task(shutdown())
 
 async def main():
-    global dp, bot, db_manager
+    global dp, bot, db_manager, runner
     
     # Setup logging first
     setup_logging()
@@ -65,7 +71,7 @@ async def main():
     
     try:
         # Load configuration
-        config = Config()  # This will load from .env file
+        config = Config()
         
         # Initialize MongoDB
         db_manager = DatabaseManager(
@@ -74,7 +80,7 @@ async def main():
         )
         await db_manager.connect()
         
-        # Initialize bot and dispatcher with new DefaultBotProperties
+        # Initialize bot and dispatcher
         bot = Bot(
             token=config.bot_token,
             default=DefaultBotProperties(parse_mode="HTML")
@@ -87,9 +93,17 @@ async def main():
         
         # Include main router
         dp.include_router(main_router)
+        
+        # Setup and start web admin panel
+        admin_app = setup_admin_app(db_manager, config)
+        runner = web.AppRunner(admin_app)
+        await runner.setup()
+        site = web.TCPSite(runner, '0.0.0.0', config.admin_port)
+        await site.start()
+        logger.info(f"Admin Panel running on http://0.0.0.0:{config.admin_port}")
             
         # Start polling
-        logger.info("Bot is running...")
+        logger.info("Bot is polling...")
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
         
     except Exception as e:

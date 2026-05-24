@@ -13,6 +13,11 @@ services:
       - GEMINI_BASE_URL=${GEMINI_BASE_URL}
       - ELEVENLABS_API_KEY=${ELEVENLABS_API_KEY}
       - MCP_SERVERS_CONFIG=${MCP_SERVERS_CONFIG}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123}
+      - ADMIN_PORT=${ADMIN_PORT:-8081}
+    ports:
+      - "${ADMIN_PORT:-8081}:${ADMIN_PORT:-8081}"
     depends_on:
       - mongodb
     restart: unless-stopped
