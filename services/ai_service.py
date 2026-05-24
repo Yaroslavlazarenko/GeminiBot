@@ -147,9 +147,10 @@ class AIService:
             tool_constraints = (
                 f"\n--- TOOL USAGE & FORMATTING RULES ---\n"
                 f"1. Never output text markers like \"(Голосовое сообщение):\", \"*(Голосовое сообщение)*:\", \"*(Отправляет стикер)*\", or similar mock actions in your text responses!\n"
-                f"2. If you want to send a voice message, you MUST call the `send_voice(text_to_speak)` tool. Do not simulate it in text.\n"
-                f"3. If you want to send a sticker, you MUST call the `send_sticker(emotion)` tool. Do not write *(Отправляет стикер)* or descriptions of stickers in your text.\n"
-                f"4. Keep your text responses clean and natural, containing only what you would actually type in a chat.\n"
+                f"2. Never manually type \"[MsgID: 12345]\" in your text response. The MsgID is internal metadata. If you want to reply to a message, use the `reply_to_message` tool.\n"
+                f"3. If you want to send a voice message, you MUST call the `send_voice(text_to_speak)` tool. Do not simulate it in text.\n"
+                f"4. If you want to send a sticker, you MUST call the `send_sticker(emotion)` tool. Do not write *(Отправляет стикер)* or descriptions of stickers in your text.\n"
+                f"5. Keep your text responses clean and natural, containing only what you would actually type in a chat.\n"
             )
 
             compiled_system_instruction = self.system_instruction + time_context + sender_context + tool_constraints
