@@ -22,8 +22,7 @@ class TTSService:
     async def generate_voice(self, text: str) -> Optional[bytes]:
         """Generate voice audio bytes from text using ElevenLabs."""
         if not self.is_configured:
-            logger.warning("TTS generation skipped: ElevenLabs API key is not configured.")
-            return None
+            raise ValueError("ElevenLabs API key is not configured.")
 
         try:
             # convert() returns an AsyncIterator[bytes] (no await when calling it)
@@ -41,7 +40,7 @@ class TTSService:
             return audio_bytes
         except Exception as e:
             logger.error(f"Failed to generate TTS: {e}")
-            return None
+            raise Exception(f"TTS API Error: {str(e)}")
 
 # Global instance
 _tts_service_instance = None

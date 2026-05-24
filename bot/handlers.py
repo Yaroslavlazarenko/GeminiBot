@@ -315,19 +315,18 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
             
         elif call.name == ToolName.SEND_VOICE.value:
             text_to_speak = call.args.get("text_to_speak", "")
-            
-            async with ChatActionSender.record_voice(bot=last_message.bot, chat_id=last_message.chat.id):
-                audio_bytes = await tts_service.generate_voice(text_to_speak)
+            audio_bytes = call.args.get("_audio_bytes")
             
             if audio_bytes:
-                voice_file = BufferedInputFile(audio_bytes, filename="voice.ogg")
-                sent_msg = await last_message.answer_voice(voice=voice_file)
-            else:
-                sent_msg = await last_message.answer(f"*(Голосовое сообщение)*: {text_to_speak}", parse_mode="Markdown")
+                async with ChatActionSender.record_voice(bot=last_message.bot, chat_id=last_message.chat.id):
+                    voice_file = BufferedInputFile(audio_bytes, filename="voice.ogg")
+                    sent_msg = await last_message.answer_voice(voice=voice_file)
                 
-            db_response_text = f"🎤 [Голосовое]: {text_to_speak}"
-            bot_msg_to_save = sent_msg
-            response_text = ""
+                db_response_text = f"🎤 [Голосовое]: {text_to_speak}"
+                bot_msg_to_save = sent_msg
+                response_text = ""
+            # If there are no audio_bytes, it means it failed in ai_service and the LLM 
+            # is generating a text fallback instead. We just do nothing here.
 
     if response_text:
         parts = [p.strip() for p in response_text.split('\n\n') if p.strip()]

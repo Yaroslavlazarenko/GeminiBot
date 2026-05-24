@@ -303,6 +303,44 @@ class AIService:
                             # Immediately abort the generation loop and return empty
                             return "", []
                             
+                        elif call.name == ToolName.SEND_VOICE.value:
+                            # We can't generate the voice here, it's done in handlers.
+                            # But we should allow handlers to pass the error back if it fails.
+                            # Wait, the user wants the AI to generate the contextual text IF TTS fails.
+                            # This means TTS generation MUST happen inside ai_service.py, not handlers.py!
+                            
+                            text_to_speak = call.args.get("text_to_speak", "")
+                            
+                            from services.tts_service import get_tts_service
+                            tts = get_tts_service()
+                            
+                            try:
+                                audio_bytes = await tts.generate_voice(text_to_speak)
+                                if audio_bytes:
+                                    # Success, pass the call back to handlers to actually send it
+                                    call.args["_audio_bytes"] = audio_bytes
+                                    local_calls_to_return.append(call)
+                                    response_parts.append(
+                                        Part.from_function_response(
+                                            name=call.name,
+                                            response={"result": "Voice generated and enqueued for sending."}
+                                        )
+                                    )
+                                else:
+                                    raise Exception("Unknown TTS Error")
+                            except Exception as e:
+                                logger.error(f"TTS failed inside AI service: {e}")
+                                # Feed the error back to the model so it can apologize in text
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={
+                                            "error": "Failed to generate voice message due to technical/environmental issues.",
+                                            "instruction": "Do NOT try to send a voice message again. Generate a normal TEXT response explaining playfully why you can't record a voice right now (e.g., 'too noisy', 'lost my voice', 'microphone is broken')."
+                                        }
+                                    )
+                                )
+                                
                         elif call.name == ToolName.GET_GROUP_INFO.value:
                             bot = sender_info.get("bot") if sender_info else None
                             chat_id = sender_info.get("chat_id") if sender_info else None
