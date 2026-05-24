@@ -315,10 +315,14 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
     
     # Identify media type
     if message.photo:
-        # Telegram sends multiple sizes. The last one is the largest.
-        photo = message.photo[-1]
-        file_id = photo.file_id
-        file_size = photo.file_size
+        # Telegram sends multiple sizes. Find the largest one under 4.5MB
+        best_photo = message.photo[0]
+        for photo in message.photo:
+            if photo.file_size <= 4.5 * 1024 * 1024:
+                best_photo = photo
+                
+        file_id = best_photo.file_id
+        file_size = best_photo.file_size
         mime_type = "image/jpeg"
         media_type_name = "photo"
     elif message.video:

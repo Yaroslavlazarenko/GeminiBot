@@ -451,8 +451,8 @@ class AIService:
                             else:
                                 try:
                                     file = await bot.get_file(file_id)
-                                    if file.file_size > 15 * 1024 * 1024:
-                                        raise Exception("File too large (over 15MB limit).")
+                                    if file.file_size > 4.5 * 1024 * 1024:
+                                        raise Exception("File too large (over 4.5MB limit). I cannot process it in full resolution.")
                                         
                                     import io
                                     downloaded_bytes = io.BytesIO()
