@@ -147,7 +147,7 @@ class AIService:
             tool_constraints = (
                 f"\n--- TOOL USAGE & FORMATTING RULES ---\n"
                 f"1. Never output text markers like \"(Голосовое сообщение):\", \"*(Голосовое сообщение)*:\", \"*(Отправляет стикер)*\", or similar mock actions in your text responses!\n"
-                f"2. Never manually type \"[MsgID: 12345]\" in your text response. The MsgID is internal metadata. If you want to reply to a message, use the `reply_to_message` tool.\n"
+                f"2. Never manually type \"[MsgID: 12345]\", \"[Name]:\", or timestamps in your text response. Tags like '[MsgID: 42] [14:05] [Alex]:' are internal system metadata indicating the message ID, time, and the speaker's name in group chats. Do NOT treat them as part of the user's message, and do NOT mimic them in your own replies. If you want to reply, use the `reply_to_message` tool silently.\n"
                 f"3. If you want to send a voice message, you MUST call the `send_voice(text_to_speak)` tool. Do not simulate it in text.\n"
                 f"4. If you want to send a sticker, you MUST call the `send_sticker(emotion)` tool. Do not write *(Отправляет стикер)* or descriptions of stickers in your text.\n"
                 f"5. Keep your text responses clean and natural, containing only what you would actually type in a chat.\n"
