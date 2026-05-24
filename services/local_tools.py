@@ -82,6 +82,12 @@ def ignore_message(reason: str) -> str:
     """
     return f"Ignoring message: {reason}"
 
+@mcp.tool(name=ToolName.GET_GROUP_INFO.value)
+def get_group_info() -> str:
+    """Get real-time information about the current group chat, including the total number of members and a list of group administrators. This is only useful in group chats.
+    """
+    return f"Getting group info..."
+
 # Export the raw functions for Gemini
 local_tools_list = [
     add_reaction,
@@ -92,5 +98,6 @@ local_tools_list = [
     send_voice,
     search_history,
     get_history_by_date,
-    ignore_message
+    ignore_message,
+    get_group_info
 ]

@@ -103,7 +103,9 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
             "last_name": message.from_user.last_name,
             "username": message.from_user.username,
             "language_code": message.from_user.language_code,
-            "avatar_description": avatar_desc
+            "avatar_description": avatar_desc,
+            "bot": message.bot,
+            "chat_id": message.chat.id
         }
 
         # Generate Response

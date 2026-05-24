@@ -301,6 +301,43 @@ class AIService:
                             # Immediately abort the generation loop and return empty
                             return "", []
                             
+                        elif call.name == ToolName.GET_GROUP_INFO.value:
+                            bot = sender_info.get("bot") if sender_info else None
+                            chat_id = sender_info.get("chat_id") if sender_info else None
+                            
+                            info = {}
+                            if chat_context.is_group and bot and chat_id:
+                                try:
+                                    count = await bot.get_chat_member_count(chat_id)
+                                    admins = await bot.get_chat_administrators(chat_id)
+                                    
+                                    admin_list = []
+                                    for a in admins:
+                                        name = a.user.first_name
+                                        if a.user.last_name:
+                                            name += f" {a.user.last_name}"
+                                        if a.user.username:
+                                            name += f" (@{a.user.username})"
+                                        admin_list.append(f"{name} ({a.status})")
+                                        
+                                    info = {
+                                        "member_count": count,
+                                        "administrators": admin_list,
+                                        "note": "Telegram bot API does not allow fetching a full list of all regular members. You can only see the total count and the administrators."
+                                    }
+                                except Exception as e:
+                                    logger.error(f"Failed to fetch group info: {e}")
+                                    info = {"error": f"Could not fetch group info: {str(e)}"}
+                            else:
+                                info = {"error": "Not a group chat or missing permissions/context."}
+                                
+                            response_parts.append(
+                                Part.from_function_response(
+                                    name=call.name,
+                                    response={"group_info": info}
+                                )
+                            )
+                            
                         else:
                             local_calls_to_return.append(call)
                             # Add a successful local tool execution response to the Gemini context

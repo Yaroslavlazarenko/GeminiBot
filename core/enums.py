@@ -15,3 +15,4 @@ class ToolName(str, Enum):
     SEARCH_HISTORY = "search_history"
     GET_HISTORY_BY_DATE = "get_history_by_date"
     IGNORE_MESSAGE = "ignore_message"
+    GET_GROUP_INFO = "get_group_info"
