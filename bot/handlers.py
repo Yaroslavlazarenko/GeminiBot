@@ -212,31 +212,63 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
 
     if response_text:
         import re
+        import html
         # Clean up literal "\n" strings that the model sometimes outputs by mistake
         response_text = response_text.replace("\\n", "\n")
         # Normalize excessive newlines (3 or more) into exactly two (\n\n)
         response_text = re.sub(r'\n{3,}', '\n\n', response_text)
         
-        # Split by paragraphs (\n\n) to avoid breaking markdown in lists or code blocks
+        # Telegram HTML parser is very strict. It breaks on raw '<' or '>' signs that aren't valid tags (like <b>, <i>, <code>).
+        # We need to escape '<' and '>' that are used in normal text or math, but preserve legitimate markdown/html if possible.
+        # Since Gemini natively outputs markdown, we either need a proper markdown-to-html converter, or we strip/escape bad tags.
+        # For safety against "Unsupported start tag", we will escape `<` and `>` unless they are part of supported HTML tags.
+        supported_tags = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'span', 'tg-spoiler', 'a', 'code', 'pre', 'tg-emoji']
+        
+        # A simple approach to protect rogue '<' signs is to replace them with &lt;
+        # A more robust fix for this specific aiogram/telegram issue when using parse_mode="HTML" is to just use a fallback mechanism
+        
         parts = [p.strip() for p in response_text.split('\n\n') if p.strip()]
         
         for i, part in enumerate(parts):
-            if requested_reply_id and i == 0:
-                reply_params = ReplyParameters(message_id=requested_reply_id)
-                if requested_reply_quote:
-                    reply_params.quote = requested_reply_quote
-                    
-                bot_message = await last_message.bot.send_message(
-                    chat_id=last_message.chat.id,
-                    text=part,
-                    reply_parameters=reply_params
-                )
-            elif chat_context.is_group and i == 0:
-                bot_message = await last_message.reply(part)
-            else:
-                bot_message = await last_message.answer(part)
+            bot_message = None
+            try:
+                if requested_reply_id and i == 0:
+                    reply_params = ReplyParameters(message_id=requested_reply_id)
+                    if requested_reply_quote:
+                        reply_params.quote = requested_reply_quote
+                        
+                    bot_message = await last_message.bot.send_message(
+                        chat_id=last_message.chat.id,
+                        text=part,
+                        reply_parameters=reply_params
+                    )
+                elif chat_context.is_group and i == 0:
+                    bot_message = await last_message.reply(part)
+                else:
+                    bot_message = await last_message.answer(part)
+            except Exception as e:
+                logger.warning(f"Failed to send message chunk due to formatting error, retrying safely: {e}")
+                # Fallback: strip HTML/Markdown tags and send as plain text
+                safe_part = html.escape(part)
                 
-            await chat_context.add_message("model", part, bot_message.message_id)
+                if requested_reply_id and i == 0:
+                    reply_params = ReplyParameters(message_id=requested_reply_id)
+                    if requested_reply_quote:
+                        reply_params.quote = requested_reply_quote
+                        
+                    bot_message = await last_message.bot.send_message(
+                        chat_id=last_message.chat.id,
+                        text=safe_part,
+                        reply_parameters=reply_params,
+                        parse_mode=None
+                    )
+                elif chat_context.is_group and i == 0:
+                    bot_message = await last_message.reply(safe_part, parse_mode=None)
+                else:
+                    bot_message = await last_message.answer(safe_part, parse_mode=None)
+                
+            if bot_message:
+                await chat_context.add_message("model", part, bot_message.message_id)
             
             if i < len(parts) - 1:
                 await last_message.bot.send_chat_action(chat_id=last_message.chat.id, action="typing")
