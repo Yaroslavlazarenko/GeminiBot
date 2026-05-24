@@ -23,6 +23,10 @@ logger = logging.getLogger(__name__)
 sticker_cache = {}
 STICKER_CACHE_TTL = 3600 # 1 hour
 
+# Burst handling structures
+burst_timers = {}
+burst_queues = {}
+
 # Initialize the main router
 router = Router()
 ai_service = get_ai_service()
@@ -45,9 +49,8 @@ async def trigger_summarization_if_needed(chat_context: ChatContext, gatekeeper)
         new_history = [{"role": "user", "text": f"[SYSTEM: CONTEXT SUMMARY OF PREVIOUS CHAT]\n{summary}"}] + messages_to_keep
         await chat_context.replace_history(new_history)
 
-async def _process_bot_turn(message: Message, chat_context: ChatContext, text: str, media: dict = None, db_text: str = None):
-    """Handles the core logic of calling the AI and sending the response for any message type."""
-    
+async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: str, media: dict = None, db_text: str = None):
+    """Enqueues the message into a burst buffer. Executes only when the user stops typing for a brief moment."""
     # 0.1 Prepend username in group chats so the bot knows who is talking
     sender_name = message.from_user.first_name if message.from_user else "Unknown"
     group_prefix = f"[{sender_name}]: " if chat_context.is_group else ""
@@ -88,42 +91,90 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
         else:
             db_text = text
 
-    # 1. Gatekeeper determines if a response is needed
-    action = await gatekeeper.decide(text, chat_context)
-
+    # Add to Burst Queue
+    chat_id = message.chat.id
+    current_time = time.time()
+    burst_timers[chat_id] = current_time
+    
+    if chat_id not in burst_queues:
+        burst_queues[chat_id] = {"messages": [], "texts": [], "db_texts": [], "media_list": []}
+        
+    burst = burst_queues[chat_id]
+    burst["messages"].append(message)
+    if text:
+        burst["texts"].append(text)
+    if db_text:
+        burst["db_texts"].append(db_text)
+    if media:
+        burst["media_list"].append(media)
+        
+    # Wait to see if more messages arrive in this burst
+    await asyncio.sleep(3.0)
+    
+    # If the timer has moved forward, another message arrived. Let it handle the execution.
+    if burst_timers.get(chat_id) != current_time:
+        return
+        
+    # I am the last message in the burst. Time to execute!
+    final_burst = burst_queues.pop(chat_id, None)
+    if not final_burst:
+        return
+        
+    combined_text = "\n\n".join(final_burst["texts"])
+    combined_db_text = "\n\n".join(final_burst["db_texts"])
+    media_list = final_burst["media_list"]
+    last_message = final_burst["messages"][-1]
+    
+    # Force saving the ignored combined text into DB if Gatekeeper ignores it
+    # But wait, we want to save it to DB unconditionally first!
+    msg_timestamp = last_message.date.strftime("%H:%M") if last_message.date else None
+    
+    # Unconditionally save to DB so history is fully maintained
+    if combined_db_text:
+        await chat_context.add_message(
+            "user",
+            combined_db_text,
+            last_message.message_id,
+            timestamp=msg_timestamp,
+            reactions=None
+        )
+        
+    # Now that it's in the DB, Gatekeeper can see it either in history or in current text
+    # Gatekeeper check
+    action = await gatekeeper.decide(combined_text, chat_context)
+    
     if action == GatekeeperAction.IGNORE:
         return
 
-    # 2. Proceed with Persona response
-    async with ChatActionSender.typing(bot=message.bot, chat_id=message.chat.id):
+    # Proceed with Persona response
+    async with ChatActionSender.typing(bot=last_message.bot, chat_id=last_message.chat.id):
         # Update user in DB with latest metadata dynamically
         await chat_context._db.get_or_create_user(
-            telegram_id=message.from_user.id,
-            username=message.from_user.username,
-            first_name=message.from_user.first_name,
-            last_name=message.from_user.last_name
+            telegram_id=last_message.from_user.id,
+            username=last_message.from_user.username,
+            first_name=last_message.from_user.first_name,
+            last_name=last_message.from_user.last_name
         )
 
-        # Get avatar description (cached or live using Gemini Vision)
+        # Get avatar description
         avatar_desc = await AvatarService.get_and_describe_avatar(
-            bot=message.bot,
-            user_id=message.from_user.id,
+            bot=last_message.bot,
+            user_id=last_message.from_user.id,
             db_manager=chat_context._db
         )
 
-        # Build sender_info context dictionary
         sender_info = {
-            "first_name": message.from_user.first_name,
-            "last_name": message.from_user.last_name,
-            "username": message.from_user.username,
-            "language_code": message.from_user.language_code,
+            "first_name": last_message.from_user.first_name,
+            "last_name": last_message.from_user.last_name,
+            "username": last_message.from_user.username,
+            "language_code": last_message.from_user.language_code,
             "avatar_description": avatar_desc,
-            "bot": message.bot,
-            "chat_id": message.chat.id
+            "bot": last_message.bot,
+            "chat_id": last_message.chat.id
         }
 
-        # Generate Response
-        response_text, tool_calls = await ai_service.generate_response(text, chat_context, media, sender_info)
+        # Generate Response (pass the media list!)
+        response_text, tool_calls = await ai_service.generate_response(combined_text, chat_context, media_list, sender_info)
 
     db_response_text = ""
     bot_msg_to_save = None
@@ -138,14 +189,14 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
             
         if call.name == ToolName.ADD_REACTION.value:
             emoji = call.args.get("emoji")
-            message_ids = call.args.get("message_ids", [message.message_id])
+            message_ids = call.args.get("message_ids", [last_message.message_id])
             if not message_ids:
-                message_ids = [message.message_id]
+                message_ids = [last_message.message_id]
                 
             for m_id in message_ids:
                 try:
-                    await message.bot.set_message_reaction(
-                        chat_id=message.chat.id, 
+                    await last_message.bot.set_message_reaction(
+                        chat_id=last_message.chat.id, 
                         message_id=int(m_id), 
                         reaction=[{"type": "emoji", "emoji": emoji}]
                     )
@@ -162,16 +213,14 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
             
             sent_msg = None
             try:
-                # Retrieve the exact sticker file_id from DB
                 sticker_data = await chat_context._db.stickers.find_one({"_id": sticker_id})
                 if sticker_data and sticker_data.get("file_id"):
-                    sent_msg = await message.answer_sticker(sticker=sticker_data["file_id"])
-                    
+                    sent_msg = await last_message.answer_sticker(sticker=sticker_data["file_id"])
                 if not sent_msg:
-                    sent_msg = await message.answer("😊")
+                    sent_msg = await last_message.answer("😊")
             except Exception as e:
                 logger.error(f"Failed to send specific sticker: {e}")
-                sent_msg = await message.answer("😊")
+                sent_msg = await last_message.answer("😊")
                 
             sticker_action = f"*(Отправила специфический стикер)*"
             db_response_text = db_response_text + f"\n{sticker_action}" if db_response_text else sticker_action
@@ -193,7 +242,6 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
             
             target_emojis = emotion_emoji_map.get(emotion, ["😊", "🥰", "🙂"])
             
-            # Fetch sticker set from settings
             settings = await chat_context._db.get_system_settings()
             sticker_sets_raw = settings.get("sticker_set_names") or settings.get("sticker_set_name") or "Animals"
             sticker_sets = [s.strip() for s in sticker_sets_raw.split(',') if s.strip()]
@@ -206,12 +254,11 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
             
             for set_name in sticker_sets:
                 try:
-                    # Check cache first
                     current_time = time.time()
                     cached_data = sticker_cache.get(set_name)
                     
                     if not cached_data or current_time - cached_data['timestamp'] > STICKER_CACHE_TTL:
-                        sticker_set = await message.bot.get_sticker_set(name=set_name)
+                        sticker_set = await last_message.bot.get_sticker_set(name=set_name)
                         if sticker_set and sticker_set.stickers:
                             sticker_cache[set_name] = {
                                 'stickers': sticker_set.stickers,
@@ -233,17 +280,15 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
                     logger.error(f"Failed to fetch sticker set {set_name}: {se}")
 
             try:
-                # Randomly pick from all matching stickers across all packs
                 chosen_sticker = random.choice(matching_stickers) if matching_stickers else first_available_sticker
                 if chosen_sticker:
-                    sent_msg = await message.answer_sticker(sticker=chosen_sticker.file_id)
+                    sent_msg = await last_message.answer_sticker(sticker=chosen_sticker.file_id)
             except Exception as e:
                 logger.error(f"Failed to send sticker: {e}")
                 
             if not sent_msg:
-                # Fallback to plain emoji
                 fallback_emoji = target_emojis[0] if target_emojis else "😊"
-                sent_msg = await message.answer(fallback_emoji)
+                sent_msg = await last_message.answer(fallback_emoji)
                 
             sticker_action = f"*(Отправила стикер с эмоцией {emotion})*"
             db_response_text = db_response_text + f"\n{sticker_action}" if db_response_text else sticker_action
@@ -252,65 +297,45 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
         elif call.name == ToolName.SEND_VOICE.value:
             text_to_speak = call.args.get("text_to_speak", "")
             
-            async with ChatActionSender.record_voice(bot=message.bot, chat_id=message.chat.id):
-                # Generate the voice using ElevenLabs
+            async with ChatActionSender.record_voice(bot=last_message.bot, chat_id=last_message.chat.id):
                 audio_bytes = await tts_service.generate_voice(text_to_speak)
             
             if audio_bytes:
                 voice_file = BufferedInputFile(audio_bytes, filename="voice.ogg")
-                sent_msg = await message.answer_voice(voice=voice_file)
+                sent_msg = await last_message.answer_voice(voice=voice_file)
             else:
-                # Fallback to text if TTS fails or isn't configured
-                sent_msg = await message.answer(f"*(Голосовое сообщение)*: {text_to_speak}", parse_mode="Markdown")
+                sent_msg = await last_message.answer(f"*(Голосовое сообщение)*: {text_to_speak}", parse_mode="Markdown")
                 
             db_response_text = f"🎤 [Голосовое]: {text_to_speak}"
             bot_msg_to_save = sent_msg
             response_text = ""
 
-    # Save User Message to DB via the Context abstraction.
-    # Use db_text if provided (for media), otherwise use actual text.
-    # Enrich with timestamp.
-    msg_timestamp = message.date.strftime("%H:%M") if message.date else None
-    await chat_context.add_message(
-        "user",
-        db_text if db_text else text,
-        message.message_id,
-        timestamp=msg_timestamp,
-        reactions=None
-    )
-
-    # Send text response if the model provided one
     if response_text:
-        # Split by paragraphs (\n\n) to avoid breaking markdown in lists or code blocks
         parts = [p.strip() for p in response_text.split('\n\n') if p.strip()]
         
         for i, part in enumerate(parts):
-            # Only reply to the specific message for the first part to avoid notification spam
             if requested_reply_id and i == 0:
                 reply_params = ReplyParameters(message_id=requested_reply_id)
                 if requested_reply_quote:
                     reply_params.quote = requested_reply_quote
                     
-                bot_message = await message.bot.send_message(
-                    chat_id=message.chat.id,
+                bot_message = await last_message.bot.send_message(
+                    chat_id=last_message.chat.id,
                     text=part,
                     reply_parameters=reply_params
                 )
             elif chat_context.is_group and i == 0:
-                bot_message = await message.reply(part)
+                bot_message = await last_message.reply(part)
             else:
-                bot_message = await message.answer(part)
+                bot_message = await last_message.answer(part)
                 
-            # Save Bot Message to DB
             await chat_context.add_message("model", part, bot_message.message_id)
             
-            # Brief pause between messages so they appear in correct order
             if i < len(parts) - 1:
-                await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+                await last_message.bot.send_chat_action(chat_id=last_message.chat.id, action="typing")
                 await asyncio.sleep(1.0)
                 
     if db_response_text and bot_msg_to_save:
-        # Save Voice or Sticker action to DB
         await chat_context.add_message("model", db_response_text.strip(), bot_msg_to_save.message_id)
 
     # History Optimization
@@ -369,7 +394,7 @@ async def clear_command(message: Message, chat_context: ChatContext):
 async def handle_text_message(message: Message, chat_context: ChatContext):
     if chat_context.is_disabled or not chat_context.responds_to("text"):
         return
-    await _process_bot_turn(message, chat_context, text=message.text)
+    await _enqueue_bot_turn(message, chat_context, text=message.text)
 
 @router.message(F.photo | F.video | F.document | F.voice | F.video_note | F.sticker)
 async def handle_media_message(message: Message, chat_context: ChatContext):
@@ -424,7 +449,7 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
         
         # Pass to bot logic in case we want it to react immediately to the sticker itself
         # This will also handle adding it to the DB with the correct username prefix
-        await _process_bot_turn(message, chat_context, text="", media=None, db_text=db_text)
+        await _enqueue_bot_turn(message, chat_context, text="", media=None, db_text=db_text)
         return
     else:
         # Ignore unsupported documents for AI analysis
@@ -433,7 +458,7 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
         if message.caption:
             db_text += f"\nCaption: {message.caption}"
         
-        await _process_bot_turn(message, chat_context, text="", media=None, db_text=db_text)
+        await _enqueue_bot_turn(message, chat_context, text="", media=None, db_text=db_text)
         return
 
     # Process media
@@ -459,7 +484,7 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
                     # Voice has no visual component for Gemini
                     if not text: 
                         text = "🎤 [Пустое голосовое]" # Fallback
-                    await _process_bot_turn(message, chat_context, text=text, media=None, db_text=text)
+                    await _enqueue_bot_turn(message, chat_context, text=text, media=None, db_text=text)
                     return
                 
                 # Get visual description for video notes to save in history
@@ -490,7 +515,7 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
     if text:
         db_text += f"\nCaption/Audio: {text}"
         
-    await _process_bot_turn(message, chat_context, text=text, media=media, db_text=db_text)
+    await _enqueue_bot_turn(message, chat_context, text=text, media=media, db_text=db_text)
 
 @router.message_reaction()
 async def handle_message_reaction(event: MessageReactionUpdated, chat_context: ChatContext):
