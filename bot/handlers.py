@@ -7,6 +7,7 @@ from services.gatekeeper_service import get_gatekeeper
 from services.tts_service import get_tts_service
 from core.config import Config
 from bot.web_admin import create_admin_session
+from core.enums import GatekeeperAction, ToolName
 
 logger = logging.getLogger(__name__)
 
