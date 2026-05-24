@@ -7,14 +7,20 @@ Mia is a highly sophisticated, persona-driven Telegram bot built on top of the *
 ## 🌟 Core Features
 
 - **Dual-Model Architecture (Gatekeeper Pattern):** 
-  - A fast, lightweight model (`gemini-3.1-flash-lite`) analyzes every incoming message to determine if it's white noise, if the bot should be silenced, or if a response is needed.
-  - The main persona model (`gemini-3.5-flash`) is only invoked when necessary, saving tokens and preventing hallucinations in busy group chats.
+  - A fast, lightweight model (`gemini-3.1-flash-lite`) acts as a smart filter. In groups, it actively searches the DB history and strictly ignores chatter unless Mia is explicitly addressed or the context is highly relevant.
+  - The main persona model (`gemini-3.5-flash`) is only invoked when necessary, saving tokens and preventing spam. The AI can also silently abort its response mid-generation if it realizes it shouldn't intrude.
+- **Smart Memory & Context:**
+  - **Permanent Chat History:** Stores full, un-summarized logs in MongoDB. Mia can use tools to search past conversations by keyword or date.
+  - **Cross-Chat User Memory:** Mia observes user preferences, secrets, and traits, permanently saving them. Harmless facts are globally available across all chats, while sensitive facts are programmatically sandboxed to the specific chat where they were shared.
+  - **Reply & Quote Awareness:** Intercepts Telegram's native `reply` and `forward` attributes, injecting exact speaker attributions so the AI perfectly understands the conversational flow.
+- **Advanced Media Handling:**
+  - **Burst Debouncing:** Queues rapid-fire messages and photo albums (3-second debounce), merging them into a single multimodal prompt to prevent the bot from spamming responses.
+  - **AI Vision Sticker Catalog:** Background workers automatically download your configured sticker packs, run them through Gemini Vision to generate visual descriptions, and cache them in the DB. Mia then uses a `search_stickers` tool to pick the exact ID of the perfect sticker.
+  - **Video Notes ("Кружочки"):** Automatically transcribes audio via Groq Whisper and runs a quick inline visual analysis via Gemini Vision to store the video's contents in the permanent text history.
 - **Native FastMCP Integration:**
-  - **Local Tools:** Mia natively uses tools to send Telegram reactions, reply to specific messages, send stickers, and generate **real voice messages** (via ElevenLabs TTS).
-  - **Remote MCP Servers:** Connect the bot to external HTTP/SSE MCP servers (like Exa Search, File systems, Math solvers). The proxy fetches tools dynamically, handles name collisions, and orchestrates the function-calling loop autonomously.
-- **Document-Oriented Storage:** Powered by MongoDB. Chat histories and user/group preferences are stored in clean JSON documents, matching Gemini's native API format perfectly. No more complex relational migrations.
-- **Secure Web Admin Panel:** Manage models, the Gemini Base URL (proxy support), MCP server configurations, and edit Mia's System Prompt on the fly. Access is strictly secured via one-time tokens generated in Telegram.
-- **100% Dockerized:** No manual environment setups or OS-specific scripts required.
+  - **Local Tools:** Mia natively uses tools to send Telegram reactions, reply to specific messages with quotes, send targeted stickers, and generate **real voice messages** (via ElevenLabs TTS). If TTS fails, the AI handles the error contextually in text.
+  - **Remote MCP Servers:** Connect the bot to external HTTP/SSE MCP servers (like Exa Search). The proxy fetches tools dynamically and orchestrates the function-calling loop autonomously.
+- **Secure Web Admin Panel:** Manage models, the Gemini Base URL (proxy support), MCP server configurations, multiple sticker packs, and edit Mia's System Prompt on the fly. Access is strictly secured via one-time tokens generated in Telegram.
 
 ---
 
