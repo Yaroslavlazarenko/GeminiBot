@@ -44,11 +44,6 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
 
     if action == GatekeeperAction.IGNORE:
         return
-        
-    if action == GatekeeperAction.DISABLE_RESPONSES:
-        await chat_context.update_settings({"is_global_disabled": True})
-        logger.info(f"Responses disabled for chat {chat_context.id}")
-        return
 
     # 2. Proceed with Persona response
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
@@ -272,8 +267,7 @@ async def handle_text_message(message: Message, chat_context: ChatContext):
 
 @router.message(F.photo | F.video | F.document | F.voice | F.video_note | F.sticker)
 async def handle_media_message(message: Message, chat_context: ChatContext):
-    if chat_context.is_disabled:
-        return
+    logger.info(f"Entered handle_media_message for update with content_type: {message.content_type}")
         
     media = None
     file_id = None

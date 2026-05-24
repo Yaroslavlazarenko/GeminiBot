@@ -26,8 +26,7 @@ class GatekeeperService:
             "Your job is to read the latest message and the chat history, and decide if Mia should respond.\n\n"
             "Rules:\n"
             "1. Output 'RESPOND' if the message is directed at Mia, asks a question, or requires her input.\n"
-            "2. Output 'IGNORE' if the message is casual chatter between other group members, meaningless noise, or explicitly doesn't require a response.\n"
-            "3. Output 'DISABLE_RESPONSES' if the user is seriously offended, extremely toxic, or explicitly demands the bot to shut up and stop responding permanently."
+            "2. Output 'IGNORE' if the message is casual chatter between other group members, meaningless noise, or explicitly doesn't require a response."
         )
 
     async def _sync_settings(self, db_manager):
