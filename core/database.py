@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
 from typing import Optional, Dict, Any, List
 
@@ -23,12 +24,24 @@ class ChatContext:
         return self.settings.get(f"responds_to_{msg_type}", True)
 
     async def add_message(self, role: str, text: str, message_id: int, timestamp: str = None, reactions: list = None):
-        """Add a message to the history."""
+        """Add a message to the history and permanent log."""
         msg = {"role": role, "text": text, "message_id": message_id}
         if timestamp:
             msg["timestamp"] = timestamp
         if reactions:
             msg["reactions"] = reactions
+            
+        # Permanent storage
+        perm_msg = {
+            "chat_id": self.id,
+            "role": role,
+            "text": text,
+            "message_id": message_id,
+            "date": datetime.utcnow(),
+            "timestamp_str": timestamp
+        }
+        await self._db.messages.insert_one(perm_msg)
+            
         if self.is_group:
             await self._db.append_group_history(self.id, msg)
         else:
@@ -75,12 +88,15 @@ class DatabaseManager:
         self.users = self.db['users']
         self.groups = self.db['groups']
         self.stickers = self.db['stickers']
+        self.messages = self.db['messages']
 
     async def _setup_indexes(self):
         """Create necessary indexes for performance."""
         try:
             await self.users.create_index("telegram_id", unique=True)
             await self.groups.create_index("telegram_chat_id", unique=True)
+            await self.messages.create_index([("chat_id", 1), ("date", -1)])
+            await self.messages.create_index([("text", "text")])
             logger.info("MongoDB indexes created successfully.")
         except Exception as e:
             logger.error(f"Error creating MongoDB indexes: {e}")

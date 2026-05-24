@@ -55,6 +55,24 @@ def send_voice(text_to_speak: str) -> str:
     """
     return f"Sending voice message"
 
+@mcp.tool(name=ToolName.SEARCH_HISTORY.value)
+def search_history(query: str, limit: int = 10) -> str:
+    """Search the full permanent chat history for specific keywords or phrases. Use this if the user asks if you remember something specific.
+    Args:
+        query: The keyword or phrase to search for.
+        limit: The maximum number of messages to return (default 10).
+    """
+    return f"Searching history for {query}"
+
+@mcp.tool(name=ToolName.GET_HISTORY_BY_DATE.value)
+def get_history_by_date(days_ago: int = 0, limit: int = 20) -> str:
+    """Retrieve messages from the permanent chat history from a certain number of days ago.
+    Args:
+        days_ago: 0 for today, 1 for yesterday, 7 for a week ago, etc.
+        limit: The maximum number of messages to return (default 20).
+    """
+    return f"Getting history from {days_ago} days ago"
+
 # Export the raw functions for Gemini
 local_tools_list = [
     add_reaction,
@@ -62,5 +80,7 @@ local_tools_list = [
     send_sticker,
     send_specific_sticker,
     search_stickers,
-    send_voice
+    send_voice,
+    search_history,
+    get_history_by_date
 ]

@@ -236,6 +236,58 @@ class AIService:
                                     response={"matches": results}
                                 )
                             )
+                        elif call.name == ToolName.SEARCH_HISTORY.value:
+                            query = call.args.get("query", "")
+                            limit = call.args.get("limit", 10)
+                            
+                            results = []
+                            if query:
+                                # Perform a text search in the permanent history collection
+                                cursor = chat_context._db.messages.find(
+                                    {"chat_id": chat_context.id, "$text": {"$search": query}},
+                                    {"score": {"$meta": "textScore"}}
+                                ).sort([("score", {"$meta": "textScore"})]).limit(limit)
+                                
+                                async for msg in cursor:
+                                    date_str = msg["date"].strftime("%Y-%m-%d %H:%M") if "date" in msg else "Unknown"
+                                    results.append(f"[{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
+                                    
+                            response_parts.append(
+                                Part.from_function_response(
+                                    name=call.name,
+                                    response={"matches": results if results else ["No matches found."]}
+                                )
+                            )
+                            
+                        elif call.name == ToolName.GET_HISTORY_BY_DATE.value:
+                            import datetime
+                            days_ago = call.args.get("days_ago", 0)
+                            limit = call.args.get("limit", 20)
+                            
+                            target_date = datetime.datetime.utcnow() - datetime.timedelta(days=days_ago)
+                            start_of_day = datetime.datetime(target_date.year, target_date.month, target_date.day)
+                            end_of_day = start_of_day + datetime.timedelta(days=1)
+                            
+                            cursor = chat_context._db.messages.find({
+                                "chat_id": chat_context.id,
+                                "date": {"$gte": start_of_day, "$lt": end_of_day}
+                            }).sort("date", -1).limit(limit)
+                            
+                            results = []
+                            async for msg in cursor:
+                                date_str = msg["date"].strftime("%Y-%m-%d %H:%M") if "date" in msg else "Unknown"
+                                results.append(f"[{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
+                                
+                            # Reverse so chronological
+                            results.reverse()
+                            
+                            response_parts.append(
+                                Part.from_function_response(
+                                    name=call.name,
+                                    response={"history": results if results else ["No history found for this date."]}
+                                )
+                            )
+                            
                         else:
                             local_calls_to_return.append(call)
                             # Add a successful local tool execution response to the Gemini context
