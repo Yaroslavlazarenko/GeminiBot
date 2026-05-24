@@ -13,12 +13,10 @@ MAX_MEDIA_SIZE_BYTES = 4.5 * 1024 * 1024
 class MediaService:
     @staticmethod
     async def process_image(bot: Bot, file_id: str, file_size: int) -> Optional[bytes]:
-        """Download an image, verify size, and resize to Full HD (1920x1080) max."""
+        """Download an image and resize it optimally to fit within the 4.5MB context limit."""
         try:
-            # We don't download blindly. If telegram says it's already massively huge, fail early.
-            # However, Telegram automatically compresses photos sent normally.
-            # Documents (images sent as files) might be huge.
-            if file_size and file_size > MAX_MEDIA_SIZE_BYTES * 2: # Give some buffer for compression
+            # We don't download blindly. Max 15MB for initial download.
+            if file_size and file_size > 15 * 1024 * 1024:
                  logger.warning(f"Image too large to even attempt processing: {file_size} bytes")
                  return None
 
@@ -31,26 +29,29 @@ class MediaService:
             downloaded_bytes.seek(0)
             
             # Process with Pillow
-            img = Image.open(downloaded_bytes)
+            original_img = Image.open(downloaded_bytes)
             
             # Convert to RGB if necessary (e.g. RGBA pngs)
-            if img.mode in ("RGBA", "P"):
-                img = img.convert("RGB")
+            if original_img.mode in ("RGBA", "P"):
+                original_img = original_img.convert("RGB")
             
-            # Resize to max 1920x1080 (maintaining aspect ratio)
-            img.thumbnail((1920, 1080), Image.Resampling.LANCZOS)
+            # Try resolutions from highest (2K) down to 720p until it fits under 4.5MB
+            resolutions = [(2560, 1440), (1920, 1080), (1280, 720)]
             
-            # Save compressed
-            output_bytes = io.BytesIO()
-            img.save(output_bytes, format="JPEG", quality=85)
-            result_bytes = output_bytes.getvalue()
+            for res in resolutions:
+                img = original_img.copy()
+                img.thumbnail(res, Image.Resampling.LANCZOS)
+                
+                output_bytes = io.BytesIO()
+                img.save(output_bytes, format="JPEG", quality=85)
+                result_bytes = output_bytes.getvalue()
+                
+                if len(result_bytes) <= MAX_MEDIA_SIZE_BYTES:
+                    return result_bytes
+                    
+            logger.warning("Image still too large after maximum compression.")
+            return None
             
-            # Final check just in case
-            if len(result_bytes) > MAX_MEDIA_SIZE_BYTES:
-                 logger.warning("Image still too large after compression.")
-                 return None
-                 
-            return result_bytes
         except Exception as e:
             logger.error(f"Failed to process image: {e}")
             return None

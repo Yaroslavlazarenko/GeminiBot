@@ -315,14 +315,14 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
     
     # Identify media type
     if message.photo:
-        # Telegram sends multiple sizes. Find the largest one under 4.5MB
+        # Telegram sends multiple sizes. Find the largest one under 10MB to give the compressor the best source
         best_photo = message.photo[0]
         for photo in message.photo:
-            if photo.file_size <= 4.5 * 1024 * 1024:
+            if getattr(photo, 'file_size', 0) and photo.file_size <= 10 * 1024 * 1024:
                 best_photo = photo
                 
         file_id = best_photo.file_id
-        file_size = best_photo.file_size
+        file_size = best_photo.file_size or 0
         mime_type = "image/jpeg"
         media_type_name = "photo"
     elif message.video:
@@ -415,7 +415,10 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
     
     if not media:
         if file_size > 4.5 * 1024 * 1024:
-             await message.reply("Этот файл слишком большой, я не могу его сейчас обработать. (Ограничение: 4.5 МБ)")
+             # Pass the failure to the LLM so it can contextually apologize
+             text = "[SYSTEM: The user attempted to send a media file, but it was over the 4.5MB limit. Please inform the user playfully that the file is too large for you to process.]"
+             db_text = f"*(User attempted to send a {media_type_name} but it was too large)*"
+             await _enqueue_bot_turn(message, chat_context, text=text, media=None, db_text=db_text)
         return
         
     # How we store this interaction in the DB (text only, to save space!)
