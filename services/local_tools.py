@@ -117,7 +117,7 @@ def analyze_past_media(file_id: str, specific_question: str = "") -> str:
 
 @mcp.tool(name=ToolName.DOWNLOAD_MEDIA_TO_DISK.value)
 def download_media_to_disk(file_id: str) -> str:
-    """Download a media file from Telegram and save it locally to the server's disk. Use this when another tool (like reverse image search) requires an absolute local file path (`file_path`) instead of an image URL or raw bytes.
+    """CRITICAL: You MUST call this tool FIRST if you intend to use any external tool that requires a local `file_path` (like reverse_image_search). Telegram media is kept in RAM. This tool saves it to disk and returns the absolute path so you can pass it to other tools.
     Args:
         file_id: The exact Telegram FileID of the media.
     """
