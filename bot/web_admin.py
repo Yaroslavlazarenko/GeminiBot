@@ -179,9 +179,16 @@ HTML_TEMPLATE = """
             }
         }
 
+        function getToken() {
+            const params = new URLSearchParams(window.location.search);
+            return params.get('token') || '';
+        }
+
         async function loadSettings() {
             try {
-                const res = await fetch('/api/settings');
+                const token = getToken();
+                const url = token ? `/api/settings?token=${token}` : '/api/settings';
+                const res = await fetch(url);
                 const data = await res.json();
                 document.getElementById('gemini_api_model').value = data.gemini_api_model || '';
                 document.getElementById('gemini_gatekeeper_model').value = data.gemini_gatekeeper_model || '';
@@ -220,7 +227,9 @@ HTML_TEMPLATE = """
             };
 
             try {
-                const res = await fetch('/api/settings', {
+                const token = getToken();
+                const url = token ? `/api/settings?token=${token}` : '/api/settings';
+                const res = await fetch(url, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify(payload)
