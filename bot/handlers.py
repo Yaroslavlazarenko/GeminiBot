@@ -39,10 +39,13 @@ async def admin_command(message: Message, chat_context: ChatContext):
 async def start_command(message: Message, chat_context: ChatContext):
     # Depending on context, personalize greeting
     name = chat_context.doc.get('first_name', 'User') if not chat_context.is_group else chat_context.doc.get('name', 'Group')
-    text = (
-        f"Hello, {name}!\n\n"
-        "I am a Gemini AI assistant. Send me a text message or a photo, and I will reply!"
-    )
+    
+    # Generate a more human-like, persona-driven greeting
+    if chat_context.is_group:
+        text = f"Привет всем в {name}! Я Мия. Буду рада пообщаться, если понадоблюсь. )"
+    else:
+        text = f"Привет, {name}! Я Мия. Рада познакомиться. Рассказывай, что у тебя интересного, или просто давай поболтаем. )"
+        
     await message.answer(text)
 
 @router.message(filters.Command("clear"))
