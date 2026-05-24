@@ -163,6 +163,34 @@ class StickerService:
             return f"[{sticker.emoji}] Sticker"
 
     @staticmethod
+    async def analyze_video_note(bot: Bot, key_manager: GeminiKeyManager, file_id: str) -> str:
+        """Analyzes a video note to generate a visual description for history context."""
+        try:
+            file = await bot.get_file(file_id)
+            if file.file_size > 4.5 * 1024 * 1024:
+                return "(Video note too large to analyze)"
+                
+            downloaded_bytes = io.BytesIO()
+            await bot.download_file(file.file_path, destination=downloaded_bytes)
+            img_data = downloaded_bytes.getvalue()
+            
+            prompt_text = (
+                "Provide a brief 1-sentence visual description of what you see in this round video message (video note). "
+                "Describe the person, their facial expression, surroundings, or what they are doing. Ignore audio."
+            )
+            
+            response = key_manager.generate_content(
+                model="gemini-3.5-flash",
+                contents=[prompt_text, Part.from_bytes(data=img_data, mime_type="video/mp4")],
+                config=GenerateContentConfig(temperature=0.2)
+            )
+            
+            return response.text.strip() if response.text else "(No visual description available)"
+        except Exception as e:
+            logger.error(f"Error analyzing video note {file_id}: {e}")
+            return "(Video note analysis failed)"
+
+    @staticmethod
     async def _process_batch(bot: Bot, db: DatabaseManager, key_manager: GeminiKeyManager, pack_name: str, batch: list):
         prompt_text = (
             "You are a helpful assistant helping a chatbot catalog its stickers. "

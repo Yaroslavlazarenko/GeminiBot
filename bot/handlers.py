@@ -388,6 +388,7 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
 
     # Process media
     try:
+        video_desc = ""
         if mime_type.startswith('image/'):
             media_bytes = await MediaService.process_image(message.bot, file_id, file_size)
             if media_bytes:
@@ -397,27 +398,33 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
         else:
             media_bytes = await MediaService.process_audio_video(message.bot, file_id, file_size)
             if media_bytes:
-                if message.voice and transcription_service.is_configured:
+                if (message.voice or message.video_note or message.video) and transcription_service.is_configured:
                     transcription = await transcription_service.transcribe_audio(media_bytes)
                     if transcription:
                         lang = message.from_user.language_code or 'en'
-                        if lang.startswith('ru'):
-                            prefix = "🎤 [Голосовое]: "
-                        elif lang.startswith('uk'):
-                            prefix = "🎤 [Голосове]: "
-                        else:
-                            prefix = "🎤 [Voice]: "
+                        prefix = "🎤 [Голосовое]: " if lang.startswith('ru') else "🎤 [Голосове]: " if lang.startswith('uk') else "🎤 [Voice]: "
+                        text = (text + f"\n{prefix}{transcription}").strip()
                         
-                        transcribed_text = f"{prefix}{transcription}"
-                        await _process_bot_turn(message, chat_context, text=transcribed_text, media=None, db_text=transcribed_text)
-                        return
+                if message.voice:
+                    # Voice has no visual component for Gemini
+                    if not text: 
+                        text = "🎤 [Пустое голосовое]" # Fallback
+                    await _process_bot_turn(message, chat_context, text=text, media=None, db_text=text)
+                    return
+                
+                # Get visual description for video notes to save in history
+                if message.video_note:
+                    from services.sticker_service import StickerService
+                    from core.key_manager import get_key_manager
+                    video_desc = await StickerService.analyze_video_note(message.bot, get_key_manager(), file_id)
                 
                 media = {"mime_type": mime_type, "data": media_bytes}
     except Exception as e:
         logger.error(f"Error processing media: {e}")
         media = None
+        video_desc = ""
         
-    text = message.caption or ""
+    text = message.caption or text or ""
     
     if not media:
         if file_size > 4.5 * 1024 * 1024:
@@ -425,9 +432,13 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
         return
         
     # How we store this interaction in the DB (text only, to save space!)
-    db_text = f"*(User sent a {media_type_name})*"
+    db_text = f"*(User sent a {media_type_name}"
+    if video_desc:
+        db_text += f". Visuals: {video_desc}"
+    db_text += ")*"
+    
     if text:
-        db_text += f"\nCaption: {text}"
+        db_text += f"\nCaption/Audio: {text}"
         
     await _process_bot_turn(message, chat_context, text=text, media=media, db_text=db_text)
 
