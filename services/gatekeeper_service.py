@@ -89,6 +89,35 @@ class GatekeeperService:
             # Fallback to respond if gatekeeper fails, so we don't break the bot
             return GatekeeperAction.RESPOND
 
+    async def summarize_history(self, history: List[Dict[str, Any]]) -> str:
+        """Summarize the chat history concisely, removing water."""
+        try:
+            history_text = ""
+            for msg in history:
+                role = msg.get("role", "unknown")
+                text = msg.get("text", "")
+                if text:
+                    history_text += f"{role}: {text}\n"
+
+            prompt = (
+                "Summarize the following chat history. "
+                "Keep only the most important context, facts, names, and key topics discussed. "
+                "Remove all filler words, pleasantries, and 'water'. Make it extremely concise.\n\n"
+                f"History:\n{history_text}"
+            )
+
+            response = self.client.models.generate_content(
+                model=self.current_gatekeeper_model,
+                contents=prompt,
+                config=GenerateContentConfig(
+                    temperature=0.3
+                )
+            )
+            return response.text if response.text else "Summary failed."
+        except Exception as e:
+            logger.error(f"Error summarizing history: {e}")
+            return "Failed to generate summary due to an error."
+
 # Global instance
 _gatekeeper_instance = None
 

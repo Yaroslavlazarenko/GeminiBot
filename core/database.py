@@ -39,13 +39,19 @@ class ChatContext:
             await self._db.update_user_settings(self.id, settings)
         self.settings.update(settings)
 
-    async def clear_history(self):
-        """Clear the history."""
+    async def replace_history(self, new_history: list):
+        """Replace the entire history with a summarized version."""
         if self.is_group:
-            await self._db.clear_group_history(self.id)
+            await self._db.groups.update_one(
+                {"telegram_chat_id": self.id},
+                {"$set": {"history": new_history}}
+            )
         else:
-            await self._db.clear_user_history(self.id)
-        self.history.clear()
+            await self._db.users.update_one(
+                {"telegram_id": self.id},
+                {"$set": {"history": new_history}}
+            )
+        self.history = new_history
 
 
 class DatabaseManager:

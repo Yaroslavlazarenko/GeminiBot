@@ -5,6 +5,7 @@ from core.database import ChatContext
 from services.ai_service import get_ai_service
 from services.gatekeeper_service import get_gatekeeper
 from services.tts_service import get_tts_service
+from services.media_service import MediaService
 from core.config import Config
 from bot.web_admin import create_admin_session
 from core.enums import GatekeeperAction, ToolName
@@ -18,49 +19,22 @@ gatekeeper = get_gatekeeper()
 tts_service = get_tts_service()
 config = Config()
 
-@router.message(filters.Command("admin"))
-async def admin_command(message: Message, chat_context: ChatContext):
-    # Check if the user is the authorized admin
-    if message.from_user.id != config.admin_telegram_id:
-        return
+async def trigger_summarization_if_needed(chat_context: ChatContext, gatekeeper):
+    """History Optimization: If history exceeds 20 messages, summarize the oldest ones"""
+    if len(chat_context.history) > 20:
+        logger.info(f"History length is {len(chat_context.history)}. Triggering summarization.")
+        # Keep the last 5 messages, summarize the rest
+        messages_to_summarize = chat_context.history[:-5]
+        messages_to_keep = chat_context.history[-5:]
         
-    token = create_admin_session()
-    
-    # We provide a hint that they need to replace the IP with their server's actual IP
-    text = (
-        f"🔐 **Admin Panel Access**\n\n"
-        f"Here is your temporary, secure access link. Please open it in your browser:\n\n"
-        f"`http://<YOUR_SERVER_IP>:{config.admin_port}/?token={token}`\n\n"
-        f"_(Replace <YOUR_SERVER_IP> with the actual IP address of your server)._"
-    )
-    await message.answer(text, parse_mode="Markdown")
-
-@router.message(filters.Command("start", "help"))
-async def start_command(message: Message, chat_context: ChatContext):
-    # Depending on context, personalize greeting
-    name = chat_context.doc.get('first_name', 'User') if not chat_context.is_group else chat_context.doc.get('name', 'Group')
-    
-    # Generate a more human-like, persona-driven greeting
-    if chat_context.is_group:
-        text = f"Привет всем в {name}! Я Мия. Буду рада пообщаться, если понадоблюсь. )"
-    else:
-        text = f"Привет, {name}! Я Мия. Рада познакомиться. Рассказывай, что у тебя интересного, или просто давай поболтаем. )"
+        summary = await gatekeeper.summarize_history(messages_to_summarize)
         
-    await message.answer(text)
+        # Replace history with the summary + the kept messages
+        new_history = [{"role": "user", "text": f"[SYSTEM: CONTEXT SUMMARY OF PREVIOUS CHAT]\n{summary}"}] + messages_to_keep
+        await chat_context.replace_history(new_history)
 
-@router.message(filters.Command("clear"))
-async def clear_command(message: Message, chat_context: ChatContext):
-    await chat_context.clear_history()
-    await message.reply("Context history has been cleared.")
-
-@router.message(F.text & ~F.text.startswith("/"))
-async def handle_text_message(message: Message, chat_context: ChatContext):
-    
-    if chat_context.is_disabled or not chat_context.responds_to("text"):
-        return
-
-    text = message.text
-
+async def _process_bot_turn(message: Message, chat_context: ChatContext, text: str, media: dict = None, db_text: str = None):
+    """Handles the core logic of calling the AI and sending the response for any message type."""
     # 1. Gatekeeper determines if a response is needed
     action = await gatekeeper.decide(text, chat_context)
 
@@ -76,7 +50,7 @@ async def handle_text_message(message: Message, chat_context: ChatContext):
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
 
     # Generate Response
-    response_text, tool_calls = await ai_service.generate_response(text, chat_context)
+    response_text, tool_calls = await ai_service.generate_response(text, chat_context, media)
 
     # Handle native Tool Calls via Enums
     for call in tool_calls:
@@ -125,8 +99,9 @@ async def handle_text_message(message: Message, chat_context: ChatContext):
             # We don't want to send this as normal text too, so we clear the response_text
             response_text = ""
 
-    # Save User Message to DB via the Context abstraction
-    await chat_context.add_message("user", text, message.message_id)
+    # Save User Message to DB via the Context abstraction. 
+    # Use db_text if provided (for media), otherwise use actual text
+    await chat_context.add_message("user", db_text if db_text else text, message.message_id)
 
     # Send text response if the model provided one
     if response_text:
@@ -137,10 +112,141 @@ async def handle_text_message(message: Message, chat_context: ChatContext):
         # Save Bot Message to DB
         await chat_context.add_message("model", response_text, bot_message.message_id)
 
+    # History Optimization
+    await trigger_summarization_if_needed(chat_context, gatekeeper)
+
+@router.message(filters.Command("admin"))
+async def admin_command(message: Message, chat_context: ChatContext):
+    # Check if the user is the authorized admin
+    if message.from_user.id != config.admin_telegram_id:
+        return
+        
+    token = create_admin_session()
+    
+    # We provide a hint that they need to replace the IP with their server's actual IP
+    text = (
+        f"🔐 **Admin Panel Access**\n\n"
+        f"Here is your temporary, secure access link. Please open it in your browser:\n\n"
+        f"`http://<YOUR_SERVER_IP>:{config.admin_port}/?token={token}`\n\n"
+        f"_(Replace <YOUR_SERVER_IP> with the actual IP address of your server)._"
+    )
+    await message.answer(text, parse_mode="Markdown")
+
+@router.message(filters.Command("start", "help"))
+async def start_command(message: Message, chat_context: ChatContext):
+    # Depending on context, personalize greeting
+    name = chat_context.doc.get('first_name', 'User') if not chat_context.is_group else chat_context.doc.get('name', 'Group')
+    
+    # Detect language
+    lang = message.from_user.language_code or 'en'
+    
+    # Generate a more human-like, persona-driven greeting based on language
+    if lang.startswith('ru'):
+        if chat_context.is_group:
+            text = f"Привет всем в {name}! Я Мия. Буду рада пообщаться, если понадоблюсь. )"
+        else:
+            text = f"Привет, {name}! Я Мия. Рада познакомиться. Рассказывай, что у тебя интересного, или просто давай поболтаем. )"
+    elif lang.startswith('uk'):
+        if chat_context.is_group:
+            text = f"Привіт усім у {name}! Я Мія. Буду рада поспілкуватися, якщо знадоблюсь. )"
+        else:
+            text = f"Привіт, {name}! Я Мія. Рада познайомитися. Розповідай, що в тебе цікавого, або просто давай поспілкуємося. )"
+    else:
+        if chat_context.is_group:
+            text = f"Hi everyone in {name}! I'm Mia. I'll be glad to chat if you need me. )"
+        else:
+            text = f"Hi, {name}! I'm Mia. Nice to meet you. Tell me what's interesting with you, or let's just chat. )"
+            
+    await message.answer(text)
+
+@router.message(filters.Command("clear"))
+async def clear_command(message: Message, chat_context: ChatContext):
+    await chat_context.clear_history()
+    await message.reply("Context history has been cleared.")
+
+@router.message(F.text & ~F.text.startswith("/"))
+async def handle_text_message(message: Message, chat_context: ChatContext):
+    if chat_context.is_disabled or not chat_context.responds_to("text"):
+        return
+    await _process_bot_turn(message, chat_context, text=message.text)
+
 @router.message(F.photo | F.video | F.document | F.voice | F.video_note | F.sticker)
 async def handle_media_message(message: Message, chat_context: ChatContext):
-    
     if chat_context.is_disabled:
         return
         
-    await message.reply("Media processing is currently being upgraded for the new architecture. It will be available shortly!")
+    media = None
+    file_id = None
+    file_size = 0
+    mime_type = ""
+    media_type_name = ""
+    
+    # Identify media type
+    if message.photo:
+        # Telegram sends multiple sizes. The last one is the largest.
+        photo = message.photo[-1]
+        file_id = photo.file_id
+        file_size = photo.file_size
+        mime_type = "image/jpeg"
+        media_type_name = "photo"
+    elif message.video:
+        file_id = message.video.file_id
+        file_size = message.video.file_size
+        mime_type = message.video.mime_type or "video/mp4"
+        media_type_name = "video"
+    elif message.voice:
+        file_id = message.voice.file_id
+        file_size = message.voice.file_size
+        mime_type = message.voice.mime_type or "audio/ogg"
+        media_type_name = "voice message"
+    elif message.video_note:
+        file_id = message.video_note.file_id
+        file_size = message.video_note.file_size
+        mime_type = "video/mp4"
+        media_type_name = "video note"
+    elif message.document and message.document.mime_type.startswith('image/'):
+        file_id = message.document.file_id
+        file_size = message.document.file_size
+        mime_type = message.document.mime_type
+        media_type_name = "image document"
+    else:
+        # Ignore unsupported documents or stickers for AI analysis
+        # But we still record that they sent something in the context
+        db_text = f"*(User sent a {message.content_type})*"
+        if message.caption:
+            db_text += f"\nCaption: {message.caption}"
+        await chat_context.add_message("user", db_text, message.message_id)
+        await trigger_summarization_if_needed(chat_context, gatekeeper)
+        return
+
+    # Process media
+    try:
+        await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+        
+        if mime_type.startswith('image/'):
+            media_bytes = await MediaService.process_image(message.bot, file_id, file_size)
+            if media_bytes:
+                media = {"mime_type": mime_type, "data": media_bytes}
+                # Overwrite mime_type to jpeg since we compressed it
+                media["mime_type"] = "image/jpeg"
+        else:
+            media_bytes = await MediaService.process_audio_video(message.bot, file_id, file_size)
+            if media_bytes:
+                media = {"mime_type": mime_type, "data": media_bytes}
+    except Exception as e:
+        logger.error(f"Error processing media: {e}")
+        media = None
+        
+    text = message.caption or ""
+    
+    if not media:
+        if file_size > 4.5 * 1024 * 1024:
+             await message.reply("Этот файл слишком большой, я не могу его сейчас обработать. (Ограничение: 4.5 МБ)")
+        return
+        
+    # How we store this interaction in the DB (text only, to save space!)
+    db_text = f"*(User sent a {media_type_name})*"
+    if text:
+        db_text += f"\nCaption: {text}"
+        
+    await _process_bot_turn(message, chat_context, text=text, media=media, db_text=db_text)

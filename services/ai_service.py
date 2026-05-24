@@ -64,20 +64,33 @@ class AIService:
             self.mcp_manager = MCPConnectionManager(db_mcp_config)
             self.current_mcp_config = db_mcp_config
 
-    async def generate_response(self, text: str, chat_context: ChatContext) -> Tuple[str, List[FunctionCall]]:
+    async def generate_response(self, text: str, chat_context: ChatContext, media: dict = None) -> Tuple[str, List[FunctionCall]]:
         """Generate a response using Gemini based on the ChatContext. Returns (text, local_tool_calls)."""
         await self._sync_settings(chat_context._db)
         await self.mcp_manager.connect()
         
         all_tools = []
         if local_tools_list:
-            all_tools.append(local_tools_list)
+            all_tools.extend(local_tools_list)
         if self.mcp_manager.mcp_declarations:
             all_tools.append(Tool(function_declarations=self.mcp_manager.mcp_declarations))
             
         try:
             gemini_history = self._convert_history_to_gemini(chat_context.history)
-            current_contents = gemini_history + [{"role": "user", "parts": [{"text": text}]}]
+            
+            # Prepare current turn parts
+            current_turn_parts = []
+            if text:
+                current_turn_parts.append({"text": text})
+            if media:
+                current_turn_parts.append({
+                    "inline_data": {
+                        "mime_type": media["mime_type"],
+                        "data": media["data"]
+                    }
+                })
+                
+            current_contents = gemini_history + [{"role": "user", "parts": current_turn_parts}]
             
             local_calls_to_return = []
             final_text = ""
