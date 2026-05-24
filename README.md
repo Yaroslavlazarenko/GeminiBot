@@ -1,3 +1,5 @@
+[🇬🇧 English](README.md) | [🇷🇺 Русский](README.ru.md) | [🇺🇦 Українська](README.uk.md)
+
 # Mia - Advanced Telegram AI Assistant
 
 Mia is a highly sophisticated, persona-driven Telegram bot built on top of the **Google Gemini API** (GenAI SDK) and **FastMCP**. It utilizes a modern, clean architecture backed by MongoDB and features a dual-model "Gatekeeper" routing system, dynamic tool orchestration, and a secure Web Admin panel.
