@@ -147,6 +147,23 @@ class AIService:
             )
 
             compiled_system_instruction = self.system_instruction + time_context + sender_context + tool_constraints
+
+            # Inject sticker catalog
+            try:
+                settings = await chat_context._db.get_system_settings()
+                packs_raw = settings.get("sticker_set_names") or settings.get("sticker_set_name") or "Animals"
+                active_packs = [p.strip() for p in packs_raw.split(',') if p.strip()]
+                if not active_packs:
+                    active_packs = ["Animals"]
+                    
+                sticker_catalog = await chat_context._db.stickers.find({"pack_name": {"$in": active_packs}}).to_list(None)
+                if sticker_catalog:
+                    catalog_text = "\n\n## Available Sticker Catalog\nUse the 'send_specific_sticker(sticker_id)' tool with the exact ID provided below to send a sticker that fits your visual needs. Do NOT use send_sticker if you can use send_specific_sticker.\n"
+                    for s in sticker_catalog:
+                        catalog_text += f"- ID: '{s['_id']}' | Emoji: {s.get('emoji','')} | Description: {s.get('description','')}\n"
+                    compiled_system_instruction += catalog_text
+            except Exception as e:
+                logger.error(f"Failed to inject sticker catalog into prompt: {e}")
             
             local_calls_to_return = []
             final_text = ""

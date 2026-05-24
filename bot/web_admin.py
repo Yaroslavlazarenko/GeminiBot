@@ -261,7 +261,7 @@ HTML_TEMPLATE = """
 </html>
 """
 
-def setup_admin_app(db: DatabaseManager, config: Config) -> web.Application:
+def setup_admin_app(db: DatabaseManager, config: Config, bot=None) -> web.Application:
     app = web.Application()
     
     @web.middleware
@@ -326,6 +326,16 @@ def setup_admin_app(db: DatabaseManager, config: Config) -> web.Application:
             }
             await db.update_system_settings(updates)
             logger.info("System settings updated via Admin Panel")
+            
+            # Trigger sticker sync in background
+            if bot:
+                from services.sticker_service import StickerService
+                from core.key_manager import get_key_manager
+                import asyncio
+                packs_raw = updates.get("sticker_set_names", "Animals")
+                pack_names = [p.strip() for p in packs_raw.split(',') if p.strip()]
+                asyncio.create_task(StickerService.sync_sticker_packs(bot, db, get_key_manager(), pack_names))
+                
             return web.json_response({"status": "success"})
         except Exception as e:
             logger.error(f"Failed to update settings: {e}")

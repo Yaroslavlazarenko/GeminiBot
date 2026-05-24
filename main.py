@@ -96,13 +96,21 @@ async def main():
         dp.include_router(main_router)
         
         # Setup and start web admin panel
-        admin_app = setup_admin_app(db_manager, config)
+        admin_app = setup_admin_app(db_manager, config, bot)
         runner = web.AppRunner(admin_app)
         await runner.setup()
         site = web.TCPSite(runner, '0.0.0.0', config.admin_port)
         await site.start()
         logger.info(f"Admin Panel running on http://0.0.0.0:{config.admin_port}")
             
+        # Trigger initial sticker sync
+        from services.sticker_service import StickerService
+        from core.key_manager import get_key_manager
+        settings = await db_manager.get_system_settings()
+        packs_raw = settings.get("sticker_set_names") or settings.get("sticker_set_name") or "Animals"
+        pack_names = [p.strip() for p in packs_raw.split(',') if p.strip()]
+        asyncio.create_task(StickerService.sync_sticker_packs(bot, db_manager, get_key_manager(), pack_names))
+        
         # Start polling
         logger.info("Bot is polling...")
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

@@ -74,6 +74,7 @@ class DatabaseManager:
         self.db = self.client[db_name]
         self.users = self.db['users']
         self.groups = self.db['groups']
+        self.stickers = self.db['stickers']
 
     async def _setup_indexes(self):
         """Create necessary indexes for performance."""

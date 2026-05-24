@@ -24,11 +24,19 @@ def reply_to_message(message_id: int) -> str:
 
 @mcp.tool(name=ToolName.SEND_STICKER.value)
 def send_sticker(emotion: str) -> str:
-    """Send a sticker to express a specific emotion. 
+    """[DEPRECATED] Send a random sticker based on emotion. Prefer send_specific_sticker if you know the exact sticker you want.
     Args:
         emotion: The core emotion you want to express (e.g., 'happy', 'sad', 'angry', 'love', 'laughing').
     """
     return f"Sending {emotion} sticker"
+
+@mcp.tool(name=ToolName.SEND_SPECIFIC_STICKER.value)
+def send_specific_sticker(sticker_id: str) -> str:
+    """Send an exact sticker from your catalog. 
+    Args:
+        sticker_id: The unique ID of the sticker from your catalog context.
+    """
+    return f"Sending specific sticker {sticker_id}"
 
 @mcp.tool(name=ToolName.SEND_VOICE.value)
 def send_voice(text_to_speak: str) -> str:
@@ -43,5 +51,6 @@ local_tools_list = [
     add_reaction,
     reply_to_message,
     send_sticker,
+    send_specific_sticker,
     send_voice
 ]

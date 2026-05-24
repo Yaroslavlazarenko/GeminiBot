@@ -108,6 +108,27 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
         elif call.name == ToolName.REPLY_TO_MESSAGE.value:
             message.reply_to_message_id = call.args.get("message_id")
             
+        elif call.name == ToolName.SEND_SPECIFIC_STICKER.value:
+            sticker_id = call.args.get("sticker_id", "")
+            logger.info(f"LLM requested sending a specific sticker with ID: {sticker_id}")
+            
+            sent_msg = None
+            try:
+                # Retrieve the exact sticker file_id from DB
+                sticker_data = await chat_context._db.stickers.find_one({"_id": sticker_id})
+                if sticker_data and sticker_data.get("file_id"):
+                    sent_msg = await message.answer_sticker(sticker=sticker_data["file_id"])
+                    
+                if not sent_msg:
+                    sent_msg = await message.answer("😊")
+            except Exception as e:
+                logger.error(f"Failed to send specific sticker: {e}")
+                sent_msg = await message.answer("😊")
+                
+            sticker_action = f"*(Отправила специфический стикер)*"
+            db_response_text = db_response_text + f"\n{sticker_action}" if db_response_text else sticker_action
+            bot_msg_to_save = sent_msg
+
         elif call.name == ToolName.SEND_STICKER.value:
             emotion = call.args.get("emotion", "happy").lower()
             logger.info(f"LLM requested sending a sticker with emotion: {emotion}")
