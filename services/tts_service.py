@@ -11,9 +11,8 @@ class TTSService:
         self.api_key = config.elevenlabs_api_key
         # We only initialize the client if the key is provided
         self.client = AsyncElevenLabs(api_key=self.api_key) if self.api_key else None
-        # Rachel is a great, natural, young female voice available on the free tier
-        # It supports multilingual v2 (Russian, Ukrainian, English, etc.)
-        self.default_voice = "Rachel" 
+        # Lily is a velvety actress voice that supports multilingual v2 (Russian, Ukrainian, English, etc.)
+        self.default_voice = "pFZP5JQG7iQjIQuC4Bku" 
         self.model_id = "eleven_multilingual_v2"
 
     @property
@@ -27,11 +26,11 @@ class TTSService:
             return None
 
         try:
-            # generate() returns an async generator of bytes
-            audio_generator = await self.client.generate(
+            # convert() returns an AsyncIterator[bytes] (no await when calling it)
+            audio_generator = self.client.text_to_speech.convert(
+                voice_id=self.default_voice,
                 text=text,
-                voice=self.default_voice,
-                model=self.model_id
+                model_id=self.model_id
             )
             
             # Collect the bytes from the async generator

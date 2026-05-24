@@ -178,21 +178,14 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
 
     # Save User Message to DB via the Context abstraction.
     # Use db_text if provided (for media), otherwise use actual text.
-    # Enrich with timestamp and any existing reactions on the message.
+    # Enrich with timestamp.
     msg_timestamp = message.date.strftime("%H:%M") if message.date else None
-    msg_reactions = []
-    if message.reactions:
-        for reaction_count in message.reactions.reactions:
-            emoji = getattr(reaction_count.type, 'emoji', None)
-            count = getattr(reaction_count, 'count', 1)
-            if emoji:
-                msg_reactions.extend([emoji] * count)
     await chat_context.add_message(
         "user",
         db_text if db_text else text,
         message.message_id,
         timestamp=msg_timestamp,
-        reactions=msg_reactions if msg_reactions else None
+        reactions=None
     )
 
     # Send text response if the model provided one
