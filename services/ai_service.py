@@ -85,7 +85,7 @@ class AIService:
             self.mcp_manager = MCPConnectionManager(db_mcp_config)
             self.current_mcp_config = db_mcp_config
 
-    async def generate_response(self, text: str, chat_context: ChatContext, media: dict = None, sender_info: dict = None) -> Tuple[str, List[FunctionCall]]:
+    async def generate_response(self, text: str, chat_context: ChatContext, media_list: List[dict] = None, sender_info: dict = None) -> Tuple[str, List[FunctionCall]]:
         """Generate a response using Gemini based on the ChatContext. Returns (text, local_tool_calls)."""
         await self._sync_settings(chat_context._db)
         await self.mcp_manager.connect()
@@ -103,13 +103,14 @@ class AIService:
             current_turn_parts = []
             if text:
                 current_turn_parts.append({"text": text})
-            if media:
-                current_turn_parts.append({
-                    "inline_data": {
-                        "mime_type": media["mime_type"],
-                        "data": media["data"]
-                    }
-                })
+            if media_list:
+                for media in media_list:
+                    current_turn_parts.append({
+                        "inline_data": {
+                            "mime_type": media["mime_type"],
+                            "data": media["data"]
+                        }
+                    })
                 
             current_contents = gemini_history + [{"role": "user", "parts": current_turn_parts}]
             
