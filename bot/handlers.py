@@ -47,6 +47,33 @@ async def trigger_summarization_if_needed(chat_context: ChatContext, gatekeeper)
 
 async def _process_bot_turn(message: Message, chat_context: ChatContext, text: str, media: dict = None, db_text: str = None):
     """Handles the core logic of calling the AI and sending the response for any message type."""
+    
+    # 0. Enrich text with reply/quote context
+    if message.reply_to_message:
+        replied_msg = message.reply_to_message
+        replied_user = replied_msg.from_user.first_name if replied_msg.from_user else "Unknown"
+        if replied_msg.from_user and replied_msg.from_user.id == message.bot.id:
+            replied_user = "Mia"
+            
+        content = replied_msg.text or replied_msg.caption or f"[{replied_msg.content_type}]"
+        if len(content) > 100:
+            content = content[:97] + "..."
+            
+        prefix = ""
+        if getattr(message, "quote", None):
+            quote_text = message.quote.text
+            if len(quote_text) > 100:
+                quote_text = quote_text[:97] + "..."
+            prefix = f"*[В ответ на {replied_user} (цитата: \"{quote_text}\")]*\n"
+        else:
+            prefix = f"*[В ответ на {replied_user}: \"{content}\"]*\n"
+            
+        text = f"{prefix}{text}" if text else prefix.strip()
+        if db_text:
+            db_text = f"{prefix}{db_text}"
+        else:
+            db_text = text
+
     # 1. Gatekeeper determines if a response is needed
     action = await gatekeeper.decide(text, chat_context)
 
