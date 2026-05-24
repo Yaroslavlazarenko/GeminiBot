@@ -56,7 +56,7 @@ class StickerService:
                 
                 for sticker in missing_stickers:
                     file_id = sticker.file_id
-                    if sticker.is_animated or sticker.is_video:
+                    if sticker.is_animated:
                         if sticker.thumbnail:
                             file_id = sticker.thumbnail.file_id
                         else:
@@ -65,7 +65,7 @@ class StickerService:
                                 "file_id": sticker.file_id,
                                 "pack_name": pack_name,
                                 "emoji": sticker.emoji,
-                                "description": f"[{sticker.emoji}] Animated/Video sticker (No description available)"
+                                "description": f"[{sticker.emoji}] Animated sticker (No description available)"
                             })
                             continue
                             
@@ -104,11 +104,11 @@ class StickerService:
         logger.info(f"Analyzing new user-sent sticker: {sticker.file_unique_id}")
         
         file_id = sticker.file_id
-        if sticker.is_animated or sticker.is_video:
+        if sticker.is_animated:
             if sticker.thumbnail:
                 file_id = sticker.thumbnail.file_id
             else:
-                desc = f"[{sticker.emoji}] Animated/Video sticker (No description available)"
+                desc = f"[{sticker.emoji}] Animated sticker (No description available)"
                 await db.stickers.insert_one({
                     "_id": sticker.file_unique_id,
                     "file_id": sticker.file_id,
@@ -126,10 +126,14 @@ class StickerService:
             downloaded_bytes = io.BytesIO()
             await bot.download_file(file.file_path, destination=downloaded_bytes)
             img_data = downloaded_bytes.getvalue()
-            mime_type = "image/webp" if file.file_path.endswith('.webp') else "image/jpeg"
+            
+            if sticker.is_video:
+                mime_type = "video/webm"
+            else:
+                mime_type = "image/webp" if file.file_path.endswith('.webp') else "image/jpeg"
             
             prompt_text = (
-                "Provide a brief 1-sentence visual description of this character/sticker and what emotion they are expressing. "
+                "Provide a brief 1-sentence visual description of this character/sticker (image or short video) and what emotion they are expressing. "
                 "Keep it concise. E.g., 'A white cat wearing sunglasses, looking cool.'"
             )
             
@@ -162,8 +166,8 @@ class StickerService:
     async def _process_batch(bot: Bot, db: DatabaseManager, key_manager: GeminiKeyManager, pack_name: str, batch: list):
         prompt_text = (
             "You are a helpful assistant helping a chatbot catalog its stickers. "
-            "I will provide a sequence of images (stickers). Before each image, I will provide its 'Sticker Index'. "
-            "For each image, provide a brief 1-sentence visual description of what the character is doing and what emotion they are expressing. "
+            "I will provide a sequence of items (images or short video clips). Before each item, I will provide its 'Sticker Index'. "
+            "For each sticker, provide a brief 1-sentence visual description of what the character is doing and what emotion they are expressing. "
             "Return the descriptions in the requested JSON structure."
         )
         contents = [prompt_text]
@@ -175,7 +179,10 @@ class StickerService:
                 await bot.download_file(file.file_path, destination=downloaded_bytes)
                 img_data = downloaded_bytes.getvalue()
                 
-                mime_type = "image/webp" if file.file_path.endswith('.webp') else "image/jpeg"
+                if sticker.is_video:
+                    mime_type = "video/webm"
+                else:
+                    mime_type = "image/webp" if file.file_path.endswith('.webp') else "image/jpeg"
                 
                 contents.append(f"Sticker Index: {idx}")
                 contents.append(Part.from_bytes(data=img_data, mime_type=mime_type))
