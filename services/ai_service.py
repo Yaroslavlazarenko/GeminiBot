@@ -148,26 +148,12 @@ class AIService:
 
             compiled_system_instruction = self.system_instruction + time_context + sender_context + tool_constraints
 
-            # Inject sticker catalog
+            # Inject sticker catalog instructions
             try:
-                settings = await chat_context._db.get_system_settings()
-                packs_raw = settings.get("sticker_set_names") or settings.get("sticker_set_name") or "Animals"
-                active_packs = [p.strip() for p in packs_raw.split(',') if p.strip()]
-                if not active_packs:
-                    active_packs = ["Animals"]
-                    
-                # Fetch up to 150 stickers total to prevent context bloat
-                sticker_catalog = await chat_context._db.stickers.find(
-                    {"$or": [{"pack_name": {"$in": active_packs}}, {"pack_name": "user_discovered"}]}
-                ).limit(150).to_list(None)
-                
-                if sticker_catalog:
-                    catalog_text = "\n\n## Available Sticker Catalog\nUse the 'send_specific_sticker(sticker_id)' tool with the exact ID provided below to send a sticker that fits your visual needs. Do NOT use send_sticker if you can use send_specific_sticker.\n"
-                    for s in sticker_catalog:
-                        catalog_text += f"- ID: '{s['_id']}' | Emoji: {s.get('emoji','')} | Description: {s.get('description','')}\n"
-                    compiled_system_instruction += catalog_text
+                catalog_text = "\n\n## Stickers\nTo send a sticker, you MUST first call `search_stickers(emotion, query)` to browse your catalog and find a `sticker_id`. Then call `send_specific_sticker(sticker_id)`. Do NOT use the deprecated `send_sticker` tool.\n"
+                compiled_system_instruction += catalog_text
             except Exception as e:
-                logger.error(f"Failed to inject sticker catalog into prompt: {e}")
+                logger.error(f"Failed to inject sticker catalog instructions: {e}")
             
             local_calls_to_return = []
             final_text = ""
@@ -208,14 +194,56 @@ class AIService:
                 
                 for call in response.function_calls:
                     if call.name in local_tool_names:
-                        local_calls_to_return.append(call)
-                        # Add a successful local tool execution response to the Gemini context
-                        response_parts.append(
-                            Part.from_function_response(
-                                name=call.name,
-                                response={"result": "Success"}
+                        if call.name == ToolName.SEARCH_STICKERS.value:
+                            emotion = call.args.get("emotion", "").lower()
+                            query = call.args.get("query", "").lower()
+                            
+                            # Fetch active packs
+                            settings = await chat_context._db.get_system_settings()
+                            packs_raw = settings.get("sticker_set_names") or settings.get("sticker_set_name") or "Animals"
+                            active_packs = [p.strip() for p in packs_raw.split(',') if p.strip()]
+                            if not active_packs:
+                                active_packs = ["Animals"]
+                                
+                            # Basic in-memory filter (could be optimized with a full-text search)
+                            all_stickers = await chat_context._db.stickers.find(
+                                {"$or": [{"pack_name": {"$in": active_packs}}, {"pack_name": "user_discovered"}]}
+                            ).to_list(None)
+                            
+                            import random
+                            results = []
+                            for s in all_stickers:
+                                desc = s.get("description", "").lower()
+                                em = s.get("emoji", "")
+                                if emotion and emotion not in desc and emotion not in em:
+                                    continue
+                                if query and query not in desc:
+                                    continue
+                                results.append({
+                                    "id": s["_id"],
+                                    "emoji": em,
+                                    "description": s.get("description", "")
+                                })
+                            
+                            # Return up to 10 random matches to the model
+                            if len(results) > 10:
+                                results = random.sample(results, 10)
+                                
+                            response_parts.append(
+                                Part.from_function_response(
+                                    name=call.name,
+                                    response={"matches": results}
+                                )
                             )
-                        )
+                        else:
+                            local_calls_to_return.append(call)
+                            # Add a successful local tool execution response to the Gemini context
+                            response_parts.append(
+                                Part.from_function_response(
+                                    name=call.name,
+                                    response={"result": "Success"}
+                                )
+                            )
                     else:
                         mcp_calls.append(call)
                         

@@ -34,9 +34,18 @@ def send_sticker(emotion: str) -> str:
 def send_specific_sticker(sticker_id: str) -> str:
     """Send an exact sticker from your catalog. 
     Args:
-        sticker_id: The unique ID of the sticker from your catalog context.
+        sticker_id: The unique ID of the sticker.
     """
     return f"Sending specific sticker {sticker_id}"
+
+@mcp.tool(name=ToolName.SEARCH_STICKERS.value)
+def search_stickers(emotion: str, query: str = "") -> str:
+    """Search your sticker catalog to find the exact ID of a sticker to send. Call this when you want to send a sticker but don't know the ID.
+    Args:
+        emotion: The primary emotion (e.g., 'happy', 'sad', 'angry').
+        query: Optional textual description of what you are looking for.
+    """
+    return f"Searching stickers for {emotion} {query}"
 
 @mcp.tool(name=ToolName.SEND_VOICE.value)
 def send_voice(text_to_speak: str) -> str:
@@ -52,5 +61,6 @@ local_tools_list = [
     reply_to_message,
     send_sticker,
     send_specific_sticker,
+    search_stickers,
     send_voice
 ]

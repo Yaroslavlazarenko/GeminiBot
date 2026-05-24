@@ -10,4 +10,5 @@ class ToolName(str, Enum):
     REPLY_TO_MESSAGE = "reply_to_message"
     SEND_STICKER = "send_sticker"
     SEND_SPECIFIC_STICKER = "send_specific_sticker"
+    SEARCH_STICKERS = "search_stickers"
     SEND_VOICE = "send_voice"
