@@ -16,3 +16,5 @@ class ToolName(str, Enum):
     GET_HISTORY_BY_DATE = "get_history_by_date"
     IGNORE_MESSAGE = "ignore_message"
     GET_GROUP_INFO = "get_group_info"
+    SAVE_USER_FACT = "save_user_fact"
+    GET_USER_FACTS = "get_user_facts"

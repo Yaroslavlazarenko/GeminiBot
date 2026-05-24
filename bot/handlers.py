@@ -182,14 +182,17 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
             db_manager=chat_context._db
         )
 
+        chat_title = last_message.chat.title if chat_context.is_group else "Private Chat"
         sender_info = {
+            "user_id": last_message.from_user.id,
             "first_name": last_message.from_user.first_name,
             "last_name": last_message.from_user.last_name,
             "username": last_message.from_user.username,
             "language_code": last_message.from_user.language_code,
             "avatar_description": avatar_desc,
             "bot": last_message.bot,
-            "chat_id": last_message.chat.id
+            "chat_id": last_message.chat.id,
+            "chat_title": chat_title
         }
 
         # Generate Response (pass the media list!)

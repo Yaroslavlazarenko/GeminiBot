@@ -128,6 +128,7 @@ class AIService:
 
             sender_context = ""
             if sender_info:
+                user_id = sender_info.get("user_id", "Unknown")
                 first_name = sender_info.get("first_name") or ""
                 last_name = sender_info.get("last_name") or ""
                 username = sender_info.get("username") or ""
@@ -137,12 +138,22 @@ class AIService:
                 full_name = f"{first_name} {last_name}".strip()
                 username_str = f"@{username}" if username else "нет"
 
+                # Fetch known facts
+                try:
+                    facts = await chat_context._db.get_user_facts(user_id) if user_id != "Unknown" else []
+                    facts_str = "\n".join([f"- {f['date'].strftime('%Y-%m-%d')}: {f['fact']} (Source: {f['source']})" for f in facts]) if facts else "No known facts yet."
+                except Exception as e:
+                    logger.error(f"Failed to fetch user facts: {e}")
+                    facts_str = "Error loading facts."
+
                 sender_context = (
                     f"\n--- INTERLOCUTOR INFO ---\n"
+                    f"User ID: {user_id}\n"
                     f"Name: {full_name}\n"
                     f"Username: {username_str}\n"
                     f"Telegram Language Setting: {lang}\n"
                     f"Visual description of their current Avatar (as seen by you, Mia): \"{avatar_desc}\"\n"
+                    f"Known permanent facts about this user:\n{facts_str}\n"
                 )
 
             tool_constraints = (
@@ -151,7 +162,8 @@ class AIService:
                 f"2. Never manually type \"[MsgID: 12345]\", \"[Name]:\", or timestamps in your text response. Tags like '[MsgID: 42] [14:05] [Alex]:' are internal system metadata indicating the message ID, time, and the speaker's name in group chats. Do NOT treat them as part of the user's message, and do NOT mimic them in your own replies. If you want to reply, use the `reply_to_message` tool silently.\n"
                 f"3. If you want to send a voice message, you MUST call the `send_voice(text_to_speak)` tool. Do not simulate it in text.\n"
                 f"4. If you want to send a sticker, you MUST call the `send_sticker(emotion)` tool. Do not write *(Отправляет стикер)* or descriptions of stickers in your text.\n"
-                f"5. Keep your text responses clean and natural, containing only what you would actually type in a chat.\n"
+                f"5. Proactively use `save_user_fact(user_id, fact)` to permanently memorize important details, preferences, or secrets the user shares with you. You can see their existing facts in the INTERLOCUTOR INFO.\n"
+                f"6. Keep your text responses clean and natural, containing only what you would actually type in a chat.\n"
             )
 
             compiled_system_instruction = self.system_instruction + time_context + sender_context + tool_constraints
@@ -377,6 +389,52 @@ class AIService:
                                     response={"group_info": info}
                                 )
                             )
+                            
+                        elif call.name == ToolName.SAVE_USER_FACT.value:
+                            user_id = call.args.get("user_id")
+                            fact = call.args.get("fact", "")
+                            chat_title = sender_info.get("chat_title", "Unknown Context") if sender_info else "Unknown Context"
+                            
+                            try:
+                                if not user_id or not fact:
+                                    raise ValueError("Missing user_id or fact")
+                                await chat_context._db.save_user_fact(int(user_id), fact, chat_title)
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"result": f"Fact successfully saved permanently for user {user_id}."}
+                                    )
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to save user fact: {e}")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": str(e)}
+                                    )
+                                )
+                                
+                        elif call.name == ToolName.GET_USER_FACTS.value:
+                            user_id = call.args.get("user_id")
+                            try:
+                                if not user_id:
+                                    raise ValueError("Missing user_id")
+                                facts = await chat_context._db.get_user_facts(int(user_id))
+                                formatted_facts = [f"- {f['date'].strftime('%Y-%m-%d')}: {f['fact']} (Source: {f['source']})" for f in facts]
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"facts": formatted_facts if formatted_facts else ["No known facts about this user."]}
+                                    )
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to get user facts: {e}")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": str(e)}
+                                    )
+                                )
                             
                         else:
                             local_calls_to_return.append(call)

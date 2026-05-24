@@ -88,6 +88,23 @@ def get_group_info() -> str:
     """
     return f"Getting group info..."
 
+@mcp.tool(name=ToolName.SAVE_USER_FACT.value)
+def save_user_fact(user_id: int, fact: str) -> str:
+    """Save an important fact about a user permanently into your memory. Use this to remember their preferences, life events, secrets, or personality traits across all chats.
+    Args:
+        user_id: The exact Telegram ID of the user. You can find this in the [INTERLOCUTOR INFO] section.
+        fact: A concise, clear sentence describing what you learned about the user.
+    """
+    return f"Saving fact for user {user_id}"
+
+@mcp.tool(name=ToolName.GET_USER_FACTS.value)
+def get_user_facts(user_id: int) -> str:
+    """Retrieve all permanent facts you have saved about a specific user. Call this if you need to remember something about a user other than the current speaker, or if their injected facts are missing.
+    Args:
+        user_id: The exact Telegram ID of the user.
+    """
+    return f"Fetching facts for user {user_id}"
+
 # Export the raw functions for Gemini
 local_tools_list = [
     add_reaction,
@@ -99,7 +116,9 @@ local_tools_list = [
     search_history,
     get_history_by_date,
     ignore_message,
-    get_group_info
+    get_group_info,
+    save_user_fact,
+    get_user_facts
 ]
 
 # Tools safe for Gatekeeper to use (read-only)

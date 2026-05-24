@@ -222,6 +222,24 @@ class DatabaseManager:
             {"$set": {f"settings.{k}": v for k, v in settings.items()}}
         )
 
+    async def save_user_fact(self, telegram_id: int, fact: str, source: str):
+        """Save a persistent fact about a user."""
+        await self.users.update_one(
+            {"telegram_id": telegram_id},
+            {"$push": {
+                "facts": {
+                    "fact": fact,
+                    "source": source,
+                    "date": datetime.utcnow()
+                }
+            }}
+        )
+
+    async def get_user_facts(self, telegram_id: int) -> List[Dict[str, Any]]:
+        """Retrieve all persistent facts about a user."""
+        user = await self.users.find_one({"telegram_id": telegram_id})
+        return user.get("facts", []) if user else []
+
     async def append_user_history(self, telegram_id: int, message: Dict[str, Any], max_history: int = 50):
         await self.users.update_one(
             {"telegram_id": telegram_id},
