@@ -211,6 +211,13 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
     )
 
     if response_text:
+        import re
+        # Clean up literal "\n" strings that the model sometimes outputs by mistake
+        response_text = response_text.replace("\\n", "\n")
+        # Normalize excessive newlines (3 or more) into exactly two (\n\n)
+        response_text = re.sub(r'\n{3,}', '\n\n', response_text)
+        
+        # Split by paragraphs (\n\n) to avoid breaking markdown in lists or code blocks
         parts = [p.strip() for p in response_text.split('\n\n') if p.strip()]
         
         for i, part in enumerate(parts):
