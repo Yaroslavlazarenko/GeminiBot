@@ -18,6 +18,8 @@ services:
       - "${ADMIN_PORT:-8081}:${ADMIN_PORT:-8081}"
     depends_on:
       - mongodb
+    volumes:
+      - gemini_shared_media:/tmp/gemini_media
     restart: unless-stopped
 
   mongodb:
@@ -29,3 +31,4 @@ services:
 
 volumes:
   mongodb_data:
+  gemini_shared_media:
