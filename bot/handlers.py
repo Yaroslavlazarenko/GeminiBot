@@ -51,18 +51,37 @@ async def trigger_summarization_if_needed(chat_context: ChatContext, gatekeeper)
 
 async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: str, media: dict = None, db_text: str = None):
     """Enqueues the message into a burst buffer. Executes only when the user stops typing for a brief moment."""
-    # 0.1 Prepend username in group chats so the bot knows who is talking
+    # 0.1 Prepend username and forward info so the bot knows who is talking and if it's a forward
     sender_name = message.from_user.first_name if message.from_user else "Unknown"
-    group_prefix = f"[{sender_name}]: " if chat_context.is_group else ""
+    
+    original_sender = None
+    if getattr(message, "forward_origin", None):
+        origin = message.forward_origin
+        if origin.type == "user":
+            original_sender = origin.sender_user.first_name
+        elif origin.type == "hidden_user":
+            original_sender = origin.sender_user_name
+        elif origin.type == "chat":
+            original_sender = origin.sender_chat.title
+        elif origin.type == "channel":
+            original_sender = origin.chat.title
+            
+    if original_sender:
+        if chat_context.is_group:
+            prefix_tag = f"[{sender_name} (forwarded from {original_sender})]: "
+        else:
+            prefix_tag = f"[(Forwarded from {original_sender})]: "
+    else:
+        prefix_tag = f"[{sender_name}]: " if chat_context.is_group else ""
     
     if text:
-        text = f"{group_prefix}{text}"
-    elif group_prefix:
-        text = group_prefix.strip()
+        text = f"{prefix_tag}{text}"
+    elif prefix_tag:
+        text = prefix_tag.strip()
         
     if db_text:
-        db_text = f"{group_prefix}{db_text}"
-    elif group_prefix:
+        db_text = f"{prefix_tag}{db_text}"
+    elif prefix_tag:
         db_text = text
     
     # 0.2 Enrich text with reply/quote context
