@@ -14,6 +14,7 @@ from bot.web_admin import create_admin_session
 from core.enums import GatekeeperAction, ToolName
 
 import time
+import random
 from services.avatar_service import AvatarService
 
 logger = logging.getLogger(__name__)
@@ -125,41 +126,50 @@ async def _process_bot_turn(message: Message, chat_context: ChatContext, text: s
             
             # Fetch sticker set from settings
             settings = await chat_context._db.get_system_settings()
-            sticker_set_name = settings.get("sticker_set_name") or "Animals"
+            sticker_sets_raw = settings.get("sticker_set_names") or settings.get("sticker_set_name") or "Animals"
+            sticker_sets = [s.strip() for s in sticker_sets_raw.split(',') if s.strip()]
+            if not sticker_sets:
+                sticker_sets = ["Animals"]
             
             sent_msg = None
-            try:
-                # Check cache first
-                current_time = time.time()
-                cached_data = sticker_cache.get(sticker_set_name)
-                
-                if not cached_data or current_time - cached_data['timestamp'] > STICKER_CACHE_TTL:
-                    sticker_set = await message.bot.get_sticker_set(name=sticker_set_name)
-                    if sticker_set and sticker_set.stickers:
-                        sticker_cache[sticker_set_name] = {
-                            'stickers': sticker_set.stickers,
-                            'timestamp': current_time
-                        }
-                
-                cached_stickers = sticker_cache.get(sticker_set_name, {}).get('stickers', [])
-                
-                if cached_stickers:
-                    matching_sticker = None
+            matching_stickers = []
+            first_available_sticker = None
+            
+            for set_name in sticker_sets:
+                try:
+                    # Check cache first
+                    current_time = time.time()
+                    cached_data = sticker_cache.get(set_name)
+                    
+                    if not cached_data or current_time - cached_data['timestamp'] > STICKER_CACHE_TTL:
+                        sticker_set = await message.bot.get_sticker_set(name=set_name)
+                        if sticker_set and sticker_set.stickers:
+                            sticker_cache[set_name] = {
+                                'stickers': sticker_set.stickers,
+                                'timestamp': current_time
+                            }
+                    
+                    cached_stickers = sticker_cache.get(set_name, {}).get('stickers', [])
+                    
+                    if cached_stickers and not first_available_sticker:
+                        first_available_sticker = cached_stickers[0]
+                        
                     for sticker in cached_stickers:
                         if sticker.emoji:
                             clean_sticker_emoji = sticker.emoji.replace("\ufe0f", "")
                             clean_targets = [te.replace("\ufe0f", "") for te in target_emojis]
                             if clean_sticker_emoji in clean_targets:
-                                matching_sticker = sticker
-                                break
-                    
-                    if not matching_sticker:
-                        matching_sticker = cached_stickers[0]
-                        
-                    if matching_sticker:
-                        sent_msg = await message.answer_sticker(sticker=matching_sticker.file_id)
-            except Exception as se:
-                logger.error(f"Failed to send sticker from set {sticker_set_name}: {se}")
+                                matching_stickers.append(sticker)
+                except Exception as se:
+                    logger.error(f"Failed to fetch sticker set {set_name}: {se}")
+
+            try:
+                # Randomly pick from all matching stickers across all packs
+                chosen_sticker = random.choice(matching_stickers) if matching_stickers else first_available_sticker
+                if chosen_sticker:
+                    sent_msg = await message.answer_sticker(sticker=chosen_sticker.file_id)
+            except Exception as e:
+                logger.error(f"Failed to send sticker: {e}")
                 
             if not sent_msg:
                 # Fallback to plain emoji
