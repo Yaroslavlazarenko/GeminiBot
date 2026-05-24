@@ -462,6 +462,7 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
         return
 
     # Process media
+    text = ""
     try:
         video_desc = ""
         if mime_type.startswith('image/'):
