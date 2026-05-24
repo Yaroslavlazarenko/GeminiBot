@@ -48,7 +48,21 @@ async def trigger_summarization_if_needed(chat_context: ChatContext, gatekeeper)
 async def _process_bot_turn(message: Message, chat_context: ChatContext, text: str, media: dict = None, db_text: str = None):
     """Handles the core logic of calling the AI and sending the response for any message type."""
     
-    # 0. Enrich text with reply/quote context
+    # 0.1 Prepend username in group chats so the bot knows who is talking
+    sender_name = message.from_user.first_name if message.from_user else "Unknown"
+    group_prefix = f"[{sender_name}]: " if chat_context.is_group else ""
+    
+    if text:
+        text = f"{group_prefix}{text}"
+    elif group_prefix:
+        text = group_prefix.strip()
+        
+    if db_text:
+        db_text = f"{group_prefix}{db_text}"
+    elif group_prefix:
+        db_text = text
+    
+    # 0.2 Enrich text with reply/quote context
     if message.reply_to_message:
         replied_msg = message.reply_to_message
         replied_user = replied_msg.from_user.first_name if replied_msg.from_user else "Unknown"
@@ -407,10 +421,9 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
             message.sticker
         )
         db_text = f"*(Пользователь отправил стикер: {desc})*"
-        await chat_context.add_message("user", db_text, message.message_id)
-        await trigger_summarization_if_needed(chat_context, gatekeeper)
         
         # Pass to bot logic in case we want it to react immediately to the sticker itself
+        # This will also handle adding it to the DB with the correct username prefix
         await _process_bot_turn(message, chat_context, text="", media=None, db_text=db_text)
         return
     else:
@@ -419,8 +432,8 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
         db_text = f"*(User sent a {message.content_type})*"
         if message.caption:
             db_text += f"\nCaption: {message.caption}"
-        await chat_context.add_message("user", db_text, message.message_id)
-        await trigger_summarization_if_needed(chat_context, gatekeeper)
+        
+        await _process_bot_turn(message, chat_context, text="", media=None, db_text=db_text)
         return
 
     # Process media
