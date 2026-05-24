@@ -19,3 +19,4 @@ class ToolName(str, Enum):
     SAVE_USER_FACT = "save_user_fact"
     GET_USER_FACTS = "get_user_facts"
     ANALYZE_PAST_MEDIA = "analyze_past_media"
+    DOWNLOAD_MEDIA_TO_DISK = "download_media_to_disk"

@@ -115,6 +115,14 @@ def analyze_past_media(file_id: str, specific_question: str = "") -> str:
     """
     return f"Fetching raw media {file_id}..."
 
+@mcp.tool(name=ToolName.DOWNLOAD_MEDIA_TO_DISK.value)
+def download_media_to_disk(file_id: str) -> str:
+    """Download a media file from Telegram and save it locally to the server's disk. Use this when another tool (like reverse image search) requires an absolute local file path (`file_path`) instead of an image URL or raw bytes.
+    Args:
+        file_id: The exact Telegram FileID of the media.
+    """
+    return f"Downloading media {file_id} to disk..."
+
 # Export the raw functions for Gemini
 local_tools_list = [
     add_reaction,
@@ -129,7 +137,8 @@ local_tools_list = [
     get_group_info,
     save_user_fact,
     get_user_facts,
-    analyze_past_media
+    analyze_past_media,
+    download_media_to_disk
 ]
 
 # Tools safe for Gatekeeper to use (read-only)

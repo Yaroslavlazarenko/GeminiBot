@@ -486,6 +486,69 @@ class AIService:
                                             response={"error": f"Failed to retrieve file: {str(e)}"}
                                         )
                                     )
+                                    
+                        elif call.name == ToolName.DOWNLOAD_MEDIA_TO_DISK.value:
+                            file_id = call.args.get("file_id")
+                            bot = sender_info.get("bot") if sender_info else None
+                            if not file_id or not bot:
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": "Missing file_id or bot context."}
+                                    )
+                                )
+                            else:
+                                try:
+                                    import os
+                                    import uuid
+                                    
+                                    file = await bot.get_file(file_id)
+                                    # Relaxed size limit to 7MB specifically for google reverse image search
+                                    if file.file_size > 7 * 1024 * 1024:
+                                        raise Exception("File too large (over 7MB limit for saving to disk).")
+                                        
+                                    ext = file.file_path.split('.')[-1].lower() if '.' in file.file_path else 'jpg'
+                                    
+                                    # Create tmp directory if not exists
+                                    tmp_dir = "/tmp/gemini_media"
+                                    os.makedirs(tmp_dir, exist_ok=True)
+                                    
+                                    # Clean up old files (older than 1 hour) to prevent disk exhaustion
+                                    import time
+                                    current_time = time.time()
+                                    for filename in os.listdir(tmp_dir):
+                                        filepath = os.path.join(tmp_dir, filename)
+                                        if os.path.isfile(filepath):
+                                            if current_time - os.path.getmtime(filepath) > 3600:
+                                                try:
+                                                    os.remove(filepath)
+                                                except Exception as e:
+                                                    logger.error(f"Failed to delete old file {filepath}: {e}")
+                                                    
+                                    # Save new file
+                                    unique_filename = f"{uuid.uuid4().hex}.{ext}"
+                                    absolute_path = os.path.abspath(os.path.join(tmp_dir, unique_filename))
+                                    
+                                    await bot.download_file(file.file_path, destination=absolute_path)
+                                    
+                                    response_parts.append(
+                                        Part.from_function_response(
+                                            name=call.name,
+                                            response={
+                                                "result": "Success",
+                                                "file_path": absolute_path,
+                                                "instruction": "You can now use this absolute `file_path` with other tools that require a local file path."
+                                            }
+                                        )
+                                    )
+                                except Exception as e:
+                                    logger.error(f"Failed to download media to disk {file_id}: {e}")
+                                    response_parts.append(
+                                        Part.from_function_response(
+                                            name=call.name,
+                                            response={"error": f"Failed to retrieve and save file: {str(e)}"}
+                                        )
+                                    )
                             
                         else:
                             local_calls_to_return.append(call)
