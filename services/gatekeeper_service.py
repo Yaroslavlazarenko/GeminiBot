@@ -59,7 +59,16 @@ class GatekeeperService:
         
         try:
             history_text = self._format_history(chat_context.history)
-            prompt = f"Chat History:\n{history_text}\n\nNew Message: {text}"
+            prompt = f"Chat History:\n{history_text}\n\n"
+            
+            if chat_context.is_group:
+                prompt += "ENVIRONMENT: GROUP CHAT (Multiple users).\n"
+                prompt += "STRICT RULE: Only output 'RESPOND' if the user EXPLICITLY addresses Mia, replies directly to Mia, asks Mia a direct question, or if the conversation is highly specific to something Mia just participated in. If users are just chatting with each other, output 'IGNORE'. DO NOT intrude on conversations that don't involve you.\n\n"
+            else:
+                prompt += "ENVIRONMENT: PRIVATE CHAT.\n"
+                prompt += "RULE: Output 'RESPOND' for normal conversation. Output 'IGNORE' only if it's meaningless spam or just a system notification.\n\n"
+                
+            prompt += f"New Message: {text}"
             
             response = self.key_manager.generate_content(
                 model=self.current_gatekeeper_model,

@@ -74,6 +74,14 @@ def get_history_by_date(days_ago: int = 0, limit: int = 20) -> str:
     """
     return f"Getting history from {days_ago} days ago"
 
+@mcp.tool(name=ToolName.IGNORE_MESSAGE.value)
+def ignore_message(reason: str) -> str:
+    """Call this tool if you realize you shouldn't respond to this message after all (e.g. you searched history and found nothing, or realized the users are talking to each other and you shouldn't intrude). This will silently cancel your response.
+    Args:
+        reason: The reason why you are choosing to ignore the message.
+    """
+    return f"Ignoring message: {reason}"
+
 # Export the raw functions for Gemini
 local_tools_list = [
     add_reaction,
@@ -83,5 +91,6 @@ local_tools_list = [
     search_stickers,
     send_voice,
     search_history,
-    get_history_by_date
+    get_history_by_date,
+    ignore_message
 ]

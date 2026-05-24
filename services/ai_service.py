@@ -295,6 +295,12 @@ class AIService:
                                 )
                             )
                             
+                        elif call.name == ToolName.IGNORE_MESSAGE.value:
+                            reason = call.args.get("reason", "No reason provided")
+                            logger.info(f"Model explicitly chose to ignore the message. Reason: {reason}")
+                            # Immediately abort the generation loop and return empty
+                            return "", []
+                            
                         else:
                             local_calls_to_return.append(call)
                             # Add a successful local tool execution response to the Gemini context

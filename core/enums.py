@@ -14,3 +14,4 @@ class ToolName(str, Enum):
     SEND_VOICE = "send_voice"
     SEARCH_HISTORY = "search_history"
     GET_HISTORY_BY_DATE = "get_history_by_date"
+    IGNORE_MESSAGE = "ignore_message"
