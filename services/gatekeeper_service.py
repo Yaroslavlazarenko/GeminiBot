@@ -1,11 +1,12 @@
 import logging
 from core.config import Config
 from core.key_manager import get_key_manager
-from google.genai.types import GenerateContentConfig
+from google.genai.types import GenerateContentConfig, Content, Part, AutomaticFunctionCallingConfig
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any
-from core.enums import GatekeeperAction
+from core.enums import GatekeeperAction, ToolName
 from core.database import ChatContext
+from services.local_tools import gatekeeper_tools_list
 
 logger = logging.getLogger(__name__)
 
@@ -63,16 +64,93 @@ class GatekeeperService:
             
             if chat_context.is_group:
                 prompt += "ENVIRONMENT: GROUP CHAT (Multiple users).\n"
-                prompt += "STRICT RULE: Only output 'RESPOND' if the user EXPLICITLY addresses Mia, replies directly to Mia, asks Mia a direct question, or if the conversation is highly specific to something Mia just participated in. If users are just chatting with each other, output 'IGNORE'. DO NOT intrude on conversations that don't involve you.\n\n"
+                prompt += "STRICT RULE: Only output 'RESPOND' if the user EXPLICITLY addresses Mia, replies directly to Mia, asks Mia a direct question, or if the conversation is highly specific to something Mia just participated in. If users are just chatting with each other, output 'IGNORE'. DO NOT intrude on conversations that don't involve you.\n"
+                prompt += "If you are unsure whether they are referencing something you talked about recently, you may use the `search_history` or `get_history_by_date` tools to check permanent memory before making your decision.\n\n"
             else:
                 prompt += "ENVIRONMENT: PRIVATE CHAT.\n"
                 prompt += "RULE: Output 'RESPOND' for normal conversation. Output 'IGNORE' only if it's meaningless spam or just a system notification.\n\n"
                 
             prompt += f"New Message: {text}"
             
+            current_contents = [Content(role="user", parts=[{"text": prompt}])]
+            
+            turn = 0
+            max_turns = 3
+            
+            while turn < max_turns:
+                turn += 1
+                response = self.key_manager.generate_content(
+                    model=self.current_gatekeeper_model,
+                    contents=current_contents,
+                    config=GenerateContentConfig(
+                        system_instruction=self.system_instruction,
+                        temperature=0.1,
+                        tools=gatekeeper_tools_list,
+                        automatic_function_calling=AutomaticFunctionCallingConfig(disable=True)
+                    )
+                )
+                
+                if response.candidates and response.candidates[0].content:
+                    current_contents.append(response.candidates[0].content)
+                
+                if not response.function_calls:
+                    break
+                    
+                response_parts = []
+                for call in response.function_calls:
+                    if call.name == ToolName.SEARCH_HISTORY.value:
+                        query = call.args.get("query", "")
+                        limit = call.args.get("limit", 10)
+                        results = []
+                        if query:
+                            cursor = chat_context._db.messages.find(
+                                {"chat_id": chat_context.id, "$text": {"$search": query}},
+                                {"score": {"$meta": "textScore"}}
+                            ).sort([("score", {"$meta": "textScore"})]).limit(limit)
+                            async for msg in cursor:
+                                date_str = msg["date"].strftime("%Y-%m-%d %H:%M") if "date" in msg else "Unknown"
+                                results.append(f"[{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
+                        response_parts.append(
+                            Part.from_function_response(
+                                name=call.name,
+                                response={"matches": results if results else ["No matches found."]}
+                            )
+                        )
+                    elif call.name == ToolName.GET_HISTORY_BY_DATE.value:
+                        import datetime
+                        days_ago = call.args.get("days_ago", 0)
+                        limit = call.args.get("limit", 20)
+                        target_date = datetime.datetime.utcnow() - datetime.timedelta(days=days_ago)
+                        start_of_day = datetime.datetime(target_date.year, target_date.month, target_date.day)
+                        end_of_day = start_of_day + datetime.timedelta(days=1)
+                        cursor = chat_context._db.messages.find({
+                            "chat_id": chat_context.id,
+                            "date": {"$gte": start_of_day, "$lt": end_of_day}
+                        }).sort("date", -1).limit(limit)
+                        results = []
+                        async for msg in cursor:
+                            date_str = msg["date"].strftime("%Y-%m-%d %H:%M") if "date" in msg else "Unknown"
+                            results.append(f"[{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
+                        results.reverse()
+                        response_parts.append(
+                            Part.from_function_response(
+                                name=call.name,
+                                response={"history": results if results else ["No history found for this date."]}
+                            )
+                        )
+                    else:
+                        response_parts.append(
+                            Part.from_function_response(
+                                name=call.name,
+                                response={"error": "Unknown tool."}
+                            )
+                        )
+                current_contents.append(Content(role="user", parts=response_parts))
+                
+            # Final generation round enforcing the JSON schema after tools are done
             response = self.key_manager.generate_content(
                 model=self.current_gatekeeper_model,
-                contents=prompt,
+                contents=current_contents,
                 config=GenerateContentConfig(
                     system_instruction=self.system_instruction,
                     temperature=0.1,
@@ -94,9 +172,9 @@ class GatekeeperService:
             return decision.action
             
         except Exception as e:
-            logger.error(f"Error in Gatekeeper: {e}")
-            # Fallback to respond if gatekeeper fails, so we don't break the bot
-            return GatekeeperAction.RESPOND
+            logger.error(f"Error in Gatekeeper: {e}", exc_info=True)
+            # Failsafe: When in doubt, respond, to avoid feeling unresponsive, but in groups, ignore to avoid spam
+            return GatekeeperAction.IGNORE if chat_context.is_group else GatekeeperAction.RESPOND
 
     async def summarize_history(self, history: List[Dict[str, Any]]) -> str:
         """Summarize the chat history concisely, removing water."""

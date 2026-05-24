@@ -101,3 +101,9 @@ local_tools_list = [
     ignore_message,
     get_group_info
 ]
+
+# Tools safe for Gatekeeper to use (read-only)
+gatekeeper_tools_list = [
+    search_history,
+    get_history_by_date
+]
