@@ -42,6 +42,14 @@ HTML_TEMPLATE = """
                 <textarea id="system_instruction" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" rows="12"></textarea>
             </div>
 
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="sticker_set_name">
+                    Telegram Sticker Set Name (Shortname)
+                </label>
+                <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="sticker_set_name" type="text" placeholder="e.g. Animals">
+                <p class="text-xs text-gray-500 mt-1">The bot will use stickers from this set to express emotions. You can find the shortname in a sticker set's share link (e.g., t.me/addstickers/<b>Animals</b>).</p>
+            </div>
+
             <h2 class="text-xl font-semibold mb-4 border-b pb-2">AI Models, Endpoint & API Keys</h2>
             <div class="mb-4">
                 <label class="block text-gray-700 text-sm font-bold mb-2" for="gemini_api_model">
@@ -196,6 +204,7 @@ HTML_TEMPLATE = """
                 document.getElementById('gemini_api_key').value = data.gemini_api_key || '';
                 document.getElementById('gemini_api_keys').value = data.gemini_api_keys || '';
                 document.getElementById('system_instruction').value = data.system_instruction || '';
+                document.getElementById('sticker_set_name').value = data.sticker_set_name || 'Animals';
                 
                 populateMcpTable(data.mcp_servers_config);
             } catch (err) {
@@ -223,6 +232,7 @@ HTML_TEMPLATE = """
                 gemini_api_key: document.getElementById('gemini_api_key').value.trim(),
                 gemini_api_keys: document.getElementById('gemini_api_keys').value.trim(),
                 system_instruction: document.getElementById('system_instruction').value,
+                sticker_set_name: document.getElementById('sticker_set_name').value.trim(),
                 mcp_servers_config: mcpConfig
             };
 
@@ -297,6 +307,7 @@ def setup_admin_app(db: DatabaseManager, config: Config) -> web.Application:
             "gemini_api_key": settings.get("gemini_api_key") or config.gemini_api_key,
             "gemini_api_keys": settings.get("gemini_api_keys") or config.gemini_api_keys,
             "system_instruction": settings.get("system_instruction") or "",
+            "sticker_set_name": settings.get("sticker_set_name") or "Animals",
             "mcp_servers_config": settings.get("mcp_servers_config") or config.mcp_servers_config
         })
 
@@ -310,6 +321,7 @@ def setup_admin_app(db: DatabaseManager, config: Config) -> web.Application:
                 "gemini_api_key": data.get("gemini_api_key", ""),
                 "gemini_api_keys": data.get("gemini_api_keys", ""),
                 "system_instruction": data.get("system_instruction", ""),
+                "sticker_set_name": data.get("sticker_set_name", "Animals"),
                 "mcp_servers_config": data.get("mcp_servers_config", "{}")
             }
             await db.update_system_settings(updates)
