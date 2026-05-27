@@ -8,7 +8,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from core.config import Config
 from bot.handlers import router as main_router
-from bot.middlewares import DatabaseMiddleware
+from bot.middlewares import DatabaseMiddleware, DeduplicationMiddleware
 from core.database import DatabaseManager
 from core.logger import setup_logging
 from bot.web_admin import setup_admin_app
@@ -87,7 +87,12 @@ async def main():
         )
         dp = Dispatcher(storage=MemoryStorage())
         
-        # Register middlewares
+        # Register middlewares (Dedup MUST come first to drop duplicates before any processing)
+        dedup = DeduplicationMiddleware(ttl_seconds=120)
+        dp.message.middleware(dedup)
+        dp.callback_query.middleware(dedup)
+        dp.message_reaction.middleware(dedup)
+        
         dp.message.middleware(DatabaseMiddleware(db_manager))
         dp.callback_query.middleware(DatabaseMiddleware(db_manager))
         dp.message_reaction.middleware(DatabaseMiddleware(db_manager))
