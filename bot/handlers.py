@@ -144,25 +144,22 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
     media_list = final_burst["media_list"]
     last_message = final_burst["messages"][-1]
     
-    # Force saving the ignored combined text into DB if Gatekeeper ignores it
-    # But wait, we want to save it to DB unconditionally first!
     msg_timestamp = last_message.date.strftime("%H:%M") if last_message.date else None
     
-    # Unconditionally save to DB so history is fully maintained
-    if combined_db_text:
-        await chat_context.add_message(
-            "user",
-            combined_db_text,
-            last_message.message_id,
-            timestamp=msg_timestamp,
-            reactions=None
-        )
-        
-    # Now that it's in the DB, Gatekeeper can see it either in history or in current text
-    # Gatekeeper check
+    # Gatekeeper check (BEFORE saving to history, so the message doesn't appear
+    # both in history and as the "new message" in the prompt — that caused duplicates)
     action = await gatekeeper.decide(combined_text, chat_context)
     
     if action == GatekeeperAction.IGNORE:
+        # Save user message to DB even when ignored, to keep history complete
+        if combined_db_text:
+            await chat_context.add_message(
+                "user",
+                combined_db_text,
+                last_message.message_id,
+                timestamp=msg_timestamp,
+                reactions=None
+            )
         return
 
     # Proceed with Persona response
@@ -195,8 +192,19 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
             "chat_title": chat_title
         }
 
-        # Generate Response (pass the media list!)
+        # Generate Response BEFORE saving user message to history,
+        # so the AI sees it only once (as the current turn), not twice
         response_text, tool_calls = await ai_service.generate_response(combined_text, chat_context, media_list, sender_info)
+
+    # NOW save user message to DB (after AI has processed it)
+    if combined_db_text:
+        await chat_context.add_message(
+            "user",
+            combined_db_text,
+            last_message.message_id,
+            timestamp=msg_timestamp,
+            reactions=None
+        )
 
     db_response_text = ""
     bot_msg_to_save = None
