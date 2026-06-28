@@ -189,7 +189,9 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
             "avatar_description": avatar_desc,
             "bot": last_message.bot,
             "chat_id": last_message.chat.id,
-            "chat_title": chat_title
+            "chat_title": chat_title,
+            "message_id": last_message.message_id,
+            "timestamp": msg_timestamp
         }
 
         # Generate Response BEFORE saving user message to history,

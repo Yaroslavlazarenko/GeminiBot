@@ -107,7 +107,20 @@ class AIService:
             # Prepare current turn parts
             current_turn_parts = []
             if text:
-                current_turn_parts.append({"text": text})
+                meta_parts = []
+                if sender_info:
+                    msg_id = sender_info.get("message_id")
+                    if msg_id:
+                        meta_parts.append(f"[MsgID: {msg_id}]")
+                    ts = sender_info.get("timestamp")
+                    if ts:
+                        meta_parts.append(f"[{ts}]")
+                
+                if meta_parts:
+                    text_with_meta = " ".join(meta_parts) + " " + text
+                else:
+                    text_with_meta = text
+                current_turn_parts.append({"text": text_with_meta})
             if media_list:
                 for media in media_list:
                     current_turn_parts.append({
