@@ -24,7 +24,7 @@ services:
 
   mongodb:
     image: mongo:6.0
-    command: ["--quiet"]
+    command: ["--quiet", "--logpath", "/dev/null"]
     volumes:
       - mongodb_data:/data/db
     restart: unless-stopped
