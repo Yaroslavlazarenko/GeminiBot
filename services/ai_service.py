@@ -585,6 +585,58 @@ class AIService:
                                             response={"error": f"Failed to retrieve and save file: {str(e)}"}
                                         )
                                     )
+                        elif call.name == ToolName.GET_PROFILE_PHOTO.value:
+                            user_id = call.args.get("user_id")
+                            bot = sender_info.get("bot") if sender_info else None
+                            if not bot:
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": "Missing bot context."}
+                                    )
+                                )
+                            else:
+                                try:
+                                    target_id = int(user_id) if user_id else None
+                                    if not target_id:
+                                        me = await bot.get_me()
+                                        target_id = me.id
+                                        
+                                    photos = await bot.get_user_profile_photos(target_id, limit=1)
+                                    if not photos or not photos.photos:
+                                        response_parts.append(
+                                            Part.from_function_response(
+                                                name=call.name,
+                                                response={"error": f"User/Bot (ID: {target_id}) has no profile photos."}
+                                            )
+                                        )
+                                    else:
+                                        latest_photo = photos.photos[0][-1]
+                                        file_id = latest_photo.file_id
+                                        file_size = latest_photo.file_size
+                                        
+                                        from services.media_service import MediaService
+                                        avatar_bytes = await MediaService.process_image(bot, file_id, file_size)
+                                        if not avatar_bytes:
+                                            raise Exception("Failed to download or process the profile photo.")
+                                            
+                                        response_parts.append(
+                                            Part.from_function_response(
+                                                name=call.name,
+                                                response={"result": f"Success. The profile photo of the requested user (ID: {target_id}) is attached to this context turn."}
+                                            )
+                                        )
+                                        response_parts.append(
+                                            Part.from_bytes(data=avatar_bytes, mime_type="image/jpeg")
+                                        )
+                                except Exception as e:
+                                    logger.error(f"Failed to retrieve profile photo: {e}")
+                                    response_parts.append(
+                                        Part.from_function_response(
+                                            name=call.name,
+                                            response={"error": f"Failed to retrieve profile photo: {str(e)}"}
+                                        )
+                                    )
                             
                         else:
                             local_calls_to_return.append(call)

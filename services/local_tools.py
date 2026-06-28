@@ -123,6 +123,14 @@ def download_media_to_disk(file_id: str) -> str:
     """
     return f"Downloading media {file_id} to disk..."
 
+@mcp.tool(name=ToolName.GET_PROFILE_PHOTO.value)
+def get_profile_photo(user_id: Optional[int] = None) -> str:
+    """Retrieve the Telegram profile photo of yourself (Mia) or another user in the chat so you can see them/yourself.
+    Args:
+        user_id: Optional. The Telegram ID of the user whose profile photo you want to retrieve. If not specified or None, retrieves your own (Mia's) profile photo.
+    """
+    return f"Fetching profile photo for user {user_id if user_id else 'Mia'}..."
+
 # Export the raw functions for Gemini
 local_tools_list = [
     add_reaction,
@@ -138,7 +146,8 @@ local_tools_list = [
     save_user_fact,
     get_user_facts,
     analyze_past_media,
-    download_media_to_disk
+    download_media_to_disk,
+    get_profile_photo
 ]
 
 # Tools safe for Gatekeeper to use (read-only)
