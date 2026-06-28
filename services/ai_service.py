@@ -295,7 +295,10 @@ class AIService:
                             )
                         elif call.name == ToolName.SEARCH_HISTORY.value:
                             query = call.args.get("query", "")
-                            limit = call.args.get("limit", 10)
+                            try:
+                                limit = int(float(call.args.get("limit", 10)))
+                            except (ValueError, TypeError):
+                                limit = 10
                             
                             results = []
                             if query:
@@ -319,8 +322,14 @@ class AIService:
                             
                         elif call.name == ToolName.GET_HISTORY_BY_DATE.value:
                             import datetime
-                            days_ago = call.args.get("days_ago", 0)
-                            limit = call.args.get("limit", 20)
+                            try:
+                                days_ago = int(float(call.args.get("days_ago", 0)))
+                            except (ValueError, TypeError):
+                                days_ago = 0
+                            try:
+                                limit = int(float(call.args.get("limit", 20)))
+                            except (ValueError, TypeError):
+                                limit = 20
                             
                             target_date = datetime.datetime.utcnow() - datetime.timedelta(days=days_ago)
                             start_of_day = datetime.datetime(target_date.year, target_date.month, target_date.day)
