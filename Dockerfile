@@ -6,7 +6,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Switch to root for system package installation
 USER 0
-RUN dnf install -y postgresql-devel gcc python3-devel \
+RUN dnf install -y postgresql-devel gcc python3-devel ffmpeg-free \
     && dnf clean all \
     && rm -rf /var/cache/dnf
 

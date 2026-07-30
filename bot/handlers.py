@@ -433,21 +433,36 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
                         lang = message.from_user.language_code or 'en'
                         prefix = "🎤 [Голосовое]: " if lang.startswith('ru') else "🎤 [Голосове]: " if lang.startswith('uk') else "🎤 [Voice]: "
                         text = (text + f"\n{prefix}{transcription}").strip()
-                        
+
                 if message.voice:
                     # Voice has no visual component for Gemini
-                    if not text: 
+                    if not text:
                         text = "🎤 [Пустое голосовое]" # Fallback
                     await _enqueue_bot_turn(message, chat_context, text=text, media=None, db_text=text)
                     return
-                
+
                 # Get visual description for video notes to save in history
                 if message.video_note:
                     from services.sticker_service import StickerService
                     from core.key_manager import get_key_manager
                     video_desc = await StickerService.analyze_video_note(message.bot, get_key_manager(), file_id)
-                
+
                 media = {"mime_type": mime_type, "data": media_bytes}
+
+            # If video is too large for Gemini but we can still extract audio
+            elif message.video and file_size > MediaService.get_max_media_size() and transcription_service.is_configured:
+                logger.info(f"Video too large for Gemini ({file_size} bytes), extracting audio track...")
+                audio_bytes = await MediaService.extract_audio_from_video(message.bot, file_id, file_size)
+                if audio_bytes:
+                    transcription = await transcription_service.transcribe_audio(audio_bytes)
+                    if transcription:
+                        text = f"[SYSTEM: Пользователь отправил видео, но оно слишком большое и ты не можешь его увидеть. Однако удалось извлечь аудиодорожку. Скажи пользователю что видео ты не увидела, но звук услышала. Вот транскрипция аудио:]\n🎤 [Аудио из видео]: {transcription}"
+                        db_text = f"*(Пользователь отправил большое видео. FileID: {file_id}. Извлечена аудиодорожка)*\n🎤 [Аудио]: {transcription}"
+                        if message.caption:
+                            text += f"\nCaption: {message.caption}"
+                            db_text += f"\nCaption: {message.caption}"
+                        await _enqueue_bot_turn(message, chat_context, text=text, media=None, db_text=db_text)
+                        return
     except Exception as e:
         logger.error(f"Error processing media: {e}")
         media = None
