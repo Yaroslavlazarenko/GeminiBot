@@ -6,9 +6,21 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Switch to root for system package installation
 USER 0
-RUN dnf install -y postgresql-devel gcc python3-devel ffmpeg-free \
+RUN dnf install -y postgresql-devel gcc python3-devel xz \
     && dnf clean all \
     && rm -rf /var/cache/dnf
+
+# Install static ffmpeg binary (works on both amd64 and aarch64)
+RUN ARCH=$(uname -m) && \
+    if [ "$ARCH" = "aarch64" ]; then \
+        curl -L https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linuxarm64-gpl.tar.xz -o /tmp/ffmpeg.tar.xz; \
+    else \
+        curl -L https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz -o /tmp/ffmpeg.tar.xz; \
+    fi && \
+    tar -xf /tmp/ffmpeg.tar.xz -C /tmp && \
+    cp /tmp/ffmpeg-*/bin/ffmpeg /usr/local/bin/ffmpeg && \
+    chmod +x /usr/local/bin/ffmpeg && \
+    rm -rf /tmp/ffmpeg*
 
 # Create app directory and set permissions
 WORKDIR /app
