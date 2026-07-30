@@ -136,13 +136,30 @@ HTML_TEMPLATE = """
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="proactive_research_interval">
                         Research Interval (hours)
                     </label>
-                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_research_interval" type="number" step="0.5" min="0.5" value="6">
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_research_interval" type="number" step="0.5" min="0.5" value="2">
                 </div>
                 <div>
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="proactive_messaging_interval">
                         Messaging Check Interval (hours)
                     </label>
-                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_messaging_interval" type="number" step="0.5" min="0.5" value="4">
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_messaging_interval" type="number" step="0.5" min="0.5" value="1.5">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="proactive_awake_start">
+                        Awake From (hour, Odessa time)
+                    </label>
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_awake_start" type="number" step="1" min="0" max="23" value="9">
+                    <p class="text-xs text-gray-500 mt-1">Mia won't do anything proactive before this hour.</p>
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="proactive_awake_end">
+                        Sleep At (hour, Odessa time)
+                    </label>
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_awake_end" type="number" step="1" min="0" max="23" value="0">
+                    <p class="text-xs text-gray-500 mt-1">0 = midnight. Proactive actions stop at this hour.</p>
                 </div>
             </div>
 
@@ -294,8 +311,10 @@ HTML_TEMPLATE = """
                 const p = data.proactive || {};
                 document.getElementById('proactive_research_enabled').checked = p.research_enabled !== false;
                 document.getElementById('proactive_messaging_enabled').checked = p.messaging_enabled !== false;
-                document.getElementById('proactive_research_interval').value = p.research_interval_hours || 6;
-                document.getElementById('proactive_messaging_interval').value = p.messaging_check_interval_hours || 4;
+                document.getElementById('proactive_research_interval').value = p.research_interval_hours || 2;
+                document.getElementById('proactive_messaging_interval').value = p.messaging_check_interval_hours || 1.5;
+                document.getElementById('proactive_awake_start').value = p.awake_hour_start ?? 9;
+                document.getElementById('proactive_awake_end').value = p.awake_hour_end ?? 0;
                 document.getElementById('proactive_min_silence').value = p.messaging_min_silence_hours || 12;
                 document.getElementById('proactive_max_ignored').value = p.messaging_max_consecutive_ignored || 2;
                 document.getElementById('proactive_probability').value = p.messaging_probability || 0.3;
@@ -332,8 +351,10 @@ HTML_TEMPLATE = """
                 proactive: {
                     research_enabled: document.getElementById('proactive_research_enabled').checked,
                     messaging_enabled: document.getElementById('proactive_messaging_enabled').checked,
-                    research_interval_hours: parseFloat(document.getElementById('proactive_research_interval').value) || 6,
-                    messaging_check_interval_hours: parseFloat(document.getElementById('proactive_messaging_interval').value) || 4,
+                    research_interval_hours: parseFloat(document.getElementById('proactive_research_interval').value) || 2,
+                    messaging_check_interval_hours: parseFloat(document.getElementById('proactive_messaging_interval').value) || 1.5,
+                    awake_hour_start: parseInt(document.getElementById('proactive_awake_start').value) ?? 9,
+                    awake_hour_end: parseInt(document.getElementById('proactive_awake_end').value) ?? 0,
                     messaging_min_silence_hours: parseFloat(document.getElementById('proactive_min_silence').value) || 12,
                     messaging_max_consecutive_ignored: parseInt(document.getElementById('proactive_max_ignored').value) || 2,
                     messaging_probability: parseFloat(document.getElementById('proactive_probability').value) || 0.3,

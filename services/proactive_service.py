@@ -194,7 +194,7 @@ class ProactiveService:
             from google.genai.types import FunctionCall
             search_call = FunctionCall(
                 name=exa_tool_name,
-                args={"query": query, "numResults": 5}
+                args={"query": query, "numResults": 3}
             )
 
             adapter = ai_service.mcp_manager.adapters_map[exa_tool_name]
