@@ -165,7 +165,11 @@ class GatekeeperService:
             if not decision:
                 # Fallback if parsed is empty for some reason
                 import json
-                data = json.loads(response.text)
+                raw_text = response.text
+                if not raw_text:
+                    logger.warning("Gatekeeper: response.text is None, defaulting to RESPOND")
+                    return GatekeeperAction.IGNORE if chat_context.is_group else GatekeeperAction.RESPOND
+                data = json.loads(raw_text)
                 decision = GatekeeperDecision(**data)
             
             logger.info(f"Gatekeeper decided: {decision.action.value} (Reason: {decision.reasoning})")

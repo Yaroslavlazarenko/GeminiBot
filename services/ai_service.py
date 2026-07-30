@@ -248,7 +248,7 @@ class AIService:
                     
                 response_parts = []
                 mcp_calls = []
-                local_tool_names = [t.__name__ for t in local_tools_list]
+                local_tool_names = [t.__name__ for t in local_tools_list] if local_tools_list else []
                 
                 for call in response.function_calls:
                     if call.name in local_tool_names:

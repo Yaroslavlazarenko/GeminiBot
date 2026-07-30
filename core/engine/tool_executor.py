@@ -17,6 +17,17 @@ logger = logging.getLogger(__name__)
 sticker_cache = {}
 STICKER_CACHE_TTL = 3600 # 1 hour
 
+# Telegram only allows these emojis as reactions (Bot API ReactionTypeEmoji)
+# Source: https://core.telegram.org/bots/api#reactiontypeemoji
+VALID_TELEGRAM_REACTIONS = {
+    "👍", "👎", "❤", "🔥", "🥰", "👏", "😁", "🤔", "🤯", "😱", "🤬", "😢", "🎉",
+    "🤩", "🤮", "💩", "🙏", "👌", "🕊", "🤡", "🥱", "🥴", "😍", "🐳", "❤‍🔥",
+    "🌚", "🌭", "💯", "🤣", "⚡", "🍌", "🏆", "💔", "🤨", "😐", "🍓", "🍾",
+    "💋", "🖕", "😈", "😴", "😭", "🤓", "👻", "👨‍💻", "👀", "🎃", "🙈", "😇",
+    "😨", "🤝", "✍", "🤗", "🫡", "🎅", "🎄", "☃", "💅", "🤪", "🗿", "🆒",
+    "💘", "🙉", "🦄", "😘", "💊", "🙊", "😎", "👾", "🤷‍♂", "🤷", "🤷‍♀", "😡",
+}
+
 class ToolExecutorService:
     @staticmethod
     async def execute_local_tools(
@@ -44,16 +55,20 @@ class ToolExecutorService:
                 message_ids = call.args.get("message_ids", [last_message.message_id])
                 if not message_ids:
                     message_ids = [last_message.message_id]
-                    
-                for m_id in message_ids:
-                    try:
-                        await last_message.bot.set_message_reaction(
-                            chat_id=last_message.chat.id, 
-                            message_id=int(m_id), 
-                            reaction=[{"type": "emoji", "emoji": emoji}]
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to add reaction {emoji} to {m_id}: {e}")
+
+                # Validate emoji against Telegram's allowed reactions list
+                if emoji and emoji not in VALID_TELEGRAM_REACTIONS:
+                    logger.warning(f"Skipping invalid Telegram reaction emoji: {emoji}")
+                elif emoji:
+                    for m_id in message_ids:
+                        try:
+                            await last_message.bot.set_message_reaction(
+                                chat_id=last_message.chat.id,
+                                message_id=int(m_id),
+                                reaction=[{"type": "emoji", "emoji": emoji}]
+                            )
+                        except Exception as e:
+                            logger.error(f"Failed to add reaction {emoji} to {m_id}: {e}")
                         
             elif call.name == ToolName.REPLY_TO_MESSAGE.value:
                 requested_reply_id = int(call.args.get("message_id", 0)) if call.args.get("message_id") else None

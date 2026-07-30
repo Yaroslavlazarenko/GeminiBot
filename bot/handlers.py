@@ -243,10 +243,11 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
             bot_message = None
             try:
                 if requested_reply_id and i == 0:
-                    reply_params = ReplyParameters(message_id=requested_reply_id)
                     if requested_reply_quote:
-                        reply_params.quote = requested_reply_quote
-                        
+                        reply_params = ReplyParameters(message_id=requested_reply_id, quote=requested_reply_quote)
+                    else:
+                        reply_params = ReplyParameters(message_id=requested_reply_id)
+
                     bot_message = await last_message.bot.send_message(
                         chat_id=last_message.chat.id,
                         text=part,
@@ -260,12 +261,13 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
                 logger.warning(f"Failed to send message chunk due to formatting error, retrying safely: {e}")
                 # Fallback: strip HTML/Markdown tags and send as plain text
                 safe_part = html.escape(part)
-                
+
                 if requested_reply_id and i == 0:
-                    reply_params = ReplyParameters(message_id=requested_reply_id)
                     if requested_reply_quote:
-                        reply_params.quote = requested_reply_quote
-                        
+                        reply_params = ReplyParameters(message_id=requested_reply_id, quote=requested_reply_quote)
+                    else:
+                        reply_params = ReplyParameters(message_id=requested_reply_id)
+
                     bot_message = await last_message.bot.send_message(
                         chat_id=last_message.chat.id,
                         text=safe_part,

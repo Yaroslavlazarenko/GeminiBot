@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 from typing import List, Optional
 from google import genai
 from google.genai.types import GenerateContentConfig
@@ -10,6 +11,12 @@ logger = logging.getLogger(__name__)
 # HTTP status codes that should trigger key rotation
 ROTATE_ON_STATUS = {429, 500, 503}
 ROTATE_ON_KEYWORDS = ["quota", "rate limit", "resource exhausted", "overloaded", "unavailable"]
+
+# Transient server errors that should be retried with backoff (even with a single key)
+RETRY_ON_STATUS = {500, 502, 503}
+RETRY_ON_KEYWORDS = ["internal server error", "bad gateway", "unavailable", "snapshot regeneration"]
+MAX_RETRIES_SINGLE_KEY = 3
+RETRY_BACKOFF_SECONDS = [1.0, 3.0, 5.0]
 
 
 class GeminiKeyManager:
@@ -49,6 +56,16 @@ class GeminiKeyManager:
             return True
         # Check for HTTP status codes embedded in the exception string
         for code in ROTATE_ON_STATUS:
+            if str(code) in msg:
+                return True
+        return False
+
+    def _is_transient_server_error(self, exc: Exception) -> bool:
+        """Return True if this is a transient server error worth retrying with backoff."""
+        msg = str(exc).lower()
+        if any(kw in msg for kw in RETRY_ON_KEYWORDS):
+            return True
+        for code in RETRY_ON_STATUS:
             if str(code) in msg:
                 return True
         return False
@@ -123,27 +140,47 @@ class GeminiKeyManager:
     def generate_content(self, model: str, contents, config: GenerateContentConfig):
         """
         Synchronous wrapper around client.models.generate_content with
-        automatic key rotation on retriable errors.
+        automatic key rotation on retriable errors and backoff retry for
+        transient server errors (500, 502, 503).
         """
         last_exc = None
         attempts = len(self._keys)  # try each key at most once per call
 
         for attempt in range(attempts):
-            try:
-                return self._client.models.generate_content(
-                    model=model,
-                    contents=contents,
-                    config=config,
-                )
-            except Exception as exc:
-                last_exc = exc
-                logger.warning(
-                    f"GeminiKeyManager: attempt {attempt + 1}/{attempts} failed with: {exc}"
-                )
-                if self._should_rotate(exc) and self._rotate():
-                    continue  # retry with the new key
-                else:
-                    raise  # non-retriable error or only one key — re-raise immediately
+            # For each key, retry transient server errors with backoff
+            for retry in range(MAX_RETRIES_SINGLE_KEY):
+                try:
+                    return self._client.models.generate_content(
+                        model=model,
+                        contents=contents,
+                        config=config,
+                    )
+                except Exception as exc:
+                    last_exc = exc
+
+                    # If it's a transient server error and we have retries left, backoff and retry same key
+                    if self._is_transient_server_error(exc) and retry < MAX_RETRIES_SINGLE_KEY - 1:
+                        backoff = RETRY_BACKOFF_SECONDS[retry] if retry < len(RETRY_BACKOFF_SECONDS) else RETRY_BACKOFF_SECONDS[-1]
+                        logger.warning(
+                            f"GeminiKeyManager: attempt {attempt + 1}/{attempts}, "
+                            f"retry {retry + 1}/{MAX_RETRIES_SINGLE_KEY} failed with transient error: {exc}. "
+                            f"Retrying in {backoff}s..."
+                        )
+                        time.sleep(backoff)
+                        continue
+
+                    logger.warning(
+                        f"GeminiKeyManager: attempt {attempt + 1}/{attempts} failed with: {exc}"
+                    )
+                    if self._should_rotate(exc) and self._rotate():
+                        break  # break inner retry loop, continue with next key
+                    else:
+                        raise  # non-retriable error or only one key — re-raise immediately
+            else:
+                # Inner loop exhausted all retries without success, try next key
+                if self._should_rotate(last_exc) and self._rotate():
+                    continue
+                raise last_exc
 
         raise last_exc  # all keys exhausted
 
