@@ -188,6 +188,25 @@ class AIService:
 
             compiled_system_instruction = self.system_instruction + time_context + sender_context + tool_constraints
 
+            # Inject world memory (Mia's accumulated knowledge from proactive research)
+            try:
+                from services.world_memory_service import WorldMemoryService
+                wms = WorldMemoryService(chat_context._db)
+                settings = await chat_context._db.get_system_settings()
+                proactive_cfg = settings.get("proactive", {})
+                max_chars = proactive_cfg.get("world_memory_max_chars", 8000)
+                memory_text = await wms.get_memory_for_injection(max_chars=max_chars)
+                if memory_text:
+                    compiled_system_instruction += (
+                        "\n\n--- YOUR WORLD KNOWLEDGE (accumulated by your own research) ---\n"
+                        "You researched these topics yourself out of curiosity. You can reference this knowledge naturally in conversations, "
+                        "but don't force it — only bring it up when it's relevant.\n"
+                        + memory_text
+                        + "\n---\n"
+                    )
+            except Exception as e:
+                logger.error(f"Failed to inject world memory: {e}")
+
             # Inject sticker catalog instructions
             try:
                 catalog_text = "\n\n## Stickers\nTo send a sticker, you MUST first call `search_stickers(emotion, query)` to browse your catalog and find a `sticker_id`. Then call `send_specific_sticker(sticker_id)`. Do NOT use the deprecated `send_sticker` tool.\n"

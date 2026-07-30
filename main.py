@@ -18,13 +18,18 @@ dp = None
 bot = None
 db_manager = None
 runner = None
+scheduler = None
 
 async def shutdown():
     """Graceful shutdown"""
     logger = logging.getLogger(__name__)
     logger.info("Starting shutdown...")
-    
+
     try:
+        if scheduler:
+            logger.info("Stopping proactive scheduler...")
+            await scheduler.stop()
+
         if runner:
             logger.info("Stopping web admin server...")
             await runner.cleanup()
@@ -62,7 +67,7 @@ def signal_handler(signum, frame):
         asyncio.create_task(shutdown())
 
 async def main():
-    global dp, bot, db_manager, runner
+    global dp, bot, db_manager, runner, scheduler
     
     # Setup logging first
     setup_logging()
@@ -115,7 +120,24 @@ async def main():
         packs_raw = settings.get("sticker_set_names") or settings.get("sticker_set_name") or "Animals"
         pack_names = [p.strip() for p in packs_raw.split(',') if p.strip()]
         asyncio.create_task(StickerService.sync_sticker_packs(bot, db_manager, get_key_manager(), pack_names))
-        
+
+        # Start proactive scheduler (research + messaging)
+        from services.world_memory_service import WorldMemoryService
+        from services.proactive_service import ProactiveService
+        from services.scheduler import ProactiveScheduler
+
+        world_memory = WorldMemoryService(db_manager)
+        proactive_service = ProactiveService(
+            db_manager=db_manager,
+            bot=bot,
+            world_memory_service=world_memory
+        )
+        scheduler = ProactiveScheduler(
+            db_manager=db_manager,
+            proactive_service=proactive_service
+        )
+        await scheduler.start()
+
         # Start polling
         logger.info("Bot is polling...")
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())

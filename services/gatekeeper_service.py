@@ -190,11 +190,19 @@ class GatekeeperService:
                 if text:
                     history_text += f"{role}: {text}\n"
 
+            return await self.summarize_text(history_text)
+        except Exception as e:
+            logger.error(f"Error summarizing history: {e}")
+            return "Failed to generate summary due to an error."
+
+    async def summarize_text(self, raw_text: str) -> str:
+        """Summarize arbitrary text concisely. Used for both history and world memory compression."""
+        try:
             prompt = (
-                "Summarize the following chat history. "
+                "Summarize the following text. "
                 "Keep only the most important context, facts, names, and key topics discussed. "
                 "Remove all filler words, pleasantries, and 'water'. Make it extremely concise.\n\n"
-                f"History:\n{history_text}"
+                f"Text:\n{raw_text}"
             )
 
             response = self.key_manager.generate_content(

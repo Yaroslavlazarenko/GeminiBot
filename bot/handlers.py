@@ -138,6 +138,12 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
     final_burst = burst_queues.pop(chat_id, None)
     if not final_burst:
         return
+
+    # Track user activity — resets proactive "awaiting_reply" flag
+    try:
+        await chat_context._db.mark_chat_activity(chat_id, chat_context.is_group)
+    except Exception as e:
+        logger.error(f"Failed to mark chat activity: {e}")
         
     combined_text = "\n\n".join(final_burst["texts"])
     combined_db_text = "\n\n".join(final_burst["db_texts"])

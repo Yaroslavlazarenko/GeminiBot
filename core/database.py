@@ -89,6 +89,7 @@ class DatabaseManager:
         self.groups = self.db['groups']
         self.stickers = self.db['stickers']
         self.messages = self.db['messages']
+        self.world_memory = self.db['world_memory']
 
     async def _setup_indexes(self):
         """Create necessary indexes for performance."""
@@ -97,6 +98,8 @@ class DatabaseManager:
             await self.groups.create_index("telegram_chat_id", unique=True)
             await self.messages.create_index([("chat_id", 1), ("date", -1)])
             await self.messages.create_index([("text", "text")])
+            await self.world_memory.create_index([("created_at", -1)])
+            await self.world_memory.create_index([("compressed", 1), ("created_at", -1)])
             logger.info("MongoDB indexes created successfully.")
         except Exception as e:
             logger.error(f"Error creating MongoDB indexes: {e}")
@@ -320,9 +323,28 @@ class DatabaseManager:
         """Update reactions for a specific message in history."""
         collection = self.groups if is_group else self.users
         query_field = "telegram_chat_id" if is_group else "telegram_id"
-        
+
         # Positional operator $ updates the specific element in the 'history' array matching message_id
         await collection.update_one(
             {query_field: chat_id, "history.message_id": message_id},
             {"$set": {"history.$.reactions": reactions}}
+        )
+
+    # --- Proactive Messaging State ---
+
+    async def mark_chat_activity(self, chat_id: int, is_group: bool):
+        """
+        Called when a user/group sends any message to the bot.
+        Resets the proactive 'awaiting_reply' flag and updates last activity time.
+        """
+        collection = self.groups if is_group else self.users
+        query_field = "telegram_chat_id" if is_group else "telegram_id"
+
+        await collection.update_one(
+            {query_field: chat_id},
+            {"$set": {
+                "proactive.awaiting_reply": False,
+                "proactive.last_user_message_at": datetime.utcnow(),
+                "proactive.consecutive_ignored": 0
+            }}
         )

@@ -111,6 +111,88 @@ HTML_TEMPLATE = """
                 </button>
             </div>
 
+            <h2 class="text-xl font-semibold mb-4 border-b pb-2 mt-8">Proactive Behavior</h2>
+            <p class="text-sm text-gray-600 mb-4">Configure Mia's autonomous research and messaging behavior. She will periodically search the web, accumulate world knowledge, and optionally reach out to users/groups.</p>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="proactive_research_enabled" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-5 w-5">
+                        <span class="text-sm font-bold text-gray-700">Enable Web Research</span>
+                    </label>
+                    <p class="text-xs text-gray-500 mt-1">Mia will periodically search the web for interesting topics and save findings to her world memory.</p>
+                </div>
+                <div>
+                    <label class="flex items-center space-x-2 cursor-pointer">
+                        <input type="checkbox" id="proactive_messaging_enabled" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500 h-5 w-5">
+                        <span class="text-sm font-bold text-gray-700">Enable Proactive Messaging</span>
+                    </label>
+                    <p class="text-xs text-gray-500 mt-1">Mia can decide to write to users or groups on her own.</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="proactive_research_interval">
+                        Research Interval (hours)
+                    </label>
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_research_interval" type="number" step="0.5" min="0.5" value="6">
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="proactive_messaging_interval">
+                        Messaging Check Interval (hours)
+                    </label>
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_messaging_interval" type="number" step="0.5" min="0.5" value="4">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-4 mb-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="proactive_min_silence">
+                        Min Silence (hours)
+                    </label>
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_min_silence" type="number" step="1" min="1" value="12">
+                    <p class="text-xs text-gray-500 mt-1">Don't message if user was active less than N hours ago.</p>
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="proactive_max_ignored">
+                        Max Consecutive Ignored
+                    </label>
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_max_ignored" type="number" step="1" min="1" value="2">
+                    <p class="text-xs text-gray-500 mt-1">Stop messaging after N unanswered messages in a row.</p>
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="proactive_probability">
+                        Messaging Probability
+                    </label>
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_probability" type="number" step="0.05" min="0" max="1" value="0.3">
+                    <p class="text-xs text-gray-500 mt-1">Random pre-filter (0.0 - 1.0). Higher = more frequent.</p>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="proactive_max_memory_entries">
+                        World Memory Max Entries
+                    </label>
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_max_memory_entries" type="number" step="5" min="10" value="50">
+                </div>
+                <div>
+                    <label class="block text-gray-700 text-sm font-bold mb-2" for="proactive_max_memory_chars">
+                        World Memory Max Chars (in prompt)
+                    </label>
+                    <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_max_memory_chars" type="number" step="1000" min="1000" value="8000">
+                </div>
+            </div>
+
+            <div class="mb-6">
+                <label class="block text-gray-700 text-sm font-bold mb-2" for="proactive_research_seed">
+                    Research Seed Topics (optional)
+                </label>
+                <input class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline" id="proactive_research_seed" type="text" placeholder="e.g. technology, music, art, science, Ukraine, pop culture">
+                <p class="text-xs text-gray-500 mt-1">General interest areas to guide Mia's research direction. Leave empty for fully autonomous topic selection.</p>
+            </div>
+
             <div class="flex items-center justify-between mt-8">
                 <button class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded focus:outline-none focus:shadow-outline w-full text-lg transition duration-200" type="submit">
                     Save All Configurations
@@ -207,6 +289,19 @@ HTML_TEMPLATE = """
                 document.getElementById('sticker_set_names').value = data.sticker_set_names || 'Animals';
                 
                 populateMcpTable(data.mcp_servers_config);
+
+                // Proactive settings
+                const p = data.proactive || {};
+                document.getElementById('proactive_research_enabled').checked = p.research_enabled !== false;
+                document.getElementById('proactive_messaging_enabled').checked = p.messaging_enabled !== false;
+                document.getElementById('proactive_research_interval').value = p.research_interval_hours || 6;
+                document.getElementById('proactive_messaging_interval').value = p.messaging_check_interval_hours || 4;
+                document.getElementById('proactive_min_silence').value = p.messaging_min_silence_hours || 12;
+                document.getElementById('proactive_max_ignored').value = p.messaging_max_consecutive_ignored || 2;
+                document.getElementById('proactive_probability').value = p.messaging_probability || 0.3;
+                document.getElementById('proactive_max_memory_entries').value = p.world_memory_max_entries || 50;
+                document.getElementById('proactive_max_memory_chars').value = p.world_memory_max_chars || 8000;
+                document.getElementById('proactive_research_seed').value = p.research_topics_seed || '';
             } catch (err) {
                 showAlert("Failed to load settings", "red");
             }
@@ -233,7 +328,19 @@ HTML_TEMPLATE = """
                 gemini_api_keys: document.getElementById('gemini_api_keys').value.trim(),
                 system_instruction: document.getElementById('system_instruction').value,
                 sticker_set_names: document.getElementById('sticker_set_names').value.trim(),
-                mcp_servers_config: mcpConfig
+                mcp_servers_config: mcpConfig,
+                proactive: {
+                    research_enabled: document.getElementById('proactive_research_enabled').checked,
+                    messaging_enabled: document.getElementById('proactive_messaging_enabled').checked,
+                    research_interval_hours: parseFloat(document.getElementById('proactive_research_interval').value) || 6,
+                    messaging_check_interval_hours: parseFloat(document.getElementById('proactive_messaging_interval').value) || 4,
+                    messaging_min_silence_hours: parseFloat(document.getElementById('proactive_min_silence').value) || 12,
+                    messaging_max_consecutive_ignored: parseInt(document.getElementById('proactive_max_ignored').value) || 2,
+                    messaging_probability: parseFloat(document.getElementById('proactive_probability').value) || 0.3,
+                    world_memory_max_entries: parseInt(document.getElementById('proactive_max_memory_entries').value) || 50,
+                    world_memory_max_chars: parseInt(document.getElementById('proactive_max_memory_chars').value) || 8000,
+                    research_topics_seed: document.getElementById('proactive_research_seed').value.trim()
+                }
             };
 
             try {
@@ -308,7 +415,8 @@ def setup_admin_app(db: DatabaseManager, config: Config, bot=None) -> web.Applic
             "gemini_api_keys": settings.get("gemini_api_keys") or config.gemini_api_keys,
             "system_instruction": settings.get("system_instruction") or "",
             "sticker_set_names": settings.get("sticker_set_names") or settings.get("sticker_set_name") or "Animals",
-            "mcp_servers_config": settings.get("mcp_servers_config") or config.mcp_servers_config
+            "mcp_servers_config": settings.get("mcp_servers_config") or config.mcp_servers_config,
+            "proactive": settings.get("proactive", {})
         })
 
     async def handle_post_settings(request):
@@ -322,7 +430,8 @@ def setup_admin_app(db: DatabaseManager, config: Config, bot=None) -> web.Applic
                 "gemini_api_keys": data.get("gemini_api_keys", ""),
                 "system_instruction": data.get("system_instruction", ""),
                 "sticker_set_names": data.get("sticker_set_names", "Animals"),
-                "mcp_servers_config": data.get("mcp_servers_config", "{}")
+                "mcp_servers_config": data.get("mcp_servers_config", "{}"),
+                "proactive": data.get("proactive", {})
             }
             await db.update_system_settings(updates)
             logger.info("System settings updated via Admin Panel")
