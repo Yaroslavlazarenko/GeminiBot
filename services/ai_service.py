@@ -268,8 +268,11 @@ class AIService:
                 response_parts = []
                 mcp_calls = []
                 local_tool_names = [t.__name__ for t in local_tools_list] if local_tools_list else []
-                
+
                 for call in response.function_calls:
+                    if not call.name:
+                        logger.warning("Skipping function call with empty/None name")
+                        continue
                     if call.name in local_tool_names:
                         if call.name == ToolName.SEARCH_STICKERS.value:
                             emotion = call.args.get("emotion", "").lower()

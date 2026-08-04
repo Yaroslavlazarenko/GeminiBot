@@ -168,7 +168,7 @@ class GatekeeperService:
                 raw_text = response.text
                 if not raw_text:
                     logger.warning("Gatekeeper: response.text is None, defaulting to RESPOND")
-                    return GatekeeperAction.IGNORE if chat_context.is_group else GatekeeperAction.RESPOND
+                    return GatekeeperAction.RESPOND
                 data = json.loads(raw_text)
                 decision = GatekeeperDecision(**data)
             
@@ -177,8 +177,8 @@ class GatekeeperService:
             
         except Exception as e:
             logger.error(f"Error in Gatekeeper: {e}", exc_info=True)
-            # Failsafe: When in doubt, respond, to avoid feeling unresponsive, but in groups, ignore to avoid spam
-            return GatekeeperAction.IGNORE if chat_context.is_group else GatekeeperAction.RESPOND
+            # Failsafe: When in doubt, always respond — ignoring on error makes the bot seem broken/unresponsive
+            return GatekeeperAction.RESPOND
 
     async def summarize_history(self, history: List[Dict[str, Any]]) -> str:
         """Summarize the chat history concisely, removing water."""

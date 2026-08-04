@@ -249,16 +249,24 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
             bot_message = None
             try:
                 if requested_reply_id and i == 0:
-                    if requested_reply_quote:
-                        reply_params = ReplyParameters(message_id=requested_reply_id, quote=requested_reply_quote)
-                    else:
-                        reply_params = ReplyParameters(message_id=requested_reply_id)
+                    try:
+                        if requested_reply_quote:
+                            reply_params = ReplyParameters(message_id=int(requested_reply_id), quote=requested_reply_quote)
+                        else:
+                            reply_params = ReplyParameters(message_id=int(requested_reply_id))
 
-                    bot_message = await last_message.bot.send_message(
-                        chat_id=last_message.chat.id,
-                        text=part,
-                        reply_parameters=reply_params
-                    )
+                        bot_message = await last_message.bot.send_message(
+                            chat_id=last_message.chat.id,
+                            text=part,
+                            reply_parameters=reply_params
+                        )
+                    except Exception as reply_err:
+                        logger.warning(f"Failed to send with reply_to {requested_reply_id}, falling back to normal reply: {reply_err}")
+                        requested_reply_id = None  # Don't retry with broken reply_id
+                        if chat_context.is_group:
+                            bot_message = await last_message.reply(part)
+                        else:
+                            bot_message = await last_message.answer(part)
                 elif chat_context.is_group and i == 0:
                     bot_message = await last_message.reply(part)
                 else:
@@ -268,22 +276,13 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
                 # Fallback: strip HTML/Markdown tags and send as plain text
                 safe_part = html.escape(part)
 
-                if requested_reply_id and i == 0:
-                    if requested_reply_quote:
-                        reply_params = ReplyParameters(message_id=requested_reply_id, quote=requested_reply_quote)
+                try:
+                    if chat_context.is_group and i == 0:
+                        bot_message = await last_message.reply(safe_part, parse_mode=None)
                     else:
-                        reply_params = ReplyParameters(message_id=requested_reply_id)
-
-                    bot_message = await last_message.bot.send_message(
-                        chat_id=last_message.chat.id,
-                        text=safe_part,
-                        reply_parameters=reply_params,
-                        parse_mode=None
-                    )
-                elif chat_context.is_group and i == 0:
-                    bot_message = await last_message.reply(safe_part, parse_mode=None)
-                else:
-                    bot_message = await last_message.answer(safe_part, parse_mode=None)
+                        bot_message = await last_message.answer(safe_part, parse_mode=None)
+                except Exception as e2:
+                    logger.error(f"Failed to send even plain text fallback: {e2}")
                 
             if bot_message:
                 await chat_context.add_message("model", part, bot_message.message_id)
