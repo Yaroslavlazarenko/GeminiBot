@@ -36,15 +36,22 @@ transcription_service = get_transcription_service()
 config = Config()
 
 async def trigger_summarization_if_needed(chat_context: ChatContext, gatekeeper):
-    """History Optimization: If history exceeds 20 messages, summarize the oldest ones"""
-    if len(chat_context.history) > 20:
+    """History Optimization: Summarize when history exceeds ~70k tokens worth of messages.
+
+    Target context budget: 100k tokens total.
+    ~15-20k for system prompt + tools + world memory.
+    ~10k for current turn.
+    ~70k available for history ≈ 150 messages of average length.
+    Keep last 30 messages intact for recent context quality.
+    """
+    if len(chat_context.history) > 150:
         logger.info(f"History length is {len(chat_context.history)}. Triggering summarization.")
-        # Keep the last 5 messages, summarize the rest
-        messages_to_summarize = chat_context.history[:-5]
-        messages_to_keep = chat_context.history[-5:]
-        
+        # Keep the last 30 messages, summarize the rest
+        messages_to_summarize = chat_context.history[:-30]
+        messages_to_keep = chat_context.history[-30:]
+
         summary = await gatekeeper.summarize_history(messages_to_summarize)
-        
+
         # Replace history with the summary + the kept messages
         new_history = [{"role": "user", "text": f"[SYSTEM: CONTEXT SUMMARY OF PREVIOUS CHAT]\n{summary}"}] + messages_to_keep
         await chat_context.replace_history(new_history)
