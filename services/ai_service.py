@@ -238,7 +238,13 @@ class AIService:
                 # Store model's response part
                 if response.candidates and response.candidates[0].content:
                     current_contents.append(response.candidates[0].content)
-                
+
+                # Log response details for debugging
+                has_parsed = response.parsed is not None
+                has_text = bool(response.text)
+                has_fc = bool(response.function_calls)
+                logger.info(f"AI turn {turn}: parsed={has_parsed}, text={has_text}, function_calls={has_fc}")
+
                 # Extract text using Pydantic schema
                 if response.parsed:
                     ai_res: AIResponse = response.parsed
@@ -259,9 +265,10 @@ class AIService:
                             else:
                                 final_text = msg
                     except Exception:
-                        # Absolute fallback
-                        pass
-                    
+                        # Raw text fallback — use as-is if it's not JSON
+                        if not final_text:
+                            final_text = response.text
+
                 if not response.function_calls:
                     break
                     

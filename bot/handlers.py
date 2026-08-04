@@ -204,6 +204,8 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
         # so the AI sees it only once (as the current turn), not twice
         response_text, tool_calls = await ai_service.generate_response(combined_text, chat_context, media_list, sender_info)
 
+    logger.info(f"AI returned: response_text={repr(response_text[:200]) if response_text else 'EMPTY'}, tool_calls={len(tool_calls)}")
+
     # NOW save user message to DB (after AI has processed it)
     if combined_db_text:
         await chat_context.add_message(
