@@ -350,11 +350,6 @@ async def start_command(message: Message, chat_context: ChatContext):
             
     await message.answer(text)
 
-@router.message(filters.Command("clear"))
-async def clear_command(message: Message, chat_context: ChatContext):
-    await chat_context.clear_history()
-    await message.reply("Context history has been cleared.")
-
 @router.message(F.text & ~F.text.startswith("/"))
 async def handle_text_message(message: Message, chat_context: ChatContext):
     if chat_context.is_disabled or not chat_context.responds_to("text"):
