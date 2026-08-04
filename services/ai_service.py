@@ -39,15 +39,15 @@ class AIService:
 
             # Build compact metadata prefix so the model knows send time, message ID, and reactions
             meta_parts = []
-            
+
             msg_id = msg.get("message_id")
             if msg_id:
                 meta_parts.append(f"[MsgID: {msg_id}]")
-                
+
             ts = msg.get("timestamp")
             if ts:
                 meta_parts.append(f"[{ts}]")
-                
+
             reactions = msg.get("reactions")
             if reactions:
                 meta_parts.append(f"[реакции: {' '.join(reactions)}]")
@@ -55,10 +55,15 @@ class AIService:
             if meta_parts:
                 text = " ".join(meta_parts) + " " + text
 
-            formatted.append({
-                "role": role,
-                "parts": [{"text": text}]
-            })
+            # Merge consecutive same-role messages into one entry with multiple parts
+            # Gemini requires strict user/model alternation — two same-role entries in a row cause an error
+            if formatted and formatted[-1]["role"] == role:
+                formatted[-1]["parts"].append({"text": text})
+            else:
+                formatted.append({
+                    "role": role,
+                    "parts": [{"text": text}]
+                })
         return formatted
 
     async def _sync_settings(self, db_manager):
@@ -349,7 +354,8 @@ class AIService:
                             )
                             
                         elif call.name == ToolName.GET_HISTORY_BY_DATE.value:
-                            import datetime
+                            import datetime as dt_module
+                            from datetime import timezone, timedelta
                             try:
                                 days_ago = int(float(call.args.get("days_ago", 0)))
                             except (ValueError, TypeError):
@@ -358,14 +364,19 @@ class AIService:
                                 limit = int(float(call.args.get("limit", 20)))
                             except (ValueError, TypeError):
                                 limit = 20
-                            
-                            target_date = datetime.datetime.utcnow() - datetime.timedelta(days=days_ago)
-                            start_of_day = datetime.datetime(target_date.year, target_date.month, target_date.day)
-                            end_of_day = start_of_day + datetime.timedelta(days=1)
+
+                            # Use Odessa timezone (UTC+3) for day boundaries
+                            odessa_tz = timezone(timedelta(hours=3))
+                            now_odessa = dt_module.datetime.now(odessa_tz)
+                            target_date = now_odessa - dt_module.timedelta(days=days_ago)
+                            # Midnight in Odessa, converted to UTC for DB query
+                            start_of_day_local = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                            start_of_day_utc = start_of_day_local.astimezone(timezone.utc).replace(tzinfo=None)
+                            end_of_day_utc = start_of_day_utc + dt_module.timedelta(days=1)
                             
                             cursor = chat_context._db.messages.find({
                                 "chat_id": chat_context.id,
-                                "date": {"$gte": start_of_day, "$lt": end_of_day}
+                                "date": {"$gte": start_of_day_utc, "$lt": end_of_day_utc}
                             }).sort("date", -1).limit(limit)
                             
                             results = []

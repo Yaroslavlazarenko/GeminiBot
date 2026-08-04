@@ -117,15 +117,20 @@ class GatekeeperService:
                             )
                         )
                     elif call.name == ToolName.GET_HISTORY_BY_DATE.value:
-                        import datetime
+                        import datetime as dt_module
+                        from datetime import timezone, timedelta
                         days_ago = call.args.get("days_ago", 0)
                         limit = call.args.get("limit", 20)
-                        target_date = datetime.datetime.utcnow() - datetime.timedelta(days=days_ago)
-                        start_of_day = datetime.datetime(target_date.year, target_date.month, target_date.day)
-                        end_of_day = start_of_day + datetime.timedelta(days=1)
+                        # Use Odessa timezone (UTC+3) for day boundaries
+                        odessa_tz = timezone(timedelta(hours=3))
+                        now_odessa = dt_module.datetime.now(odessa_tz)
+                        target_date = now_odessa - dt_module.timedelta(days=days_ago)
+                        start_of_day_local = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
+                        start_of_day_utc = start_of_day_local.astimezone(timezone.utc).replace(tzinfo=None)
+                        end_of_day_utc = start_of_day_utc + dt_module.timedelta(days=1)
                         cursor = chat_context._db.messages.find({
                             "chat_id": chat_context.id,
-                            "date": {"$gte": start_of_day, "$lt": end_of_day}
+                            "date": {"$gte": start_of_day_utc, "$lt": end_of_day_utc}
                         }).sort("date", -1).limit(limit)
                         results = []
                         async for msg in cursor:

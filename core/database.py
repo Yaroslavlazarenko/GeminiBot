@@ -56,6 +56,14 @@ class ChatContext:
             await self._db.update_user_settings(self.id, settings)
         self.settings.update(settings)
 
+    async def clear_history(self):
+        """Clear the entire history for the current context."""
+        if self.is_group:
+            await self._db.clear_group_history(self.id)
+        else:
+            await self._db.clear_user_history(self.id)
+        self.history = []
+
     async def replace_history(self, new_history: list):
         """Replace the entire history with a summarized version."""
         if self.is_group:
@@ -250,7 +258,7 @@ class DatabaseManager:
         # Filter facts: Only return if it was learned in this exact chat, OR if it's explicitly marked as harmless/global
         return [f for f in all_facts if f.get("chat_id") == current_chat_id or f.get("is_global", False)]
 
-    async def append_user_history(self, telegram_id: int, message: Dict[str, Any], max_history: int = 50):
+    async def append_user_history(self, telegram_id: int, message: Dict[str, Any], max_history: int = 200):
         await self.users.update_one(
             {"telegram_id": telegram_id},
             {
@@ -300,7 +308,7 @@ class DatabaseManager:
             {"$set": {f"settings.{k}": v for k, v in settings.items()}}
         )
 
-    async def append_group_history(self, telegram_chat_id: int, message: Dict[str, Any], max_history: int = 50):
+    async def append_group_history(self, telegram_chat_id: int, message: Dict[str, Any], max_history: int = 200):
         await self.groups.update_one(
             {"telegram_chat_id": telegram_chat_id},
             {
