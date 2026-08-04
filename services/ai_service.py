@@ -248,6 +248,7 @@ class AIService:
                 # Extract text using Pydantic schema
                 if response.parsed:
                     ai_res: AIResponse = response.parsed
+                    logger.info(f"AI turn {turn} parsed: monologue={repr(ai_res.internal_monologue[:100]) if ai_res.internal_monologue else 'EMPTY'}, message={repr(ai_res.message[:100]) if ai_res.message else 'EMPTY'}")
                     if ai_res.message:
                         if final_text:
                             final_text += "\n" + ai_res.message
