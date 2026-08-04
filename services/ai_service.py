@@ -254,6 +254,14 @@ class AIService:
                             final_text += "\n" + ai_res.message
                         else:
                             final_text = ai_res.message
+                    elif ai_res.internal_monologue and not response.function_calls:
+                        # Model filled monologue but left message empty — force one more turn
+                        logger.warning(f"AI turn {turn}: monologue filled but message empty, forcing another turn")
+                        current_contents.append(Content(
+                            role="user",
+                            parts=[{"text": "[SYSTEM: Your previous response had an empty 'message' field. You MUST provide a non-empty 'message' — this is what the user will see. Write your actual conversational response there.]"}]
+                        ))
+                        continue
                 elif response.text:
                     # Fallback if parsing failed
                     try:
