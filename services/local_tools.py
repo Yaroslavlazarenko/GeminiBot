@@ -141,6 +141,23 @@ def confirm_user_fact(user_id: int, fact: str) -> str:
     """
     return f"Confirming fact for user {user_id}"
 
+@mcp.tool(name=ToolName.SAVE_MEMORY.value)
+def save_memory(topic: str, content: str) -> str:
+    """Save a detailed observation, note, or insight about this chat into your personal memory. Use this for things that are too complex or nuanced for a simple fact — behavioral patterns, ongoing projects, relationship dynamics, recurring conversation themes, emotional context, etc. If a note with the same topic already exists, it will be updated with the new content.
+    Args:
+        topic: A short label (3-8 words) describing the topic of this note. Example: "Yarik's cat social network project", "how she reacts to criticism", "our running joke about pineapple pizza".
+        content: A detailed description of your observation (up to ~500 words). Write naturally, as if keeping a personal diary. Include context, nuances, and anything that would help you understand this person/situation better in future conversations.
+    """
+    return f"Saving memory: {topic}"
+
+@mcp.tool(name=ToolName.RECALL_MEMORY.value)
+def recall_memory(topic: str) -> str:
+    """Retrieve the full content of one of your personal notes. Call this when you see a relevant topic in your PERSONAL NOTES section and want to read the details before responding.
+    Args:
+        topic: The topic label of the note to recall (as shown in your PERSONAL NOTES). Partial matches are supported.
+    """
+    return f"Recalling memory: {topic}"
+
 # Export the raw functions for Gemini
 local_tools_list = [
     add_reaction,
@@ -158,7 +175,9 @@ local_tools_list = [
     analyze_past_media,
     download_media_to_disk,
     get_profile_photo,
-    confirm_user_fact
+    confirm_user_fact,
+    save_memory,
+    recall_memory
 ]
 
 # Tools safe for Gatekeeper to use (read-only)

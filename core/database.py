@@ -118,6 +118,7 @@ class DatabaseManager:
         self.stickers = self.db['stickers']
         self.messages = self.db['messages']
         self.world_memory = self.db['world_memory']
+        self.auto_memory = self.db['auto_memory']
 
     async def _setup_indexes(self):
         """Create necessary indexes for performance."""
@@ -128,6 +129,8 @@ class DatabaseManager:
             await self.messages.create_index([("text", "text")])
             await self.world_memory.create_index([("created_at", -1)])
             await self.world_memory.create_index([("compressed", 1), ("created_at", -1)])
+            await self.auto_memory.create_index([("chat_id", 1), ("updated_at", -1)])
+            await self.auto_memory.create_index([("chat_id", 1), ("topic", 1)], unique=True)
             logger.info("MongoDB indexes created successfully.")
         except Exception as e:
             logger.error(f"Error creating MongoDB indexes: {e}")
@@ -410,6 +413,79 @@ class DatabaseManager:
             {query_field: chat_id, "history.message_id": message_id},
             {"$set": {"history.$.reactions": reactions}}
         )
+
+    # --- Auto Memory (Mia's personal notes per chat) ---
+
+    async def save_auto_memory(self, chat_id: int, user_id: int, topic: str, content: str, max_entries: int = 30):
+        """Save or update a personal memory note. Upserts by (chat_id, topic).
+        If max_entries is exceeded, removes the least recently used entry."""
+        now = datetime.utcnow()
+        result = await self.auto_memory.update_one(
+            {"chat_id": chat_id, "topic": topic},
+            {
+                "$set": {
+                    "content": content,
+                    "updated_at": now,
+                    "user_id": user_id,
+                },
+                "$setOnInsert": {
+                    "created_at": now,
+                    "access_count": 0,
+                }
+            },
+            upsert=True
+        )
+
+        # Enforce max entries per chat — remove LRU (oldest updated_at, lowest access_count)
+        try:
+            count = await self.auto_memory.count_documents({"chat_id": chat_id})
+            if count > max_entries:
+                # Find the least valuable entry: sort by access_count ASC, then updated_at ASC
+                lru = await self.auto_memory.find(
+                    {"chat_id": chat_id}
+                ).sort([("access_count", 1), ("updated_at", 1)]).limit(1).to_list(1)
+                if lru:
+                    await self.auto_memory.delete_one({"_id": lru[0]["_id"]})
+                    logger.info(f"Auto memory: evicted LRU entry '{lru[0].get('topic')}' for chat {chat_id}")
+        except Exception as e:
+            logger.error(f"Failed to enforce auto memory limit: {e}")
+
+        action = "updated" if result.matched_count > 0 else "created"
+        logger.info(f"Auto memory: {action} '{topic}' for chat {chat_id}")
+
+    async def recall_auto_memory(self, chat_id: int, topic: str) -> Optional[Dict[str, Any]]:
+        """Recall a memory by topic (case-insensitive partial match).
+        Increments access_count and updates updated_at on access."""
+        import re
+        # Try exact match first, then partial
+        entry = await self.auto_memory.find_one({"chat_id": chat_id, "topic": topic})
+        if not entry:
+            # Case-insensitive partial match
+            try:
+                pattern = re.compile(re.escape(topic), re.IGNORECASE)
+                entry = await self.auto_memory.find_one({"chat_id": chat_id, "topic": pattern})
+            except Exception:
+                pass
+
+        if entry:
+            # Update access stats
+            await self.auto_memory.update_one(
+                {"_id": entry["_id"]},
+                {
+                    "$inc": {"access_count": 1},
+                    "$set": {"updated_at": datetime.utcnow()}
+                }
+            )
+            return entry
+        return None
+
+    async def get_auto_memory_topics(self, chat_id: int, limit: int = 20) -> List[Dict[str, Any]]:
+        """Return topic labels for injection into the system prompt."""
+        entries = await self.auto_memory.find(
+            {"chat_id": chat_id},
+            {"topic": 1, "updated_at": 1, "_id": 0}
+        ).sort("updated_at", -1).limit(limit).to_list(None)
+        return entries
 
     # --- Proactive Messaging State ---
 

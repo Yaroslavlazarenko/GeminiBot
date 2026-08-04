@@ -22,3 +22,5 @@ class ToolName(str, Enum):
     DOWNLOAD_MEDIA_TO_DISK = "download_media_to_disk"
     GET_PROFILE_PHOTO = "get_profile_photo"
     CONFIRM_USER_FACT = "confirm_user_fact"
+    SAVE_MEMORY = "save_memory"
+    RECALL_MEMORY = "recall_memory"

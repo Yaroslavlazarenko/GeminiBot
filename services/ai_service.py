@@ -230,7 +230,7 @@ class AIService:
                 f"2. CRITICAL FORMATTING RULE: Tags like '[MsgID: 42]', '[14:05]', '[Alex]:', '[реакции: ❤]' are INTERNAL SYSTEM METADATA injected by the system to help you understand context. They are INVISIBLE to the user. You must NEVER include '[MsgID: ...]', message IDs, timestamps in square brackets, '[Name]:' prefixes, or reaction tags in YOUR responses. Your response text should look like a normal chat message — just plain text as a human would type it. If you want to reply to a specific message, use the `reply_to_message` tool silently instead.\n"
                 f"3. If you want to send a voice message, you MUST call the `send_voice(text_to_speak)` tool. Do not simulate it in text.\n"
                 f"4. If you want to send a sticker, you MUST call the `send_sticker(emotion)` tool. Do not write *(Отправляет стикер)* or descriptions of stickers in your text.\n"
-                f"5. Proactively use `save_user_fact(user_id, fact, category)` to permanently memorize important details, preferences, or secrets the user shares with you. You can see their existing facts in the INTERLOCUTOR INFO. When you notice a fact you already know is still true, call `confirm_user_fact(user_id, fact)` to keep it fresh.\n"
+                f"5. Proactively use `save_user_fact(user_id, fact, category)` to permanently memorize important details, preferences, or secrets the user shares with you. You can see their existing facts in the INTERLOCUTOR INFO. When you notice a fact you already know is still true, call `confirm_user_fact(user_id, fact)` to keep it fresh. Use `save_memory(topic, content)` to write detailed observations, behavioral patterns, ongoing projects, or relationship dynamics that don't fit into a single fact — think of it as your personal diary about this person. Use `recall_memory(topic)` to read your notes when you see a relevant topic in your PERSONAL NOTES section.\n"
                 f"6. STRICT PRIVACY RULE: You must NEVER share, leak, or gossip about the personal facts, secrets, or preferences of one user with another user. If someone asks you to tell them about another person, politely but firmly refuse to share their private information. You may use facts internally to guide your behavior, but do not expose them to third parties.\n"
                 f"7. NEVER expose your internal thinking process, reasoning, or analysis blocks (e.g., `/thought`, `Let's analyze the images...`, bullet point breakdowns of images) to the user. Do your thinking silently, and ONLY output the final conversational response that Mia would type in the chat.\n"
                 f"8. Keep your text responses clean and natural, containing only what you would actually type in a chat. Avoid excessive Markdown formatting unless specifically asked for a structured list.\n"
@@ -256,6 +256,22 @@ class AIService:
                     )
             except Exception as e:
                 logger.error(f"Failed to inject world memory: {e}")
+
+            # Inject auto memory topics (Mia's personal notes about this chat)
+            try:
+                topics = await chat_context._db.get_auto_memory_topics(chat_context.id)
+                if topics:
+                    topics_text = "\n".join([f"- {t['topic']}" for t in topics])
+                    compiled_system_instruction += (
+                        "\n\n--- YOUR PERSONAL NOTES (topics you wrote about this chat) ---\n"
+                        "These are topics you previously noted about this person/chat. To read the full content of a note, "
+                        "call `recall_memory(topic)`. To save a new observation or update an existing one, call "
+                        "`save_memory(topic, content)`.\n"
+                        + topics_text
+                        + "\n---\n"
+                    )
+            except Exception as e:
+                logger.error(f"Failed to inject auto memory topics: {e}")
 
             # Inject sticker catalog instructions
             try:
@@ -609,7 +625,65 @@ class AIService:
                                         response={"error": str(e)}
                                     )
                                 )
-                                
+
+                        elif call.name == ToolName.SAVE_MEMORY.value:
+                            topic = call.args.get("topic", "")
+                            content = call.args.get("content", "")
+                            try:
+                                if not topic or not content:
+                                    raise ValueError("Missing topic or content")
+                                mem_user_id = sender_info.get("user_id") if sender_info and not chat_context.is_group else None
+                                await chat_context._db.save_auto_memory(
+                                    chat_context.id, mem_user_id, topic, content
+                                )
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"result": f"Memory saved: '{topic}'"}
+                                    )
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to save auto memory: {e}")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": str(e)}
+                                    )
+                                )
+
+                        elif call.name == ToolName.RECALL_MEMORY.value:
+                            topic = call.args.get("topic", "")
+                            try:
+                                if not topic:
+                                    raise ValueError("Missing topic")
+                                entry = await chat_context._db.recall_auto_memory(chat_context.id, topic)
+                                if entry:
+                                    response_parts.append(
+                                        Part.from_function_response(
+                                            name=call.name,
+                                            response={
+                                                "topic": entry.get("topic", ""),
+                                                "content": entry.get("content", ""),
+                                                "last_updated": entry.get("updated_at", "").strftime("%Y-%m-%d %H:%M") if entry.get("updated_at") else "unknown"
+                                            }
+                                        )
+                                    )
+                                else:
+                                    response_parts.append(
+                                        Part.from_function_response(
+                                            name=call.name,
+                                            response={"error": f"No memory found for topic '{topic}'. Available topics are listed in your PERSONAL NOTES section."}
+                                        )
+                                    )
+                            except Exception as e:
+                                logger.error(f"Failed to recall auto memory: {e}")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": str(e)}
+                                    )
+                                )
+
                         elif call.name == ToolName.ANALYZE_PAST_MEDIA.value:
                             file_id = call.args.get("file_id")
                             bot = sender_info.get("bot") if sender_info else None
