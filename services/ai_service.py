@@ -32,6 +32,30 @@ class AIService:
     def _convert_history_to_gemini(self, history: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         formatted = []
         for msg in history:
+            # Skip pending messages — they are the current turn, added separately
+            if msg.get("pending"):
+                continue
+
+            # Handle epoch summary entries (hierarchical summarization)
+            if msg.get("is_epoch"):
+                topics = msg.get("topics", [])
+                topics_str = ", ".join(topics) if topics else "general conversation"
+                epoch_idx = msg.get("epoch_index", "?")
+                epoch_text = f"[SYSTEM EPOCH SUMMARY #{epoch_idx} | Topics: {topics_str}]\n{msg.get('text', '')}"
+
+                # Epochs are rendered as user messages (Gemini only knows user/model)
+                # Always start a new entry — never merge with adjacent messages
+                formatted.append({
+                    "role": "user",
+                    "parts": [{"text": epoch_text}]
+                })
+                # Insert a model acknowledgment to maintain strict user/model alternation
+                formatted.append({
+                    "role": "model",
+                    "parts": [{"text": "[Acknowledged]"}]
+                })
+                continue
+
             role = "user" if msg.get("role") == "user" else "model"
             text = msg.get("text", "")
             if not text:
@@ -164,7 +188,28 @@ class AIService:
                 # Fetch known facts
                 try:
                     facts = await chat_context._db.get_user_facts(user_id, chat_context.id) if user_id != "Unknown" else []
-                    facts_str = "\n".join([f"- {f['date'].strftime('%Y-%m-%d')}: {f['fact']} (Source: {f['source']})" for f in facts]) if facts else "No known facts yet."
+                    if facts:
+                        from datetime import datetime as dt_cls, timedelta as td_cls
+                        now_utc = dt_cls.utcnow()
+                        STALE_DAYS = 90
+                        formatted_facts = []
+                        for f in facts:
+                            last_confirmed = f.get("last_confirmed") or f.get("date")
+                            if last_confirmed:
+                                age_days = (now_utc - last_confirmed.replace(tzinfo=None)).days if hasattr(last_confirmed, 'replace') else 9999
+                                date_str = last_confirmed.strftime('%Y-%m-%d')
+                            else:
+                                age_days = 9999
+                                date_str = "?"
+                            stale_tag = " [POSSIBLY STALE]" if age_days > STALE_DAYS else ""
+                            cat = f.get("category", "")
+                            cat_tag = f" [{cat.upper()}]" if cat and cat != "other" else ""
+                            formatted_facts.append(
+                                f"- {date_str}{cat_tag}{stale_tag}: {f['fact']} (Source: {f.get('source', '?')})"
+                            )
+                        facts_str = "\n".join(formatted_facts)
+                    else:
+                        facts_str = "No known facts yet."
                 except Exception as e:
                     logger.error(f"Failed to fetch user facts: {e}")
                     facts_str = "Error loading facts."
@@ -182,10 +227,10 @@ class AIService:
             tool_constraints = (
                 f"\n--- TOOL USAGE & FORMATTING RULES ---\n"
                 f"1. Never output text markers like \"(Голосовое сообщение):\", \"*(Голосовое сообщение)*:\", \"*(Отправляет стикер)*\", or similar mock actions in your text responses!\n"
-                f"2. Never manually type \"[MsgID: 12345]\", \"[Name]:\", or timestamps in your text response. Tags like '[MsgID: 42] [14:05] [Alex]:' are internal system metadata indicating the message ID, time, and the speaker's name in group chats. Do NOT treat them as part of the user's message, and do NOT mimic them in your own replies. If you want to reply, use the `reply_to_message` tool silently.\n"
+                f"2. CRITICAL FORMATTING RULE: Tags like '[MsgID: 42]', '[14:05]', '[Alex]:', '[реакции: ❤]' are INTERNAL SYSTEM METADATA injected by the system to help you understand context. They are INVISIBLE to the user. You must NEVER include '[MsgID: ...]', message IDs, timestamps in square brackets, '[Name]:' prefixes, or reaction tags in YOUR responses. Your response text should look like a normal chat message — just plain text as a human would type it. If you want to reply to a specific message, use the `reply_to_message` tool silently instead.\n"
                 f"3. If you want to send a voice message, you MUST call the `send_voice(text_to_speak)` tool. Do not simulate it in text.\n"
                 f"4. If you want to send a sticker, you MUST call the `send_sticker(emotion)` tool. Do not write *(Отправляет стикер)* or descriptions of stickers in your text.\n"
-                f"5. Proactively use `save_user_fact(user_id, fact)` to permanently memorize important details, preferences, or secrets the user shares with you. You can see their existing facts in the INTERLOCUTOR INFO.\n"
+                f"5. Proactively use `save_user_fact(user_id, fact, category)` to permanently memorize important details, preferences, or secrets the user shares with you. You can see their existing facts in the INTERLOCUTOR INFO. When you notice a fact you already know is still true, call `confirm_user_fact(user_id, fact)` to keep it fresh.\n"
                 f"6. STRICT PRIVACY RULE: You must NEVER share, leak, or gossip about the personal facts, secrets, or preferences of one user with another user. If someone asks you to tell them about another person, politely but firmly refuse to share their private information. You may use facts internally to guide your behavior, but do not expose them to third parties.\n"
                 f"7. NEVER expose your internal thinking process, reasoning, or analysis blocks (e.g., `/thought`, `Let's analyze the images...`, bullet point breakdowns of images) to the user. Do your thinking silently, and ONLY output the final conversational response that Mia would type in the chat.\n"
                 f"8. Keep your text responses clean and natural, containing only what you would actually type in a chat. Avoid excessive Markdown formatting unless specifically asked for a structured list.\n"
@@ -480,16 +525,36 @@ class AIService:
                             user_id = call.args.get("user_id")
                             fact = call.args.get("fact", "")
                             is_global = call.args.get("is_global", False)
+                            category = call.args.get("category", "other")
                             chat_title = sender_info.get("chat_title", "Unknown Context") if sender_info else "Unknown Context"
-                            
+
                             try:
                                 if not user_id or not fact:
                                     raise ValueError("Missing user_id or fact")
-                                await chat_context._db.save_user_fact(int(user_id), fact, chat_title, chat_context.id, is_global)
+
+                                # Check for contradictions with existing facts
+                                contradiction_info = ""
+                                try:
+                                    from services.gatekeeper_service import get_gatekeeper
+                                    gk = get_gatekeeper()
+                                    existing_facts = await chat_context._db.get_user_facts(int(user_id), chat_context.id)
+                                    if existing_facts:
+                                        check = await gk.check_fact_contradiction(existing_facts, fact)
+                                        if check.has_contradiction and check.contradicted_fact:
+                                            await chat_context._db.supersede_user_fact(
+                                                int(user_id), check.contradicted_fact, fact, chat_context.id
+                                            )
+                                            contradiction_info = f" (superseded old fact: '{check.contradicted_fact}')"
+                                except Exception as contra_err:
+                                    logger.warning(f"Fact contradiction check failed (saving anyway): {contra_err}")
+
+                                await chat_context._db.save_user_fact(
+                                    int(user_id), fact, chat_title, chat_context.id, is_global, category=category
+                                )
                                 response_parts.append(
                                     Part.from_function_response(
                                         name=call.name,
-                                        response={"result": f"Fact successfully saved permanently for user {user_id}."}
+                                        response={"result": f"Fact successfully saved permanently for user {user_id}.{contradiction_info}"}
                                     )
                                 )
                             except Exception as e:
@@ -516,6 +581,28 @@ class AIService:
                                 )
                             except Exception as e:
                                 logger.error(f"Failed to get user facts: {e}")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": str(e)}
+                                    )
+                                )
+
+                        elif call.name == ToolName.CONFIRM_USER_FACT.value:
+                            user_id = call.args.get("user_id")
+                            fact_text = call.args.get("fact", "")
+                            try:
+                                if not user_id or not fact_text:
+                                    raise ValueError("Missing user_id or fact")
+                                await chat_context._db.confirm_user_fact(int(user_id), fact_text, chat_context.id)
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"result": f"Fact confirmed as still accurate for user {user_id}."}
+                                    )
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to confirm user fact: {e}")
                                 response_parts.append(
                                     Part.from_function_response(
                                         name=call.name,

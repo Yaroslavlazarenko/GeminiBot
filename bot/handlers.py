@@ -35,26 +35,97 @@ tts_service = get_tts_service()
 transcription_service = get_transcription_service()
 config = Config()
 
+MAX_EPOCHS = 4
+HISTORY_TRIGGER = 150
+LIVE_WINDOW = 30
+
 async def trigger_summarization_if_needed(chat_context: ChatContext, gatekeeper):
-    """History Optimization: Summarize when history exceeds ~70k tokens worth of messages.
+    """History Optimization: Hierarchical epoch-based summarization.
+
+    Instead of compressing everything into one blob, creates structured "epochs"
+    with metadata (time range, participants, topics). Maintains up to MAX_EPOCHS
+    epoch summaries plus a live window of recent messages.
 
     Target context budget: 100k tokens total.
     ~15-20k for system prompt + tools + world memory.
     ~10k for current turn.
-    ~70k available for history ≈ 150 messages of average length.
-    Keep last 30 messages intact for recent context quality.
+    ~70k available for history ≈ 150 live messages + epoch summaries.
+    Keep last LIVE_WINDOW messages intact for recent context quality.
     """
-    if len(chat_context.history) > 150:
-        logger.info(f"History length is {len(chat_context.history)}. Triggering summarization.")
-        # Keep the last 30 messages, summarize the rest
-        messages_to_summarize = chat_context.history[:-30]
-        messages_to_keep = chat_context.history[-30:]
+    # Separate live messages from epoch entries
+    live_messages = [m for m in chat_context.history if not m.get("is_epoch")]
+    existing_epochs = [m for m in chat_context.history if m.get("is_epoch")]
 
-        summary = await gatekeeper.summarize_history(messages_to_summarize)
+    if len(live_messages) <= HISTORY_TRIGGER:
+        return
 
-        # Replace history with the summary + the kept messages
-        new_history = [{"role": "user", "text": f"[SYSTEM: CONTEXT SUMMARY OF PREVIOUS CHAT]\n{summary}"}] + messages_to_keep
-        await chat_context.replace_history(new_history)
+    logger.info(f"History has {len(live_messages)} live messages and {len(existing_epochs)} epochs. Triggering epoch summarization.")
+
+    messages_to_summarize = live_messages[:-LIVE_WINDOW]
+    messages_to_keep = live_messages[-LIVE_WINDOW:]
+
+    # Epoch rollup: merge the two oldest epochs if we're at the limit
+    if len(existing_epochs) >= MAX_EPOCHS:
+        oldest_two = existing_epochs[:2]
+        logger.info(f"Merging epochs {oldest_two[0].get('epoch_index', '?')} and {oldest_two[1].get('epoch_index', '?')}")
+        merged_text = await gatekeeper.merge_epochs([e["text"] for e in oldest_two])
+
+        merged_epoch = {
+            "role": "system",
+            "is_epoch": True,
+            "epoch_index": oldest_two[0].get("epoch_index", 0),
+            "epoch_start_date": oldest_two[0].get("epoch_start_date"),
+            "epoch_end_date": oldest_two[1].get("epoch_end_date"),
+            "participants": list(set(
+                oldest_two[0].get("participants", []) +
+                oldest_two[1].get("participants", [])
+            )),
+            "topics": list(set(
+                oldest_two[0].get("topics", []) +
+                oldest_two[1].get("topics", [])
+            )),
+            "message_count": (
+                oldest_two[0].get("message_count", 0) +
+                oldest_two[1].get("message_count", 0)
+            ),
+            "text": f"[MERGED CONTEXT EPOCHS]\n{merged_text}"
+        }
+        existing_epochs = [merged_epoch] + existing_epochs[2:]
+
+    # Generate structured epoch summary
+    epoch_summary = await gatekeeper.summarize_history_structured(messages_to_summarize)
+
+    # Determine epoch index
+    if existing_epochs:
+        next_index = max(e.get("epoch_index", 0) for e in existing_epochs) + 1
+    else:
+        next_index = 1
+
+    # Extract date range from messages
+    first_ts = messages_to_summarize[0].get("timestamp", "?")
+    last_ts = messages_to_summarize[-1].get("timestamp", "?")
+
+    from datetime import datetime
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+
+    # Build the epoch entry
+    topics_str = ", ".join(epoch_summary.topics) if epoch_summary.topics else "general conversation"
+    new_epoch = {
+        "role": "system",
+        "is_epoch": True,
+        "epoch_index": next_index,
+        "epoch_start_date": today_str,
+        "epoch_end_date": today_str,
+        "participants": epoch_summary.participants or [],
+        "topics": epoch_summary.topics or [],
+        "message_count": len(messages_to_summarize),
+        "text": f"[CONTEXT EPOCH {next_index} | Topics: {topics_str}]\n{epoch_summary.summary}"
+    }
+
+    new_history = existing_epochs + [new_epoch] + messages_to_keep
+    await chat_context.replace_history(new_history)
+    logger.info(f"Created epoch {next_index} from {len(messages_to_summarize)} messages. "
+                f"History now: {len(existing_epochs)+1} epochs + {len(messages_to_keep)} live messages.")
 
 async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: str, media: dict = None, db_text: str = None):
     """Enqueues the message into a burst buffer. Executes only when the user stops typing for a brief moment."""
@@ -207,21 +278,26 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
             "timestamp": msg_timestamp
         }
 
-        # Generate Response BEFORE saving user message to history,
-        # so the AI sees it only once (as the current turn), not twice
+        # Save user message BEFORE generation (crash-safe), but marked pending
+        # so _convert_history_to_gemini() skips it (preventing duplication)
+        if combined_db_text:
+            await chat_context.add_message(
+                "user",
+                combined_db_text,
+                last_message.message_id,
+                timestamp=msg_timestamp,
+                reactions=None,
+                pending=True
+            )
+
+        # Generate Response — the pending message won't appear in Gemini history
         response_text, tool_calls = await ai_service.generate_response(combined_text, chat_context, media_list, sender_info)
 
-    logger.info(f"AI returned: response_text={repr(response_text[:200]) if response_text else 'EMPTY'}, tool_calls={len(tool_calls)}")
+        # Confirm the pending message — it's now safe to appear in future history conversions
+        if combined_db_text:
+            chat_context.confirm_message(last_message.message_id)
 
-    # NOW save user message to DB (after AI has processed it)
-    if combined_db_text:
-        await chat_context.add_message(
-            "user",
-            combined_db_text,
-            last_message.message_id,
-            timestamp=msg_timestamp,
-            reactions=None
-        )
+    logger.info(f"AI returned: response_text={repr(response_text[:200]) if response_text else 'EMPTY'}, tool_calls={len(tool_calls)}")
 
     db_response_text = ""
     bot_msg_to_save = None

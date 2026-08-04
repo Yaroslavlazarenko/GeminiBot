@@ -89,12 +89,13 @@ def get_group_info() -> str:
     return f"Getting group info..."
 
 @mcp.tool(name=ToolName.SAVE_USER_FACT.value)
-def save_user_fact(user_id: int, fact: str, is_global: bool = False) -> str:
-    """Save an important fact about a user permanently into your memory.
+def save_user_fact(user_id: int, fact: str, is_global: bool = False, category: str = "other") -> str:
+    """Save an important fact about a user permanently into your memory. If the new fact contradicts an existing fact, the old one will be automatically superseded.
     Args:
         user_id: The exact Telegram ID of the user. You can find this in the [INTERLOCUTOR INFO] section.
         fact: A concise, clear sentence describing what you learned about the user.
         is_global: Set to True ONLY IF this is a completely harmless, public fact (e.g. 'likes pizza') that is safe to bring up in public group chats. Set to False if this is a personal secret, private context, or sensitive info.
+        category: The category of this fact. Valid values: 'preference' (likes/dislikes, tastes), 'personal' (age, name, appearance, health), 'work' (job, studies, projects), 'relationship' (family, friends, romantic), 'other' (anything else).
     """
     return f"Saving fact for user {user_id}"
 
@@ -131,6 +132,15 @@ def get_profile_photo(user_id: Optional[int] = None) -> str:
     """
     return f"Fetching profile photo for user {user_id if user_id else 'Mia'}..."
 
+@mcp.tool(name=ToolName.CONFIRM_USER_FACT.value)
+def confirm_user_fact(user_id: int, fact: str) -> str:
+    """Confirm that a previously known fact about a user is still accurate. Call this when you observe evidence that something you already know about this user remains true — e.g., they mention the same preference, job, or detail again.
+    Args:
+        user_id: The exact Telegram ID of the user.
+        fact: The exact text of the existing fact to confirm (as shown in your INTERLOCUTOR INFO).
+    """
+    return f"Confirming fact for user {user_id}"
+
 # Export the raw functions for Gemini
 local_tools_list = [
     add_reaction,
@@ -147,7 +157,8 @@ local_tools_list = [
     get_user_facts,
     analyze_past_media,
     download_media_to_disk,
-    get_profile_photo
+    get_profile_photo,
+    confirm_user_fact
 ]
 
 # Tools safe for Gatekeeper to use (read-only)

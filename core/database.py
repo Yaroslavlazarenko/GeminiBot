@@ -23,14 +23,21 @@ class ChatContext:
         """Check if the context allows responding to a specific message type (e.g., 'text', 'voice')."""
         return self.settings.get(f"responds_to_{msg_type}", True)
 
-    async def add_message(self, role: str, text: str, message_id: int, timestamp: str = None, reactions: list = None):
-        """Add a message to the history and permanent log."""
+    async def add_message(self, role: str, text: str, message_id: int, timestamp: str = None, reactions: list = None, pending: bool = False):
+        """Add a message to the history and permanent log.
+
+        If pending=True, the message is saved to DB immediately (crash-safe),
+        but marked as pending in-memory so _convert_history_to_gemini() skips it.
+        Call confirm_message() after generation to clear the pending flag.
+        """
         msg = {"role": role, "text": text, "message_id": message_id}
         if timestamp:
             msg["timestamp"] = timestamp
         if reactions:
             msg["reactions"] = reactions
-            
+        if pending:
+            msg["pending"] = True
+
         # Permanent storage
         perm_msg = {
             "chat_id": self.id,
@@ -41,12 +48,25 @@ class ChatContext:
             "timestamp_str": timestamp
         }
         await self._db.messages.insert_one(perm_msg)
-            
+
+        # Strip the pending flag before writing to DB — it's only for in-memory use
+        db_msg = {k: v for k, v in msg.items() if k != "pending"}
         if self.is_group:
-            await self._db.append_group_history(self.id, msg)
+            await self._db.append_group_history(self.id, db_msg)
         else:
-            await self._db.append_user_history(self.id, msg)
+            await self._db.append_user_history(self.id, db_msg)
         self.history.append(msg)
+
+    def confirm_message(self, message_id: int):
+        """Remove the pending flag from a message in-memory after generation completes.
+
+        This is a pure in-memory operation — the DB copy was already written
+        correctly without the pending flag.
+        """
+        for msg in self.history:
+            if msg.get("message_id") == message_id and msg.get("pending"):
+                msg.pop("pending", None)
+                break
 
     async def update_settings(self, settings: Dict[str, Any]):
         """Update settings for the current context."""
@@ -233,7 +253,7 @@ class DatabaseManager:
             {"$set": {f"settings.{k}": v for k, v in settings.items()}}
         )
 
-    async def save_user_fact(self, telegram_id: int, fact: str, source: str, chat_id: int, is_global: bool = False):
+    async def save_user_fact(self, telegram_id: int, fact: str, source: str, chat_id: int, is_global: bool = False, category: str = "other", confidence: float = 1.0):
         """Save a persistent fact about a user. Scoped by chat_id to prevent leaking private info to groups."""
         await self.users.update_one(
             {"telegram_id": telegram_id},
@@ -243,20 +263,73 @@ class DatabaseManager:
                     "source": source,
                     "chat_id": chat_id,
                     "is_global": is_global,
-                    "date": datetime.utcnow()
+                    "category": category,
+                    "confidence": confidence,
+                    "date": datetime.utcnow(),
+                    "last_confirmed": datetime.utcnow(),
+                    "superseded_by": None
                 }
             }}
         )
 
     async def get_user_facts(self, telegram_id: int, current_chat_id: int) -> List[Dict[str, Any]]:
-        """Retrieve facts about a user that are either global or explicitly scoped to the current chat."""
+        """Retrieve facts about a user that are either global or explicitly scoped to the current chat.
+        Filters out superseded facts and sorts by last_confirmed descending."""
         user = await self.users.find_one({"telegram_id": telegram_id})
         if not user:
             return []
-            
+
         all_facts = user.get("facts", [])
         # Filter facts: Only return if it was learned in this exact chat, OR if it's explicitly marked as harmless/global
-        return [f for f in all_facts if f.get("chat_id") == current_chat_id or f.get("is_global", False)]
+        # Also filter out superseded facts
+        filtered = []
+        for f in all_facts:
+            if f.get("superseded_by") is not None:
+                continue
+            if f.get("chat_id") == current_chat_id or f.get("is_global", False):
+                filtered.append(f)
+
+        # Sort by last_confirmed descending (fallback to date for old facts)
+        def sort_key(f):
+            return f.get("last_confirmed") or f.get("date") or datetime.min
+        filtered.sort(key=sort_key, reverse=True)
+
+        return filtered
+
+    async def supersede_user_fact(self, telegram_id: int, old_fact_text: str, new_fact_text: str, chat_id: int):
+        """Mark an existing fact as superseded by a new contradicting fact.
+        Uses arrayFilters to find and update the specific fact in the array."""
+        try:
+            await self.users.update_one(
+                {"telegram_id": telegram_id},
+                {"$set": {
+                    "facts.$[elem].superseded_by": new_fact_text,
+                }},
+                array_filters=[{
+                    "elem.fact": old_fact_text,
+                    "elem.superseded_by": None
+                }]
+            )
+            logger.info(f"Superseded fact for user {telegram_id}: '{old_fact_text[:50]}...' -> '{new_fact_text[:50]}...'")
+        except Exception as e:
+            logger.error(f"Failed to supersede fact for user {telegram_id}: {e}")
+
+    async def confirm_user_fact(self, telegram_id: int, fact_text: str, chat_id: int):
+        """Update last_confirmed timestamp for an existing fact."""
+        try:
+            await self.users.update_one(
+                {"telegram_id": telegram_id},
+                {"$set": {
+                    "facts.$[elem].last_confirmed": datetime.utcnow()
+                }},
+                array_filters=[{
+                    "elem.fact": fact_text,
+                    "elem.superseded_by": None
+                }]
+            )
+            logger.info(f"Confirmed fact for user {telegram_id}: '{fact_text[:50]}...'")
+        except Exception as e:
+            logger.error(f"Failed to confirm fact for user {telegram_id}: {e}")
 
     async def append_user_history(self, telegram_id: int, message: Dict[str, Any], max_history: int = 200):
         await self.users.update_one(

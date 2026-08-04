@@ -14,6 +14,18 @@ class GatekeeperDecision(BaseModel):
     reasoning: str = Field(description="Brief explanation of why this action was chosen.")
     action: GatekeeperAction = Field(description="The action to take regarding this message.")
 
+class EpochSummary(BaseModel):
+    """Structured summary of a conversation epoch for hierarchical history."""
+    topics: List[str] = Field(description="3-7 key topics discussed during this epoch, as short noun phrases.")
+    participants: List[str] = Field(description="Names of people who participated in this conversation epoch.")
+    summary: str = Field(description="Concise summary of the conversation epoch. Keep only the most important context, facts, names, events, and emotional moments. Max 500 words.")
+
+class FactContradictionCheck(BaseModel):
+    """Result of checking whether a new fact contradicts existing facts."""
+    has_contradiction: bool = Field(description="True if the new fact directly contradicts an existing fact about the same topic.")
+    contradicted_fact: str = Field(default="", description="The exact text of the contradicted existing fact, or empty if no contradiction.")
+    reasoning: str = Field(description="Brief explanation of the contradiction check result.")
+
 class GatekeeperService:
     def __init__(self, config: Config):
         self.config = config
@@ -221,6 +233,107 @@ class GatekeeperService:
         except Exception as e:
             logger.error(f"Error summarizing history: {e}")
             return "Failed to generate summary due to an error."
+
+    async def summarize_history_structured(self, history_messages: List[Dict[str, Any]]) -> 'EpochSummary':
+        """Summarize chat history into a structured epoch with topics and participants."""
+        try:
+            history_text = ""
+            for msg in history_messages:
+                role = msg.get("role", "unknown")
+                text = msg.get("text", "")
+                ts = msg.get("timestamp", "")
+                if text:
+                    history_text += f"[{ts}] {role}: {text}\n"
+
+            prompt = (
+                "Analyze and summarize the following conversation history.\n\n"
+                "You must identify:\n"
+                "1. The key topics discussed (3-7 short noun phrases)\n"
+                "2. The names of all participants (extract from [Name]: prefixes or mentions)\n"
+                "3. A concise but informative summary (max 500 words) that preserves:\n"
+                "   - Important facts and decisions\n"
+                "   - Emotional moments and relationship dynamics\n"
+                "   - Key events and their outcomes\n"
+                "   - Any promises, plans, or commitments made\n\n"
+                "Remove all filler, pleasantries, and repetitive exchanges.\n\n"
+                f"Conversation:\n{history_text}"
+            )
+
+            response = self.key_manager.generate_content(
+                model=self.current_gatekeeper_model,
+                contents=prompt,
+                config=GenerateContentConfig(
+                    temperature=0.3,
+                    response_mime_type="application/json",
+                    response_schema=EpochSummary
+                )
+            )
+
+            if response.parsed:
+                return response.parsed
+
+            # Fallback: try to parse text manually
+            if response.text:
+                import json
+                data = json.loads(response.text)
+                return EpochSummary(**data)
+
+            # Last resort fallback
+            return EpochSummary(topics=[], participants=[], summary="Summary generation failed.")
+        except Exception as e:
+            logger.error(f"Error in structured summarization: {e}", exc_info=True)
+            # Fallback to plain summarization
+            try:
+                plain_summary = await self.summarize_history(history_messages)
+                return EpochSummary(topics=[], participants=[], summary=plain_summary)
+            except Exception:
+                return EpochSummary(topics=[], participants=[], summary="Summary generation failed.")
+
+    async def merge_epochs(self, epoch_texts: List[str]) -> str:
+        """Merge multiple epoch summaries into one condensed summary."""
+        combined = "\n\n---\n\n".join(epoch_texts)
+        return await self.summarize_text(combined)
+
+    async def check_fact_contradiction(self, existing_facts: List[Dict[str, Any]], new_fact: str) -> 'FactContradictionCheck':
+        """Check if a new fact contradicts any existing facts about a user."""
+        try:
+            facts_text = "\n".join([f"{i+1}. {f.get('fact', '')}" for i, f in enumerate(existing_facts)])
+
+            prompt = (
+                "You are checking whether a NEW fact about a user contradicts any of their EXISTING facts.\n\n"
+                f"Existing facts:\n{facts_text}\n\n"
+                f"New fact: {new_fact}\n\n"
+                "Rules:\n"
+                "- Only mark as contradiction if the new fact DIRECTLY contradicts a specific existing fact about the SAME topic.\n"
+                "- Example contradiction: 'hates coffee' contradicts 'loves coffee'\n"
+                "- NOT a contradiction: 'likes tea' does not contradict 'likes coffee' (different topics)\n"
+                "- NOT a contradiction: 'moved to Berlin' does not contradict 'lives in Odessa' — it's an UPDATE, treat as contradiction.\n"
+                "- If contradicted, return the EXACT text of the contradicted fact.\n"
+                "- Be conservative — when in doubt, mark has_contradiction as false."
+            )
+
+            response = self.key_manager.generate_content(
+                model=self.current_gatekeeper_model,
+                contents=prompt,
+                config=GenerateContentConfig(
+                    temperature=0.1,
+                    response_mime_type="application/json",
+                    response_schema=FactContradictionCheck
+                )
+            )
+
+            if response.parsed:
+                return response.parsed
+
+            if response.text:
+                import json
+                data = json.loads(response.text)
+                return FactContradictionCheck(**data)
+
+            return FactContradictionCheck(has_contradiction=False, contradicted_fact="", reasoning="Failed to parse response")
+        except Exception as e:
+            logger.error(f"Error checking fact contradiction: {e}")
+            return FactContradictionCheck(has_contradiction=False, contradicted_fact="", reasoning=f"Error: {e}")
 
 # Global instance
 _gatekeeper_instance = None
