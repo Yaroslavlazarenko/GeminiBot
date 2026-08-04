@@ -216,10 +216,10 @@ class AIService:
             
             local_calls_to_return = []
             final_text = ""
-            
+
             max_turns = 10
             turn = 0
-            
+
             while turn < max_turns:
                 turn += 1
                 response = self.key_manager.generate_content(
@@ -230,11 +230,9 @@ class AIService:
                         temperature=0.7,
                         tools=all_tools if all_tools else None,
                         automatic_function_calling=AutomaticFunctionCallingConfig(disable=True),
-                        response_mime_type="application/json",
-                        response_schema=AIResponse
                     )
                 )
-                
+
                 # Store model's response part
                 if response.candidates and response.candidates[0].content:
                     current_contents.append(response.candidates[0].content)
@@ -245,38 +243,30 @@ class AIService:
                 has_fc = bool(response.function_calls)
                 logger.info(f"AI turn {turn}: parsed={has_parsed}, text={has_text}, function_calls={has_fc}")
 
-                # Extract text using Pydantic schema
-                if response.parsed:
-                    ai_res: AIResponse = response.parsed
-                    logger.info(f"AI turn {turn} parsed: monologue={repr(ai_res.internal_monologue[:100]) if ai_res.internal_monologue else 'EMPTY'}, message={repr(ai_res.message[:100]) if ai_res.message else 'EMPTY'}")
-                    if ai_res.message:
-                        if final_text:
-                            final_text += "\n" + ai_res.message
-                        else:
-                            final_text = ai_res.message
-                    elif ai_res.internal_monologue and not response.function_calls:
-                        # Model filled monologue but left message empty — force one more turn
-                        logger.warning(f"AI turn {turn}: monologue filled but message empty, forcing another turn")
-                        current_contents.append(Content(
-                            role="user",
-                            parts=[{"text": "[SYSTEM: Your previous response had an empty 'message' field. You MUST provide a non-empty 'message' — this is what the user will see. Write your actual conversational response there.]"}]
-                        ))
-                        continue
-                elif response.text:
-                    # Fallback if parsing failed
+                # Extract text from response
+                if response.text:
+                    raw_text = response.text.strip()
+                    # Try to parse as AIResponse JSON
                     try:
                         import json
-                        data = json.loads(response.text)
+                        data = json.loads(raw_text)
                         msg = data.get("message", "")
                         if msg:
                             if final_text:
                                 final_text += "\n" + msg
                             else:
                                 final_text = msg
-                    except Exception:
-                        # Raw text fallback — use as-is if it's not JSON
-                        if not final_text:
-                            final_text = response.text
+                        elif not msg and not response.function_calls:
+                            # JSON parsed but message empty — use raw text as fallback
+                            if not final_text:
+                                final_text = raw_text
+                    except (json.JSONDecodeError, Exception):
+                        # Not JSON — use raw text directly
+                        if raw_text:
+                            if final_text:
+                                final_text += "\n" + raw_text
+                            else:
+                                final_text = raw_text
 
                 if not response.function_calls:
                     break
