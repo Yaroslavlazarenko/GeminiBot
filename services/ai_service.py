@@ -288,13 +288,22 @@ class AIService:
 
             while turn < max_turns:
                 turn += 1
+
+                # On the last turn, disable tools to force a text response
+                # This prevents infinite tool-call loops that produce no output
+                is_last_turn = turn == max_turns
+                turn_tools = None if is_last_turn else (all_tools if all_tools else None)
+
+                if is_last_turn and not final_text:
+                    logger.warning(f"AI reached max turns ({max_turns}) without text response. Forcing text-only generation.")
+
                 response = self.key_manager.generate_content(
                     model=self.current_api_model,
                     contents=current_contents,
                     config=GenerateContentConfig(
                         system_instruction=compiled_system_instruction,
                         temperature=0.7,
-                        tools=all_tools if all_tools else None,
+                        tools=turn_tools,
                         automatic_function_calling=AutomaticFunctionCallingConfig(disable=True),
                     )
                 )
