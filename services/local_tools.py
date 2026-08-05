@@ -89,13 +89,14 @@ def get_group_info() -> str:
     return f"Getting group info..."
 
 @mcp.tool(name=ToolName.SAVE_USER_FACT.value)
-def save_user_fact(user_id: int, fact: str, is_global: bool = False, category: str = "other") -> str:
-    """Save an important fact about a user permanently into your memory. If the new fact contradicts an existing fact, the old one will be automatically superseded.
+def save_user_fact(user_id: int, fact: str, is_global: bool = False, category: str = "other", confirmed: bool = False) -> str:
+    """Save an important fact about a user permanently into your memory. If the new fact contradicts an existing one, you will be asked to clarify with the user first before saving.
     Args:
         user_id: The exact Telegram ID of the user. You can find this in the [INTERLOCUTOR INFO] section.
         fact: A concise, clear sentence describing what you learned about the user.
         is_global: Set to True ONLY IF this is a completely harmless, public fact (e.g. 'likes pizza') that is safe to bring up in public group chats. Set to False if this is a personal secret, private context, or sensitive info.
         category: The category of this fact. Valid values: 'preference' (likes/dislikes, tastes), 'personal' (age, name, appearance, health), 'work' (job, studies, projects), 'relationship' (family, friends, romantic), 'other' (anything else).
+        confirmed: Set to True ONLY when you are re-saving a fact after the user has confirmed it resolves a previously detected contradiction. This skips the contradiction check.
     """
     return f"Saving fact for user {user_id}"
 

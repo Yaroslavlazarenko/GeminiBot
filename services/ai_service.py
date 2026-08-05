@@ -542,27 +542,66 @@ class AIService:
                             fact = call.args.get("fact", "")
                             is_global = call.args.get("is_global", False)
                             category = call.args.get("category", "other")
+                            confirmed = call.args.get("confirmed", False)
                             chat_title = sender_info.get("chat_title", "Unknown Context") if sender_info else "Unknown Context"
 
                             try:
                                 if not user_id or not fact:
                                     raise ValueError("Missing user_id or fact")
 
-                                # Check for contradictions with existing facts
-                                contradiction_info = ""
-                                try:
-                                    from services.gatekeeper_service import get_gatekeeper
-                                    gk = get_gatekeeper()
-                                    existing_facts = await chat_context._db.get_user_facts(int(user_id), chat_context.id)
-                                    if existing_facts:
-                                        check = await gk.check_fact_contradiction(existing_facts, fact)
-                                        if check.has_contradiction and check.contradicted_fact:
-                                            await chat_context._db.supersede_user_fact(
-                                                int(user_id), check.contradicted_fact, fact, chat_context.id
-                                            )
-                                            contradiction_info = f" (superseded old fact: '{check.contradicted_fact}')"
-                                except Exception as contra_err:
-                                    logger.warning(f"Fact contradiction check failed (saving anyway): {contra_err}")
+                                # Check for contradictions (skip if user already confirmed)
+                                if not confirmed:
+                                    try:
+                                        from services.gatekeeper_service import get_gatekeeper
+                                        gk = get_gatekeeper()
+                                        existing_facts = await chat_context._db.get_user_facts(int(user_id), chat_context.id)
+                                        if existing_facts:
+                                            check = await gk.check_fact_contradiction(existing_facts, fact)
+                                            if check.has_contradiction and check.contradicted_fact:
+                                                # Don't save yet — return the contradiction to the model
+                                                # so it can ask the user to clarify
+                                                response_parts.append(
+                                                    Part.from_function_response(
+                                                        name=call.name,
+                                                        response={
+                                                            "contradiction_detected": True,
+                                                            "new_fact": fact,
+                                                            "old_fact": check.contradicted_fact,
+                                                            "instruction": (
+                                                                "CONTRADICTION FOUND! You previously knew: \""
+                                                                + check.contradicted_fact
+                                                                + "\" but now the user says: \""
+                                                                + fact
+                                                                + "\". DO NOT save the fact yet. Instead, naturally and playfully ask the user "
+                                                                "to clarify which one is true. For example: \"Подожди, а раньше ты говорил что "
+                                                                + check.contradicted_fact
+                                                                + " — а сейчас выходит что "
+                                                                + fact
+                                                                + "? Что из этого правда? )\" "
+                                                                "Once the user confirms, call save_user_fact again with the correct fact "
+                                                                "and set confirmed=True."
+                                                            )
+                                                        }
+                                                    )
+                                                )
+                                                # Skip saving — the model will ask the user first
+                                                continue
+                                    except Exception as contra_err:
+                                        logger.warning(f"Fact contradiction check failed (saving anyway): {contra_err}")
+                                else:
+                                    # User confirmed — supersede the old contradicting fact
+                                    try:
+                                        from services.gatekeeper_service import get_gatekeeper
+                                        gk = get_gatekeeper()
+                                        existing_facts = await chat_context._db.get_user_facts(int(user_id), chat_context.id)
+                                        if existing_facts:
+                                            check = await gk.check_fact_contradiction(existing_facts, fact)
+                                            if check.has_contradiction and check.contradicted_fact:
+                                                await chat_context._db.supersede_user_fact(
+                                                    int(user_id), check.contradicted_fact, fact, chat_context.id
+                                                )
+                                    except Exception as sup_err:
+                                        logger.warning(f"Failed to supersede old fact after confirmation: {sup_err}")
 
                                 await chat_context._db.save_user_fact(
                                     int(user_id), fact, chat_title, chat_context.id, is_global, category=category
@@ -570,7 +609,7 @@ class AIService:
                                 response_parts.append(
                                     Part.from_function_response(
                                         name=call.name,
-                                        response={"result": f"Fact successfully saved permanently for user {user_id}.{contradiction_info}"}
+                                        response={"result": f"Fact successfully saved permanently for user {user_id}."}
                                     )
                                 )
                             except Exception as e:
