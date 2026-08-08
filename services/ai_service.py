@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from core.config import Config
@@ -294,8 +295,8 @@ class AIService:
                 is_last_turn = turn == max_turns
                 turn_tools = None if is_last_turn else (all_tools if all_tools else None)
 
-                if is_last_turn and not final_text:
-                    logger.warning(f"AI reached max turns ({max_turns}) without text response. Forcing text-only generation.")
+                if is_last_turn:
+                    logger.warning(f"AI reached max turns ({max_turns}). Forcing text-only generation on final turn.")
 
                 response = self.key_manager.generate_content(
                     model=self.current_api_model,
@@ -318,30 +319,10 @@ class AIService:
                 has_fc = bool(response.function_calls)
                 logger.info(f"AI turn {turn}: parsed={has_parsed}, text={has_text}, function_calls={has_fc}")
 
-                # Extract text from response
+                # Mid-loop text is reasoning/intermediate output — not captured.
+                # The final schema-enforced call (Phase 2) will generate the actual response.
                 if response.text:
-                    raw_text = response.text.strip()
-                    # Try to parse as AIResponse JSON
-                    try:
-                        import json
-                        data = json.loads(raw_text)
-                        msg = data.get("message", "")
-                        if msg:
-                            if final_text:
-                                final_text += "\n" + msg
-                            else:
-                                final_text = msg
-                        elif not msg and not response.function_calls:
-                            # JSON parsed but message empty — use raw text as fallback
-                            if not final_text:
-                                final_text = raw_text
-                    except (json.JSONDecodeError, Exception):
-                        # Not JSON — use raw text directly
-                        if raw_text:
-                            if final_text:
-                                final_text += "\n" + raw_text
-                            else:
-                                final_text = raw_text
+                    logger.debug(f"AI turn {turn}: mid-loop text (not captured): {response.text[:200]!r}")
 
                 if not response.function_calls:
                     break
@@ -915,7 +896,47 @@ class AIService:
                     
                 # Feed responses back into Gemini's generation loop
                 current_contents.append(Content(role="user", parts=response_parts))
-                
+
+            # --- Phase 2: Schema-enforced final generation ---
+            # After the tool loop completes, make one final call with response_schema
+            # to guarantee clean structured output (no reasoning leaks).
+            # This mirrors the pattern used in gatekeeper_service.py.
+            try:
+                final_response = self.key_manager.generate_content(
+                    model=self.current_api_model,
+                    contents=current_contents,
+                    config=GenerateContentConfig(
+                        system_instruction=compiled_system_instruction,
+                        temperature=0.7,
+                        response_mime_type="application/json",
+                        response_schema=AIResponse,
+                    )
+                )
+
+                ai_response: AIResponse = final_response.parsed
+
+                if ai_response and ai_response.message:
+                    logger.info(
+                        f"AI structured response: monologue={ai_response.internal_monologue[:100]!r}"
+                    )
+                    final_text = ai_response.message
+                else:
+                    # Fallback: parsed was None, try json.loads on raw text
+                    raw = (final_response.text or "").strip()
+                    if raw:
+                        try:
+                            data = json.loads(raw)
+                            final_text = data.get("message", "") or raw
+                        except (json.JSONDecodeError, Exception):
+                            final_text = raw
+                    else:
+                        final_text = ""
+                        logger.warning("AI final schema call returned empty response.")
+
+            except Exception as schema_exc:
+                logger.error(f"AI final schema call failed: {schema_exc}", exc_info=True)
+                # final_text remains "" — handlers already handle empty text alongside local_calls
+
             return final_text, local_calls_to_return
             
         except Exception as e:
