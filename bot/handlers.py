@@ -232,7 +232,10 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
     
     # Gatekeeper check (BEFORE saving to history, so the message doesn't appear
     # both in history and as the "new message" in the prompt — that caused duplicates)
-    action = await gatekeeper.decide(combined_text, chat_context)
+    if chat_context.is_group:
+        action = await gatekeeper.decide(combined_text, chat_context)
+    else:
+        action = GatekeeperAction.RESPOND
     
     if action == GatekeeperAction.IGNORE:
         # Save user message to DB even when ignored, to keep history complete
