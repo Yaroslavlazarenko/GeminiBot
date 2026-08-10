@@ -27,6 +27,15 @@ STICKER_CACHE_TTL = 3600 # 1 hour
 burst_timers = {}
 burst_queues = {}
 
+# Generation lock per chat — prevents concurrent AI generation for the same chat
+generation_locks = {}   # chat_id -> asyncio.Lock
+
+def _get_generation_lock(chat_id: int) -> asyncio.Lock:
+    """Return (creating if needed) the asyncio.Lock for a given chat_id."""
+    if chat_id not in generation_locks:
+        generation_locks[chat_id] = asyncio.Lock()
+    return generation_locks[chat_id]
+
 # Initialize the main router
 router = Router()
 ai_service = get_ai_service()
@@ -230,160 +239,165 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
     
     msg_timestamp = last_message.date.strftime("%H:%M") if last_message.date else None
     
-    # Gatekeeper check (BEFORE saving to history, so the message doesn't appear
-    # both in history and as the "new message" in the prompt — that caused duplicates)
-    if chat_context.is_group:
-        action = await gatekeeper.decide(combined_text, chat_context)
-    else:
-        action = GatekeeperAction.RESPOND
-    
-    if action == GatekeeperAction.IGNORE:
-        # Save user message to DB even when ignored, to keep history complete
-        if combined_db_text:
-            await chat_context.add_message(
-                "user",
-                combined_db_text,
-                last_message.message_id,
-                timestamp=msg_timestamp,
-                reactions=None
-            )
-        return
+    # Acquire per-chat generation lock — prevents concurrent AI generation for the same chat.
+    # While the lock is held, new messages for this chat will accumulate in burst_queues
+    # and be processed after the current generation finishes (with the bot's response already in history).
+    lock = _get_generation_lock(chat_id)
+    async with lock:
+        # Gatekeeper check (BEFORE saving to history, so the message doesn't appear
+        # both in history and as the "new message" in the prompt — that caused duplicates)
+        if chat_context.is_group:
+            action = await gatekeeper.decide(combined_text, chat_context)
+        else:
+            action = GatekeeperAction.RESPOND
 
-    # Proceed with Persona response
-    async with ChatActionSender.typing(bot=last_message.bot, chat_id=last_message.chat.id):
-        # Update user in DB with latest metadata dynamically
-        await chat_context._db.get_or_create_user(
-            telegram_id=last_message.from_user.id,
-            username=last_message.from_user.username,
-            first_name=last_message.from_user.first_name,
-            last_name=last_message.from_user.last_name
-        )
+        if action == GatekeeperAction.IGNORE:
+            # Save user message to DB even when ignored, to keep history complete
+            if combined_db_text:
+                await chat_context.add_message(
+                    "user",
+                    combined_db_text,
+                    last_message.message_id,
+                    timestamp=msg_timestamp,
+                    reactions=None
+                )
+            return
 
-        # Get avatar description
-        avatar_desc = await AvatarService.get_and_describe_avatar(
-            bot=last_message.bot,
-            user_id=last_message.from_user.id,
-            db_manager=chat_context._db
-        )
-
-        chat_title = last_message.chat.title if chat_context.is_group else "Private Chat"
-        sender_info = {
-            "user_id": last_message.from_user.id,
-            "first_name": last_message.from_user.first_name,
-            "last_name": last_message.from_user.last_name,
-            "username": last_message.from_user.username,
-            "language_code": last_message.from_user.language_code,
-            "avatar_description": avatar_desc,
-            "bot": last_message.bot,
-            "chat_id": last_message.chat.id,
-            "chat_title": chat_title,
-            "message_id": last_message.message_id,
-            "timestamp": msg_timestamp
-        }
-
-        # Save user message BEFORE generation (crash-safe), but marked pending
-        # so _convert_history_to_gemini() skips it (preventing duplication)
-        if combined_db_text:
-            await chat_context.add_message(
-                "user",
-                combined_db_text,
-                last_message.message_id,
-                timestamp=msg_timestamp,
-                reactions=None,
-                pending=True
+        # Proceed with Persona response
+        async with ChatActionSender.typing(bot=last_message.bot, chat_id=last_message.chat.id):
+            # Update user in DB with latest metadata dynamically
+            await chat_context._db.get_or_create_user(
+                telegram_id=last_message.from_user.id,
+                username=last_message.from_user.username,
+                first_name=last_message.from_user.first_name,
+                last_name=last_message.from_user.last_name
             )
 
-        # Generate Response — the pending message won't appear in Gemini history
-        response_text, tool_calls = await ai_service.generate_response(combined_text, chat_context, media_list, sender_info)
+            # Get avatar description
+            avatar_desc = await AvatarService.get_and_describe_avatar(
+                bot=last_message.bot,
+                user_id=last_message.from_user.id,
+                db_manager=chat_context._db
+            )
 
-        # Confirm the pending message — it's now safe to appear in future history conversions
-        if combined_db_text:
-            chat_context.confirm_message(last_message.message_id)
+            chat_title = last_message.chat.title if chat_context.is_group else "Private Chat"
+            sender_info = {
+                "user_id": last_message.from_user.id,
+                "first_name": last_message.from_user.first_name,
+                "last_name": last_message.from_user.last_name,
+                "username": last_message.from_user.username,
+                "language_code": last_message.from_user.language_code,
+                "avatar_description": avatar_desc,
+                "bot": last_message.bot,
+                "chat_id": last_message.chat.id,
+                "chat_title": chat_title,
+                "message_id": last_message.message_id,
+                "timestamp": msg_timestamp
+            }
 
-    logger.info(f"AI returned: response_text={repr(response_text[:200]) if response_text else 'EMPTY'}, tool_calls={len(tool_calls)}")
+            # Save user message BEFORE generation (crash-safe), but marked pending
+            # so _convert_history_to_gemini() skips it (preventing duplication)
+            if combined_db_text:
+                await chat_context.add_message(
+                    "user",
+                    combined_db_text,
+                    last_message.message_id,
+                    timestamp=msg_timestamp,
+                    reactions=None,
+                    pending=True
+                )
 
-    db_response_text = ""
-    bot_msg_to_save = None
-    
-    # Store requested reply parameters locally (Message object is frozen)
-    requested_reply_id = None
-    requested_reply_quote = ""
+            # Generate Response — the pending message won't appear in Gemini history
+            response_text, tool_calls = await ai_service.generate_response(combined_text, chat_context, media_list, sender_info)
 
-    from core.engine.tool_executor import ToolExecutorService
-    db_response_text, bot_msg_to_save, requested_reply_id, requested_reply_quote, response_text = await ToolExecutorService.execute_local_tools(
-        last_message, chat_context, tool_calls, response_text
-    )
+            # Confirm the pending message — it's now safe to appear in future history conversions
+            if combined_db_text:
+                chat_context.confirm_message(last_message.message_id)
 
-    if response_text:
-        import re
-        import html
-        # Clean up literal "\n" strings that the model sometimes outputs by mistake
-        response_text = response_text.replace("\\n", "\n")
-        # Normalize excessive newlines (3 or more) into exactly two (\n\n)
-        response_text = re.sub(r'\n{3,}', '\n\n', response_text)
-        
-        # Telegram HTML parser is very strict. It breaks on raw '<' or '>' signs that aren't valid tags (like <b>, <i>, <code>).
-        # We need to escape '<' and '>' that are used in normal text or math, but preserve legitimate markdown/html if possible.
-        # Since Gemini natively outputs markdown, we either need a proper markdown-to-html converter, or we strip/escape bad tags.
-        # For safety against "Unsupported start tag", we will escape `<` and `>` unless they are part of supported HTML tags.
-        supported_tags = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'span', 'tg-spoiler', 'a', 'code', 'pre', 'tg-emoji']
-        
-        # A simple approach to protect rogue '<' signs is to replace them with &lt;
-        # A more robust fix for this specific aiogram/telegram issue when using parse_mode="HTML" is to just use a fallback mechanism
-        
-        parts = [p.strip() for p in response_text.split('\n\n') if p.strip()]
-        
-        for i, part in enumerate(parts):
-            bot_message = None
-            try:
-                if requested_reply_id and i == 0:
-                    try:
-                        if requested_reply_quote:
-                            reply_params = ReplyParameters(message_id=int(requested_reply_id), quote=requested_reply_quote)
-                        else:
-                            reply_params = ReplyParameters(message_id=int(requested_reply_id))
+        logger.info(f"AI returned: response_text={repr(response_text[:200]) if response_text else 'EMPTY'}, tool_calls={len(tool_calls)}")
 
-                        bot_message = await last_message.bot.send_message(
-                            chat_id=last_message.chat.id,
-                            text=part,
-                            reply_parameters=reply_params
-                        )
-                    except Exception as reply_err:
-                        logger.warning(f"Failed to send with reply_to {requested_reply_id}, falling back to normal reply: {reply_err}")
-                        requested_reply_id = None  # Don't retry with broken reply_id
-                        if chat_context.is_group:
-                            bot_message = await last_message.reply(part)
-                        else:
-                            bot_message = await last_message.answer(part)
-                elif chat_context.is_group and i == 0:
-                    bot_message = await last_message.reply(part)
-                else:
-                    bot_message = await last_message.answer(part)
-            except Exception as e:
-                logger.warning(f"Failed to send message chunk due to formatting error, retrying safely: {e}")
-                # Fallback: strip HTML/Markdown tags and send as plain text
-                safe_part = html.escape(part)
+        db_response_text = ""
+        bot_msg_to_save = None
 
+        # Store requested reply parameters locally (Message object is frozen)
+        requested_reply_id = None
+        requested_reply_quote = ""
+
+        from core.engine.tool_executor import ToolExecutorService
+        db_response_text, bot_msg_to_save, requested_reply_id, requested_reply_quote, response_text = await ToolExecutorService.execute_local_tools(
+            last_message, chat_context, tool_calls, response_text
+        )
+
+        if response_text:
+            import re
+            import html
+            # Clean up literal "\n" strings that the model sometimes outputs by mistake
+            response_text = response_text.replace("\\n", "\n")
+            # Normalize excessive newlines (3 or more) into exactly two (\n\n)
+            response_text = re.sub(r'\n{3,}', '\n\n', response_text)
+
+            # Telegram HTML parser is very strict. It breaks on raw '<' or '>' signs that aren't valid tags (like <b>, <i>, <code>).
+            # We need to escape '<' and '>' that are used in normal text or math, but preserve legitimate markdown/html if possible.
+            # Since Gemini natively outputs markdown, we either need a proper markdown-to-html converter, or we strip/escape bad tags.
+            # For safety against "Unsupported start tag", we will escape `<` and `>` unless they are part of supported HTML tags.
+            supported_tags = ['b', 'strong', 'i', 'em', 'u', 'ins', 's', 'strike', 'del', 'span', 'tg-spoiler', 'a', 'code', 'pre', 'tg-emoji']
+
+            # A simple approach to protect rogue '<' signs is to replace them with &lt;
+            # A more robust fix for this specific aiogram/telegram issue when using parse_mode="HTML" is to just use a fallback mechanism
+
+            parts = [p.strip() for p in response_text.split('\n\n') if p.strip()]
+
+            for i, part in enumerate(parts):
+                bot_message = None
                 try:
-                    if chat_context.is_group and i == 0:
-                        bot_message = await last_message.reply(safe_part, parse_mode=None)
-                    else:
-                        bot_message = await last_message.answer(safe_part, parse_mode=None)
-                except Exception as e2:
-                    logger.error(f"Failed to send even plain text fallback: {e2}")
-                
-            if bot_message:
-                await chat_context.add_message("model", part, bot_message.message_id)
-            
-            if i < len(parts) - 1:
-                await last_message.bot.send_chat_action(chat_id=last_message.chat.id, action="typing")
-                await asyncio.sleep(1.0)
-                
-    if db_response_text and bot_msg_to_save:
-        await chat_context.add_message("model", db_response_text.strip(), bot_msg_to_save.message_id)
+                    if requested_reply_id and i == 0:
+                        try:
+                            if requested_reply_quote:
+                                reply_params = ReplyParameters(message_id=int(requested_reply_id), quote=requested_reply_quote)
+                            else:
+                                reply_params = ReplyParameters(message_id=int(requested_reply_id))
 
-    # History Optimization
-    await trigger_summarization_if_needed(chat_context, gatekeeper)
+                            bot_message = await last_message.bot.send_message(
+                                chat_id=last_message.chat.id,
+                                text=part,
+                                reply_parameters=reply_params
+                            )
+                        except Exception as reply_err:
+                            logger.warning(f"Failed to send with reply_to {requested_reply_id}, falling back to normal reply: {reply_err}")
+                            requested_reply_id = None  # Don't retry with broken reply_id
+                            if chat_context.is_group:
+                                bot_message = await last_message.reply(part)
+                            else:
+                                bot_message = await last_message.answer(part)
+                    elif chat_context.is_group and i == 0:
+                        bot_message = await last_message.reply(part)
+                    else:
+                        bot_message = await last_message.answer(part)
+                except Exception as e:
+                    logger.warning(f"Failed to send message chunk due to formatting error, retrying safely: {e}")
+                    # Fallback: strip HTML/Markdown tags and send as plain text
+                    safe_part = html.escape(part)
+
+                    try:
+                        if chat_context.is_group and i == 0:
+                            bot_message = await last_message.reply(safe_part, parse_mode=None)
+                        else:
+                            bot_message = await last_message.answer(safe_part, parse_mode=None)
+                    except Exception as e2:
+                        logger.error(f"Failed to send even plain text fallback: {e2}")
+
+                if bot_message:
+                    await chat_context.add_message("model", part, bot_message.message_id)
+
+                if i < len(parts) - 1:
+                    await last_message.bot.send_chat_action(chat_id=last_message.chat.id, action="typing")
+                    await asyncio.sleep(1.0)
+
+        if db_response_text and bot_msg_to_save:
+            await chat_context.add_message("model", db_response_text.strip(), bot_msg_to_save.message_id)
+
+        # History Optimization
+        await trigger_summarization_if_needed(chat_context, gatekeeper)
 
 @router.message(filters.Command("admin"))
 async def admin_command(message: Message, chat_context: ChatContext):

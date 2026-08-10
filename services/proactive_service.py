@@ -440,65 +440,70 @@ class ProactiveService:
             "Don't be formal, don't start with greetings like 'hey' unless it fits naturally."
         )
 
-        try:
-            response = self._key_manager.generate_content(
-                model=model,
-                contents=[Content(role="user", parts=[Part(text=prompt)])],
-                config=GenerateContentConfig(
-                    system_instruction=system_instruction,
-                    temperature=0.8,
-                    response_mime_type="application/json",
-                    response_schema=ProactiveMessageDecision
+        # Acquire per-chat generation lock — same lock used by user-message handlers
+        # to prevent concurrent AI generation + history writes for the same chat.
+        from bot.handlers import _get_generation_lock
+        lock = _get_generation_lock(chat_id)
+        async with lock:
+            try:
+                response = self._key_manager.generate_content(
+                    model=model,
+                    contents=[Content(role="user", parts=[Part(text=prompt)])],
+                    config=GenerateContentConfig(
+                        system_instruction=system_instruction,
+                        temperature=0.8,
+                        response_mime_type="application/json",
+                        response_schema=ProactiveMessageDecision
+                    )
                 )
-            )
 
-            decision = None
-            if response.parsed:
-                decision = response.parsed
-            elif response.text:
-                import json
-                data = json.loads(response.text)
-                decision = ProactiveMessageDecision(**data)
+                decision = None
+                if response.parsed:
+                    decision = response.parsed
+                elif response.text:
+                    import json
+                    data = json.loads(response.text)
+                    decision = ProactiveMessageDecision(**data)
 
-            if not decision or not decision.should_message or not decision.message.strip():
-                logger.info(f"Proactive: Mia chose NOT to message {chat_name}"
-                           f" (reason: {decision.reasoning if decision else 'no decision'})")
+                if not decision or not decision.should_message or not decision.message.strip():
+                    logger.info(f"Proactive: Mia chose NOT to message {chat_name}"
+                               f" (reason: {decision.reasoning if decision else 'no decision'})")
+                    return False
+
+                # Send the message
+                message_text = decision.message.strip()
+                logger.info(f"Proactive: Mia sending message to {chat_name}: {message_text[:100]}...")
+
+                sent_msg = await self._bot.send_message(chat_id=chat_id, text=message_text)
+
+                # Save to history
+                from core.database import ChatContext
+                doc = chat_doc
+                ctx = ChatContext(self._db, chat_id, is_group, doc)
+                await ctx.add_message("model", message_text, sent_msg.message_id)
+
+                # Update proactive state
+                now_utc = datetime.utcnow()
+                proactive_state = chat_doc.get("proactive", {})
+                consecutive = proactive_state.get("consecutive_ignored", 0)
+
+                # If previous message was also unanswered, increment
+                if proactive_state.get("awaiting_reply", False):
+                    consecutive += 1
+
+                await collection.update_one(
+                    {id_field: chat_id},
+                    {"$set": {
+                        "proactive.last_proactive_sent_at": now_utc,
+                        "proactive.last_proactive_message_id": sent_msg.message_id,
+                        "proactive.awaiting_reply": True,
+                        "proactive.consecutive_ignored": consecutive
+                    }}
+                )
+
+                logger.info(f"Proactive message sent to {chat_name} (msg_id: {sent_msg.message_id})")
+                return True
+
+            except Exception as e:
+                logger.error(f"Failed to generate/send proactive message to {chat_name}: {e}", exc_info=True)
                 return False
-
-            # Send the message
-            message_text = decision.message.strip()
-            logger.info(f"Proactive: Mia sending message to {chat_name}: {message_text[:100]}...")
-
-            sent_msg = await self._bot.send_message(chat_id=chat_id, text=message_text)
-
-            # Save to history
-            from core.database import ChatContext
-            doc = chat_doc
-            ctx = ChatContext(self._db, chat_id, is_group, doc)
-            await ctx.add_message("model", message_text, sent_msg.message_id)
-
-            # Update proactive state
-            now_utc = datetime.utcnow()
-            proactive_state = chat_doc.get("proactive", {})
-            consecutive = proactive_state.get("consecutive_ignored", 0)
-
-            # If previous message was also unanswered, increment
-            if proactive_state.get("awaiting_reply", False):
-                consecutive += 1
-
-            await collection.update_one(
-                {id_field: chat_id},
-                {"$set": {
-                    "proactive.last_proactive_sent_at": now_utc,
-                    "proactive.last_proactive_message_id": sent_msg.message_id,
-                    "proactive.awaiting_reply": True,
-                    "proactive.consecutive_ignored": consecutive
-                }}
-            )
-
-            logger.info(f"Proactive message sent to {chat_name} (msg_id: {sent_msg.message_id})")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to generate/send proactive message to {chat_name}: {e}", exc_info=True)
-            return False
