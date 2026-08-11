@@ -1,5 +1,6 @@
 import logging
 import asyncio
+import httpx
 from aiogram import Router, filters, F
 from aiogram.types import Message, BufferedInputFile, MessageReactionUpdated, ReplyParameters
 from aiogram.utils.chat_action import ChatActionSender
@@ -399,22 +400,38 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
         # History Optimization
         await trigger_summarization_if_needed(chat_context, gatekeeper)
 
+async def _get_server_ip() -> str:
+    """Get the external IP address of the server."""
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get("https://api.ipify.org")
+            return resp.text.strip()
+    except Exception:
+        return None
+
 @router.message(filters.Command("admin"))
 async def admin_command(message: Message, chat_context: ChatContext):
     # Check if the user is the authorized admin
     if message.from_user.id != config.admin_telegram_id:
         return
-        
+
     token = create_admin_session()
-    
-    # We provide a hint that they need to replace the IP with their server's actual IP
-    text = (
-        f"🔐 **Admin Panel Access**\n\n"
-        f"Here is your temporary, secure access link. Please open it in your browser:\n\n"
-        f"`http://<YOUR_SERVER_IP>:{config.admin_port}/?token={token}`\n\n"
-        f"_(Replace <YOUR_SERVER_IP> with the actual IP address of your server)._"
-    )
-    await message.answer(text, parse_mode="Markdown")
+    server_ip = await _get_server_ip()
+
+    if server_ip:
+        url = f"http://{server_ip}:{config.admin_port}/?token={token}"
+        text = (
+            f"🔐 <b>Admin Panel Access</b>\n\n"
+            f"Here is your temporary, secure access link:\n\n"
+            f'<a href="{url}">{url}</a>'
+        )
+    else:
+        text = (
+            f"🔐 <b>Admin Panel Access</b>\n\n"
+            f"Could not detect server IP. Open manually:\n\n"
+            f"<code>http://&lt;YOUR_SERVER_IP&gt;:{config.admin_port}/?token={token}</code>"
+        )
+    await message.answer(text, parse_mode="HTML")
 
 @router.message(filters.Command("start", "help"))
 async def start_command(message: Message, chat_context: ChatContext):
