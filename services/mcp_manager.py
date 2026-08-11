@@ -98,10 +98,15 @@ class MCPConnectionManager:
         self.adapters_map = {}
         self.mcp_declarations = []
         self._connected = False
+        self._connect_lock = asyncio.Lock()
 
     async def connect(self):
-        if self._connected or not self.config_json or self.config_json == "{}" or self.config_json == "":
-            return
+        async with self._connect_lock:
+            if self._connected or not self.config_json or self.config_json == "{}" or self.config_json == "":
+                return
+            await self._do_connect()
+
+    async def _do_connect(self):
         
         try:
             connections = json.loads(self.config_json)
@@ -226,6 +231,10 @@ class MCPConnectionManager:
                 await s.aclose()
             except Exception:
                 pass
+        self.server_stacks.clear()
+        self.adapters_map.clear()
+        self.mcp_declarations.clear()
+        self._connected = False
 
     def _create_transport_context(self, name: str, config: dict):
         url = config.get("url")
