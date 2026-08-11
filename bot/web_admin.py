@@ -95,9 +95,11 @@ HTML_TEMPLATE = """
                     <table class="min-w-full divide-y divide-gray-200" id="mcp-table">
                         <thead class="bg-gray-50">
                             <tr>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/3">Server Name / Alias</th>
-                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/2">SSE Endpoints / URLs</th>
-                                <th scope="col" class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style="width:15%">Server Name</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style="width:30%">URL</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style="width:10%">Type</th>
+                                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" style="width:35%">Headers (JSON)</th>
+                                <th scope="col" class="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider" style="width:10%">Action</th>
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200" id="mcp-rows">
@@ -219,20 +221,40 @@ HTML_TEMPLATE = """
     </div>
 
     <script>
-        function addMcpRow(name = '', url = '') {
+        function addMcpRow(name = '', url = '', type = '', headers = '') {
             const tbody = document.getElementById('mcp-rows');
             const rowId = 'mcp-row-' + Date.now() + '-' + Math.random().toString(36).substr(2, 9);
-            
+
             const tr = document.createElement('tr');
             tr.id = rowId;
             tr.className = 'hover:bg-gray-50 transition duration-150';
-            
+
+            // Format headers for display
+            let headersDisplay = '';
+            if (typeof headers === 'object' && headers !== null) {
+                headersDisplay = Object.keys(headers).length > 0 ? JSON.stringify(headers, null, 2) : '';
+            } else if (typeof headers === 'string') {
+                headersDisplay = headers;
+            }
+
+            const sseSelected = type === 'sse' ? 'selected' : '';
+            const streamSelected = type !== 'sse' ? 'selected' : '';
+
             tr.innerHTML = `
                 <td class="px-4 py-3">
-                    <input type="text" value="${name}" placeholder="e.g. math" class="mcp-name shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md py-1.5 px-3 border">
+                    <input type="text" value="${name}" placeholder="e.g. exa" class="mcp-name shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md py-1.5 px-3 border">
                 </td>
                 <td class="px-4 py-3">
-                    <input type="url" value="${url}" placeholder="https://mathematics.fastmcp.app/mcp" class="mcp-url shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md py-1.5 px-3 border">
+                    <input type="url" value="${url}" placeholder="https://mcp.example.com/sse" class="mcp-url shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md py-1.5 px-3 border">
+                </td>
+                <td class="px-4 py-3">
+                    <select class="mcp-type shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md py-1.5 px-2 border">
+                        <option value="sse" ${sseSelected}>SSE</option>
+                        <option value="streamable" ${streamSelected}>Streamable</option>
+                    </select>
+                </td>
+                <td class="px-4 py-3">
+                    <textarea placeholder='{"x-api-key": "..."}' rows="2" class="mcp-headers shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md py-1.5 px-3 border font-mono text-xs">${headersDisplay}</textarea>
                 </td>
                 <td class="px-4 py-3 text-center">
                     <button type="button" onclick="removeMcpRow('${rowId}')" class="text-red-600 hover:text-red-900 font-bold px-3 py-1.5 border border-red-200 hover:border-red-400 rounded-md transition duration-150 bg-red-50 hover:bg-red-100">
@@ -253,13 +275,26 @@ HTML_TEMPLATE = """
         function serializeMcpTable() {
             const names = document.querySelectorAll('.mcp-name');
             const urls = document.querySelectorAll('.mcp-url');
+            const types = document.querySelectorAll('.mcp-type');
+            const headers = document.querySelectorAll('.mcp-headers');
             const config = {};
-            
+
             for (let i = 0; i < names.length; i++) {
                 const name = names[i].value.trim();
                 const url = urls[i].value.trim();
+                const type = types[i].value;
+                const headersStr = headers[i].value.trim();
                 if (name && url) {
-                    config[name] = { "url": url };
+                    const entry = { "url": url, "type": type };
+                    if (headersStr) {
+                        try {
+                            entry["headers"] = JSON.parse(headersStr);
+                        } catch (e) {
+                            showAlert(`Invalid JSON in headers for "${name}". Please fix it.`, "red");
+                            return null;
+                        }
+                    }
+                    config[name] = entry;
                 }
             }
             return JSON.stringify(config);
@@ -268,13 +303,15 @@ HTML_TEMPLATE = """
         function populateMcpTable(mcpJsonStr) {
             const tbody = document.getElementById('mcp-rows');
             tbody.innerHTML = '';
-            
+
             try {
                 const config = JSON.parse(mcpJsonStr || '{}');
                 let hasRows = false;
                 for (const [name, value] of Object.entries(config)) {
                     const url = value && value.url ? value.url : '';
-                    addMcpRow(name, url);
+                    const type = value && value.type ? value.type : 'sse';
+                    const headers = value && value.headers ? value.headers : {};
+                    addMcpRow(name, url, type, headers);
                     hasRows = true;
                 }
                 if (!hasRows) {
@@ -338,6 +375,7 @@ HTML_TEMPLATE = """
             
             // Build MCP JSON config from visual table rows
             const mcpConfig = serializeMcpTable();
+            if (mcpConfig === null) return; // validation failed
 
             const payload = {
                 gemini_api_model: document.getElementById('gemini_api_model').value.trim(),
