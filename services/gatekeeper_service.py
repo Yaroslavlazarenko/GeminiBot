@@ -131,10 +131,13 @@ class GatekeeperService:
                     elif call.name == ToolName.GET_HISTORY_BY_DATE.value:
                         import datetime as dt_module
                         from datetime import timezone, timedelta
+                        try:
+                            from zoneinfo import ZoneInfo
+                            odessa_tz = ZoneInfo("Europe/Kyiv")
+                        except Exception:
+                            odessa_tz = timezone(timedelta(hours=3))
                         days_ago = call.args.get("days_ago", 0)
                         limit = call.args.get("limit", 20)
-                        # Use Odessa timezone (UTC+3) for day boundaries
-                        odessa_tz = timezone(timedelta(hours=3))
                         now_odessa = dt_module.datetime.now(odessa_tz)
                         target_date = now_odessa - dt_module.timedelta(days=days_ago)
                         start_of_day_local = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -146,7 +149,13 @@ class GatekeeperService:
                         }).sort("date", -1).limit(limit)
                         results = []
                         async for msg in cursor:
-                            date_str = msg["date"].strftime("%Y-%m-%d %H:%M") if "date" in msg else "Unknown"
+                            if "date" in msg and msg["date"]:
+                                d = msg["date"]
+                                if d.tzinfo is None:
+                                    d = d.replace(tzinfo=timezone.utc)
+                                date_str = d.astimezone(odessa_tz).strftime("%Y-%m-%d %H:%M")
+                            else:
+                                date_str = "Unknown"
                             results.append(f"[{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
                         results.reverse()
                         response_parts.append(

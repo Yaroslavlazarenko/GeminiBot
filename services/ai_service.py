@@ -162,9 +162,13 @@ class AIService:
                 
             current_contents = gemini_history + [{"role": "user", "parts": current_turn_parts}]
             
-            # Calculate Odessa local time (UTC+3)
+            # Calculate Odessa local time (Europe/Kyiv)
             from datetime import datetime, timezone, timedelta
-            odessa_tz = timezone(timedelta(hours=3))
+            try:
+                from zoneinfo import ZoneInfo
+                odessa_tz = ZoneInfo("Europe/Kyiv")
+            except Exception:
+                odessa_tz = timezone(timedelta(hours=3))
             now_odessa = datetime.now(odessa_tz)
             time_str = now_odessa.strftime("%Y-%m-%d %H:%M:%S (%A)")
 
@@ -172,6 +176,7 @@ class AIService:
             time_context = (
                 f"\n\n--- DYNAMIC CONTEXT (SYSTEM TIME) ---\n"
                 f"Current local time in Odessa, Ukraine (your city): {time_str}\n"
+                f"All message timestamps [HH:MM] in the chat history are already in your local Odessa time. Never confuse timezones or miscalculate how long ago a message was sent.\n"
             )
 
             sender_context = ""
@@ -416,23 +421,33 @@ class AIService:
                             except (ValueError, TypeError):
                                 limit = 20
 
-                            # Use Odessa timezone (UTC+3) for day boundaries
-                            odessa_tz = timezone(timedelta(hours=3))
+                            # Use Odessa timezone (Europe/Kyiv) for day boundaries
+                            try:
+                                from zoneinfo import ZoneInfo
+                                odessa_tz = ZoneInfo("Europe/Kyiv")
+                            except Exception:
+                                odessa_tz = timezone(timedelta(hours=3))
                             now_odessa = dt_module.datetime.now(odessa_tz)
                             target_date = now_odessa - dt_module.timedelta(days=days_ago)
                             # Midnight in Odessa, converted to UTC for DB query
                             start_of_day_local = target_date.replace(hour=0, minute=0, second=0, microsecond=0)
                             start_of_day_utc = start_of_day_local.astimezone(timezone.utc).replace(tzinfo=None)
                             end_of_day_utc = start_of_day_utc + dt_module.timedelta(days=1)
-                            
+
                             cursor = chat_context._db.messages.find({
                                 "chat_id": chat_context.id,
                                 "date": {"$gte": start_of_day_utc, "$lt": end_of_day_utc}
                             }).sort("date", -1).limit(limit)
-                            
+
                             results = []
                             async for msg in cursor:
-                                date_str = msg["date"].strftime("%Y-%m-%d %H:%M") if "date" in msg else "Unknown"
+                                if "date" in msg and msg["date"]:
+                                    d = msg["date"]
+                                    if d.tzinfo is None:
+                                        d = d.replace(tzinfo=timezone.utc)
+                                    date_str = d.astimezone(odessa_tz).strftime("%Y-%m-%d %H:%M")
+                                else:
+                                    date_str = "Unknown"
                                 msg_id = msg.get("message_id", "?")
                                 results.append(f"[MsgID: {msg_id}] [{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
                                 

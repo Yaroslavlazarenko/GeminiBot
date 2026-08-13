@@ -113,7 +113,11 @@ class ProactiveService:
     async def _pick_research_topic(self, system_instruction: str, model: str,
                                      recent_topics: List[str], seed_topics: str) -> Optional[ResearchDecision]:
         """Ask Mia to pick an interesting topic to research."""
-        odessa_tz = timezone(timedelta(hours=3))
+        try:
+            from zoneinfo import ZoneInfo
+            odessa_tz = ZoneInfo("Europe/Kyiv")
+        except Exception:
+            odessa_tz = timezone(timedelta(hours=3))
         now = datetime.now(odessa_tz)
         time_str = now.strftime("%Y-%m-%d %H:%M (%A)")
 
@@ -391,7 +395,11 @@ class ProactiveService:
                 pass
 
         # Build the prompt for Mia
-        odessa_tz = timezone(timedelta(hours=3))
+        try:
+            from zoneinfo import ZoneInfo
+            odessa_tz = ZoneInfo("Europe/Kyiv")
+        except Exception:
+            odessa_tz = timezone(timedelta(hours=3))
         now = datetime.now(odessa_tz)
         time_str = now.strftime("%Y-%m-%d %H:%M (%A)")
 

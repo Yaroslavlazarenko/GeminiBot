@@ -6,8 +6,12 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Mia's timezone (Odessa, UTC+3)
-ODESSA_TZ = timezone(timedelta(hours=3))
+# Mia's timezone (Odessa, Ukraine)
+try:
+    from zoneinfo import ZoneInfo
+    ODESSA_TZ = ZoneInfo("Europe/Kyiv")
+except Exception:
+    ODESSA_TZ = timezone(timedelta(hours=3))
 
 
 class ProactiveScheduler:

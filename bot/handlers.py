@@ -16,6 +16,19 @@ from core.enums import GatekeeperAction, ToolName
 
 import time
 import random
+from datetime import datetime, timezone, timedelta
+try:
+    from zoneinfo import ZoneInfo
+    ODESSA_TZ = ZoneInfo("Europe/Kyiv")
+except Exception:
+    ODESSA_TZ = timezone(timedelta(hours=3))
+
+def _format_odessa_time(dt: datetime) -> str:
+    if not dt:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ODESSA_TZ).strftime("%H:%M")
 from services.avatar_service import AvatarService
 
 logger = logging.getLogger(__name__)
@@ -115,8 +128,7 @@ async def trigger_summarization_if_needed(chat_context: ChatContext, gatekeeper)
     first_ts = messages_to_summarize[0].get("timestamp", "?")
     last_ts = messages_to_summarize[-1].get("timestamp", "?")
 
-    from datetime import datetime
-    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+    today_str = datetime.now(ODESSA_TZ).strftime("%Y-%m-%d")
 
     # Build the epoch entry
     topics_str = ", ".join(epoch_summary.topics) if epoch_summary.topics else "general conversation"
@@ -237,8 +249,8 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
     combined_db_text = "\n\n".join(final_burst["db_texts"])
     media_list = final_burst["media_list"]
     last_message = final_burst["messages"][-1]
-    
-    msg_timestamp = last_message.date.strftime("%H:%M") if last_message.date else None
+
+    msg_timestamp = _format_odessa_time(last_message.date)
     
     # Acquire per-chat generation lock — prevents concurrent AI generation for the same chat.
     # While the lock is held, new messages for this chat will accumulate in burst_queues
