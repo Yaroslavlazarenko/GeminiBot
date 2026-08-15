@@ -49,10 +49,11 @@ class ToolExecutorService:
         
         for call in tool_calls:
             logger.info(f"LLM called tool: {call.name} with args {call.args}")
+            args = call.args if isinstance(call.args, dict) else {}
                 
             if call.name == ToolName.ADD_REACTION.value:
-                emoji = call.args.get("emoji")
-                message_ids = call.args.get("message_ids", [last_message.message_id])
+                emoji = args.get("emoji")
+                message_ids = args.get("message_ids", [last_message.message_id])
                 if not message_ids:
                     message_ids = [last_message.message_id]
 
@@ -71,11 +72,11 @@ class ToolExecutorService:
                             logger.error(f"Failed to add reaction {emoji} to {m_id}: {e}")
                         
             elif call.name == ToolName.REPLY_TO_MESSAGE.value:
-                requested_reply_id = int(call.args.get("message_id", 0)) if call.args.get("message_id") else None
-                requested_reply_quote = call.args.get("quote", "")
+                requested_reply_id = int(args.get("message_id", 0)) if args.get("message_id") else None
+                requested_reply_quote = args.get("quote") or ""
                 
             elif call.name == ToolName.SEND_SPECIFIC_STICKER.value:
-                sticker_id = call.args.get("sticker_id", "")
+                sticker_id = args.get("sticker_id") or ""
                 logger.info(f"LLM requested sending a specific sticker with ID: {sticker_id}")
                 
                 sent_msg = None
@@ -84,17 +85,23 @@ class ToolExecutorService:
                     if sticker_data and sticker_data.get("file_id"):
                         sent_msg = await last_message.answer_sticker(sticker=sticker_data["file_id"])
                     if not sent_msg:
-                        sent_msg = await last_message.answer("😊")
+                        try:
+                            sent_msg = await last_message.answer("😊")
+                        except Exception:
+                            pass
                 except Exception as e:
                     logger.error(f"Failed to send specific sticker: {e}")
-                    sent_msg = await last_message.answer("😊")
+                    try:
+                        sent_msg = await last_message.answer("😊")
+                    except Exception:
+                        pass
                     
                 sticker_action = f"*(Отправила специфический стикер)*"
                 db_response_text = db_response_text + f"\n{sticker_action}" if db_response_text else sticker_action
                 bot_msg_to_save = sent_msg
 
             elif call.name == ToolName.SEND_STICKER.value:
-                emotion = call.args.get("emotion", "happy").lower()
+                emotion = (args.get("emotion") or "happy").lower()
                 logger.info(f"LLM requested sending a sticker with emotion: {emotion}")
                 
                 emotion_emoji_map = {
@@ -154,23 +161,29 @@ class ToolExecutorService:
                     logger.error(f"Failed to send sticker: {e}")
                     
                 if not sent_msg:
-                    fallback_emoji = target_emojis[0] if target_emojis else "😊"
-                    sent_msg = await last_message.answer(fallback_emoji)
+                    try:
+                        fallback_emoji = target_emojis[0] if target_emojis else "😊"
+                        sent_msg = await last_message.answer(fallback_emoji)
+                    except Exception:
+                        pass
                     
                 sticker_action = f"*(Отправила стикер с эмоцией {emotion})*"
                 db_response_text = db_response_text + f"\n{sticker_action}" if db_response_text else sticker_action
                 bot_msg_to_save = sent_msg
                 
             elif call.name == ToolName.SEND_VOICE.value:
-                text_to_speak = call.args.get("text_to_speak", "")
-                audio_bytes = call.args.get("_audio_bytes")
+                text_to_speak = args.get("text_to_speak") or ""
+                audio_bytes = args.get("_audio_bytes")
                 
                 if audio_bytes:
-                    async with ChatActionSender.record_voice(bot=last_message.bot, chat_id=last_message.chat.id):
-                        voice_file = BufferedInputFile(audio_bytes, filename="voice.ogg")
-                        sent_msg = await last_message.answer_voice(voice=voice_file)
-                    
-                    db_response_text = f"🎤 [Голосовое]: {text_to_speak}"
+                    try:
+                        async with ChatActionSender.record_voice(bot=last_message.bot, chat_id=last_message.chat.id):
+                            voice_file = BufferedInputFile(audio_bytes, filename="voice.ogg")
+                            sent_msg = await last_message.answer_voice(voice=voice_file)
+                        
+                        db_response_text = f"🎤 [Голосовое]: {text_to_speak}"
+                    except Exception as e:
+                        logger.error(f"Failed to send voice message: {e}")
                 bot_msg_to_save = sent_msg
                 response_text = ""
                 

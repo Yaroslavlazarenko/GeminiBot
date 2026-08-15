@@ -29,6 +29,7 @@ class MCPServerAdapter:
         parts = []
         for call in calls:
             gemini_name = call.name
+            args = call.args if isinstance(call.args, dict) else {}
             try:
                 if gemini_name == self.list_resources_tool_name:
                     res = await asyncio.wait_for(self.session.list_resources(), timeout=30.0)
@@ -44,7 +45,7 @@ class MCPServerAdapter:
                     response_key = "result"
                     
                 elif gemini_name == self.read_resource_tool_name:
-                    uri = call.args.get("uri")
+                    uri = args.get("uri")
                     if not uri:
                         raise ValueError("Missing 'uri' argument")
                     res = await asyncio.wait_for(self.session.read_resource(uri), timeout=120.0)
@@ -59,8 +60,8 @@ class MCPServerAdapter:
                     
                 else:
                     mcp_name = self.tool_mappings.get(gemini_name, gemini_name)
-                    logger.info(f"Executing remote MCP tool: {mcp_name} on {self.name} with args {call.args}")
-                    result = await asyncio.wait_for(self.session.call_tool(mcp_name, call.args), timeout=120.0)
+                    logger.info(f"Executing remote MCP tool: {mcp_name} on {self.name} with args {args}")
+                    result = await asyncio.wait_for(self.session.call_tool(mcp_name, args), timeout=120.0)
                     final_val = self._extract_result_content(result)
                     response_key = "error" if getattr(result, "isError", False) else "result"
                 
@@ -69,13 +70,15 @@ class MCPServerAdapter:
                     response={response_key: final_val}
                 )
             except Exception as e:
-                logger.error(f"Error calling tool {gemini_name} on {self.name}: {e}")
+                err_msg = str(e) if str(e) else repr(e)
+                logger.error(f"Error calling tool {gemini_name} on {self.name}: {err_msg}")
                 part = types.Part.from_function_response(
                     name=gemini_name,
-                    response={"error": str(e)}
+                    response={"error": err_msg}
                 )
             # Make sure to attach the id so the model knows which call this response corresponds to
-            part.function_response.id = call.id
+            if hasattr(call, 'id') and call.id:
+                part.function_response.id = call.id
             parts.append(part)
         return parts
 
@@ -210,7 +213,8 @@ class MCPConnectionManager:
                 
             logger.info(f"Connected to MCP server: {server_name} (loaded {len(data['tools'])} tools, resources: {data['has_resources']})")
                 
-        self._connected = True
+        if server_data:
+            self._connected = True
 
     async def process_function_calls(self, calls: list) -> list:
         response_parts = []

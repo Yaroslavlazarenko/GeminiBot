@@ -74,8 +74,10 @@ class AIService:
                 meta_parts.append(f"[{ts}]")
 
             reactions = msg.get("reactions")
-            if reactions:
-                meta_parts.append(f"[реакции: {' '.join(reactions)}]")
+            if reactions and isinstance(reactions, list):
+                valid_reactions = [str(r) for r in reactions if r]
+                if valid_reactions:
+                    meta_parts.append(f"[реакции: {' '.join(valid_reactions)}]")
 
             if meta_parts:
                 text = " ".join(meta_parts) + " " + text
@@ -208,10 +210,12 @@ class AIService:
                                 age_days = 9999
                                 date_str = "?"
                             stale_tag = " [POSSIBLY STALE]" if age_days > STALE_DAYS else ""
-                            cat = f.get("category", "")
+                            cat = f.get("category") or ""
                             cat_tag = f" [{cat.upper()}]" if cat and cat != "other" else ""
+                            fact_text = f.get("fact") or ""
+                            source_text = f.get("source") or "?"
                             formatted_facts.append(
-                                f"- {date_str}{cat_tag}{stale_tag}: {f['fact']} (Source: {f.get('source', '?')})"
+                                f"- {date_str}{cat_tag}{stale_tag}: {fact_text} (Source: {source_text})"
                             )
                         facts_str = "\n".join(formatted_facts)
                     else:
@@ -340,10 +344,11 @@ class AIService:
                     if not call.name:
                         logger.warning("Skipping function call with empty/None name")
                         continue
+                    args = call.args if isinstance(call.args, dict) else {}
                     if call.name in local_tool_names:
                         if call.name == ToolName.SEARCH_STICKERS.value:
-                            emotion = call.args.get("emotion", "").lower()
-                            query = call.args.get("query", "").lower()
+                            emotion = (args.get("emotion") or "").lower()
+                            query = (args.get("query") or "").lower()
                             
                             # Fetch active packs
                             settings = await chat_context._db.get_system_settings()
@@ -360,16 +365,16 @@ class AIService:
                             import random
                             results = []
                             for s in all_stickers:
-                                desc = s.get("description", "").lower()
-                                em = s.get("emoji", "")
+                                desc = (s.get("description") or "").lower()
+                                em = s.get("emoji") or ""
                                 if emotion and emotion not in desc and emotion not in em:
                                     continue
                                 if query and query not in desc:
                                     continue
                                 results.append({
-                                    "id": s["_id"],
+                                    "id": s.get("_id", ""),
                                     "emoji": em,
-                                    "description": s.get("description", "")
+                                    "description": s.get("description") or ""
                                 })
                             
                             # Return up to 10 random matches to the model
@@ -383,9 +388,9 @@ class AIService:
                                 )
                             )
                         elif call.name == ToolName.SEARCH_HISTORY.value:
-                            query = call.args.get("query", "")
+                            query = args.get("query") or ""
                             try:
-                                limit = int(float(call.args.get("limit", 10)))
+                                limit = int(float(args.get("limit", 10)))
                             except (ValueError, TypeError):
                                 limit = 10
                             
@@ -398,7 +403,7 @@ class AIService:
                                 ).sort([("score", {"$meta": "textScore"})]).limit(limit)
                                 
                                 async for msg in cursor:
-                                    date_str = msg["date"].strftime("%Y-%m-%d %H:%M") if "date" in msg else "Unknown"
+                                    date_str = msg["date"].strftime("%Y-%m-%d %H:%M") if msg.get("date") else "Unknown"
                                     msg_id = msg.get("message_id", "?")
                                     results.append(f"[MsgID: {msg_id}] [{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
                                     
@@ -413,11 +418,11 @@ class AIService:
                             import datetime as dt_module
                             from datetime import timezone, timedelta
                             try:
-                                days_ago = int(float(call.args.get("days_ago", 0)))
+                                days_ago = int(float(args.get("days_ago", 0)))
                             except (ValueError, TypeError):
                                 days_ago = 0
                             try:
-                                limit = int(float(call.args.get("limit", 20)))
+                                limit = int(float(args.get("limit", 20)))
                             except (ValueError, TypeError):
                                 limit = 20
 
@@ -441,7 +446,7 @@ class AIService:
 
                             results = []
                             async for msg in cursor:
-                                if "date" in msg and msg["date"]:
+                                if msg.get("date"):
                                     d = msg["date"]
                                     if d.tzinfo is None:
                                         d = d.replace(tzinfo=timezone.utc)
@@ -462,18 +467,13 @@ class AIService:
                             )
                             
                         elif call.name == ToolName.IGNORE_MESSAGE.value:
-                            reason = call.args.get("reason", "No reason provided")
+                            reason = args.get("reason") or "No reason provided"
                             logger.info(f"Model explicitly chose to ignore the message. Reason: {reason}")
                             # Immediately abort the generation loop and return empty
                             return "", []
                             
                         elif call.name == ToolName.SEND_VOICE.value:
-                            # We can't generate the voice here, it's done in handlers.
-                            # But we should allow handlers to pass the error back if it fails.
-                            # Wait, the user wants the AI to generate the contextual text IF TTS fails.
-                            # This means TTS generation MUST happen inside ai_service.py, not handlers.py!
-                            
-                            text_to_speak = call.args.get("text_to_speak", "")
+                            text_to_speak = args.get("text_to_speak") or ""
                             
                             from services.tts_service import get_tts_service
                             tts = get_tts_service()
@@ -482,6 +482,8 @@ class AIService:
                                 audio_bytes = await tts.generate_voice(text_to_speak)
                                 if audio_bytes:
                                     # Success, pass the call back to handlers to actually send it
+                                    if not isinstance(call.args, dict):
+                                        call.args = {}
                                     call.args["_audio_bytes"] = audio_bytes
                                     local_calls_to_return.append(call)
                                     response_parts.append(
@@ -517,7 +519,7 @@ class AIService:
                                     
                                     admin_list = []
                                     for a in admins:
-                                        name = a.user.first_name
+                                        name = a.user.first_name or ""
                                         if a.user.last_name:
                                             name += f" {a.user.last_name}"
                                         if a.user.username:
@@ -543,11 +545,11 @@ class AIService:
                             )
                             
                         elif call.name == ToolName.SAVE_USER_FACT.value:
-                            user_id = call.args.get("user_id")
-                            fact = call.args.get("fact", "")
-                            is_global = call.args.get("is_global", False)
-                            category = call.args.get("category", "other")
-                            confirmed = call.args.get("confirmed", False)
+                            user_id = args.get("user_id")
+                            fact = args.get("fact") or ""
+                            is_global = bool(args.get("is_global", False))
+                            category = args.get("category") or "other"
+                            confirmed = bool(args.get("confirmed", False))
                             chat_title = sender_info.get("chat_title", "Unknown Context") if sender_info else "Unknown Context"
 
                             try:
@@ -627,12 +629,18 @@ class AIService:
                                 )
                                 
                         elif call.name == ToolName.GET_USER_FACTS.value:
-                            user_id = call.args.get("user_id")
+                            user_id = args.get("user_id")
                             try:
                                 if not user_id:
                                     raise ValueError("Missing user_id")
                                 facts = await chat_context._db.get_user_facts(int(user_id), chat_context.id)
-                                formatted_facts = [f"- {f['date'].strftime('%Y-%m-%d')}: {f['fact']} (Source: {f['source']})" for f in facts]
+                                formatted_facts = []
+                                for f in facts:
+                                    d = f.get("last_confirmed") or f.get("date")
+                                    d_str = d.strftime('%Y-%m-%d') if hasattr(d, 'strftime') else '?'
+                                    f_fact = f.get("fact") or ""
+                                    f_src = f.get("source") or "?"
+                                    formatted_facts.append(f"- {d_str}: {f_fact} (Source: {f_src})")
                                 response_parts.append(
                                     Part.from_function_response(
                                         name=call.name,
@@ -649,8 +657,8 @@ class AIService:
                                 )
 
                         elif call.name == ToolName.CONFIRM_USER_FACT.value:
-                            user_id = call.args.get("user_id")
-                            fact_text = call.args.get("fact", "")
+                            user_id = args.get("user_id")
+                            fact_text = args.get("fact") or ""
                             try:
                                 if not user_id or not fact_text:
                                     raise ValueError("Missing user_id or fact")
@@ -671,8 +679,8 @@ class AIService:
                                 )
 
                         elif call.name == ToolName.SAVE_MEMORY.value:
-                            topic = call.args.get("topic", "")
-                            content = call.args.get("content", "")
+                            topic = args.get("topic") or ""
+                            content = args.get("content") or ""
                             try:
                                 if not topic or not content:
                                     raise ValueError("Missing topic or content")
@@ -696,19 +704,21 @@ class AIService:
                                 )
 
                         elif call.name == ToolName.RECALL_MEMORY.value:
-                            topic = call.args.get("topic", "")
+                            topic = args.get("topic") or ""
                             try:
                                 if not topic:
                                     raise ValueError("Missing topic")
                                 entry = await chat_context._db.recall_auto_memory(chat_context.id, topic)
                                 if entry:
+                                    entry_date = entry.get("updated_at")
+                                    last_up = entry_date.strftime("%Y-%m-%d %H:%M") if hasattr(entry_date, "strftime") else "unknown"
                                     response_parts.append(
                                         Part.from_function_response(
                                             name=call.name,
                                             response={
-                                                "topic": entry.get("topic", ""),
-                                                "content": entry.get("content", ""),
-                                                "last_updated": entry.get("updated_at", "").strftime("%Y-%m-%d %H:%M") if entry.get("updated_at") else "unknown"
+                                                "topic": entry.get("topic") or "",
+                                                "content": entry.get("content") or "",
+                                                "last_updated": last_up
                                             }
                                         )
                                     )
@@ -729,7 +739,7 @@ class AIService:
                                 )
 
                         elif call.name == ToolName.ANALYZE_PAST_MEDIA.value:
-                            file_id = call.args.get("file_id")
+                            file_id = args.get("file_id")
                             bot = sender_info.get("bot") if sender_info else None
                             if not file_id or not bot:
                                 response_parts.append(
@@ -741,7 +751,7 @@ class AIService:
                             else:
                                 try:
                                     file = await bot.get_file(file_id)
-                                    if file.file_size > 4.5 * 1024 * 1024:
+                                    if file.file_size and file.file_size > 4.5 * 1024 * 1024:
                                         raise Exception("File too large (over 4.5MB limit). I cannot process it in full resolution.")
                                         
                                     import io
@@ -750,7 +760,7 @@ class AIService:
                                     media_data = downloaded_bytes.getvalue()
                                     
                                     # Guess MIME type (Gemini supports image/jpeg, image/png, image/webp, video/mp4, video/webm, etc.)
-                                    ext = file.file_path.split('.')[-1].lower() if '.' in file.file_path else 'jpeg'
+                                    ext = file.file_path.split('.')[-1].lower() if file.file_path and '.' in file.file_path else 'jpeg'
                                     mime_map = {
                                         'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp',
                                         'mp4': 'video/mp4', 'webm': 'video/webm'
@@ -777,7 +787,7 @@ class AIService:
                                     )
                                     
                         elif call.name == ToolName.DOWNLOAD_MEDIA_TO_DISK.value:
-                            file_id = call.args.get("file_id")
+                            file_id = args.get("file_id")
                             bot = sender_info.get("bot") if sender_info else None
                             if not file_id or not bot:
                                 response_parts.append(
@@ -793,10 +803,10 @@ class AIService:
                                     
                                     file = await bot.get_file(file_id)
                                     # Relaxed size limit to 7MB specifically for google reverse image search
-                                    if file.file_size > 7 * 1024 * 1024:
+                                    if file.file_size and file.file_size > 7 * 1024 * 1024:
                                         raise Exception("File too large (over 7MB limit for saving to disk).")
                                         
-                                    ext = file.file_path.split('.')[-1].lower() if '.' in file.file_path else 'jpg'
+                                    ext = file.file_path.split('.')[-1].lower() if file.file_path and '.' in file.file_path else 'jpg'
                                     
                                     # Create tmp directory if not exists
                                     tmp_dir = "/tmp/gemini_media"
@@ -839,7 +849,7 @@ class AIService:
                                         )
                                     )
                         elif call.name == ToolName.GET_PROFILE_PHOTO.value:
-                            user_id = call.args.get("user_id")
+                            user_id = args.get("user_id")
                             bot = sender_info.get("bot") if sender_info else None
                             if not bot:
                                 response_parts.append(

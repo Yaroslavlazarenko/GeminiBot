@@ -161,7 +161,7 @@ class ProactiveService:
         return None
 
     async def _execute_exa_search(self, query: str) -> Optional[str]:
-        """Execute a search via MCP Exa tools."""
+        """Execute a search via MCP search tools (Exa / web search)."""
         try:
             from services.ai_service import get_ai_service
             ai_service = get_ai_service()
@@ -173,35 +173,44 @@ class ProactiveService:
                 logger.warning("Proactive research: No MCP adapters available")
                 return None
 
-            # Find an Exa search tool
-            exa_tool_name = None
+            # Filter out image-only search tools (e.g. reverse_image_search, google_images)
+            IMAGE_SEARCH_KEYWORDS = ["image", "photo", "reverse_image", "vision", "picture"]
+
+            search_tool_name = None
+            # 1. Prefer Exa / dedicated web search tools
             for tool_name in ai_service.mcp_manager.adapters_map:
-                if "search" in tool_name.lower() and "exa" in tool_name.lower():
-                    exa_tool_name = tool_name
+                tn_lower = tool_name.lower()
+                if any(kw in tn_lower for kw in IMAGE_SEARCH_KEYWORDS):
+                    continue
+                if "search" in tn_lower and "exa" in tn_lower:
+                    search_tool_name = tool_name
                     break
-                elif "web_search" in tool_name.lower():
-                    exa_tool_name = tool_name
+                elif "web_search" in tn_lower:
+                    search_tool_name = tool_name
                     break
 
-            if not exa_tool_name:
-                # Try any search-like tool
+            # 2. Try any other general web/text search tool
+            if not search_tool_name:
                 for tool_name in ai_service.mcp_manager.adapters_map:
-                    if "search" in tool_name.lower():
-                        exa_tool_name = tool_name
+                    tn_lower = tool_name.lower()
+                    if any(kw in tn_lower for kw in IMAGE_SEARCH_KEYWORDS):
+                        continue
+                    if "search" in tn_lower or "tavily" in tn_lower or "brave" in tn_lower or "duckduckgo" in tn_lower:
+                        search_tool_name = tool_name
                         break
 
-            if not exa_tool_name:
-                logger.warning("Proactive research: No search tool found in MCP adapters")
+            if not search_tool_name:
+                logger.warning("Proactive research: No web/text search tool found in MCP adapters (ignoring image-only tools)")
                 return None
 
             # Create a mock FunctionCall to use the MCP adapter
             from google.genai.types import FunctionCall
             search_call = FunctionCall(
-                name=exa_tool_name,
+                name=search_tool_name,
                 args={"query": query, "numResults": 3}
             )
 
-            adapter = ai_service.mcp_manager.adapters_map[exa_tool_name]
+            adapter = ai_service.mcp_manager.adapters_map[search_tool_name]
             parts = await adapter.process_function_calls_as_parts([search_call])
 
             if parts:
@@ -210,7 +219,10 @@ class ProactiveService:
                 if hasattr(part, 'function_response') and part.function_response:
                     response_data = part.function_response.response
                     if isinstance(response_data, dict):
-                        result = response_data.get("result") or response_data.get("error", "")
+                        if response_data.get("error"):
+                            logger.warning(f"Proactive research: MCP search tool '{search_tool_name}' returned error: {response_data.get('error')}")
+                            return None
+                        result = response_data.get("result") or ""
                         if isinstance(result, str):
                             return result
                         elif isinstance(result, (dict, list)):
@@ -220,7 +232,7 @@ class ProactiveService:
                         return response_data
             return None
         except Exception as e:
-            logger.error(f"Exa search failed: {e}", exc_info=True)
+            logger.error(f"MCP search failed: {e}", exc_info=True)
             return None
 
     async def _summarize_research(self, system_instruction: str, model: str,
@@ -330,13 +342,15 @@ class ProactiveService:
 
         # Find chats where:
         # 1. Has history (we know who they are)
-        # 2. Not globally disabled
+        # 2. Not globally disabled or proactively disabled
         # 3. Not already awaiting a reply
         # 4. Haven't exceeded max consecutive ignored
         # 5. Last user activity was long enough ago (silence period)
         chats = await collection.find({
             "history": {"$exists": True, "$ne": []},
+            "is_active": {"$ne": False},
             "settings.is_global_disabled": {"$ne": True},
+            "proactive.disabled": {"$ne": True},
             "proactive.awaiting_reply": {"$ne": True},
             "proactive.consecutive_ignored": {"$not": {"$gte": max_ignored}},
             "$or": [
@@ -513,5 +527,29 @@ class ProactiveService:
                 return True
 
             except Exception as e:
-                logger.error(f"Failed to generate/send proactive message to {chat_name}: {e}", exc_info=True)
+                err_str = str(e)
+                # Check for permanent permission/access errors so we don't retry endlessly
+                if any(kw in err_str.lower() for kw in [
+                    "not enough rights", "forbidden", "blocked", "chat not found",
+                    "user is deactivated", "bot was kicked", "have no rights",
+                    "need administrator rights"
+                ]):
+                    logger.warning(
+                        f"Proactive: bot has no rights to message {chat_name} (chat_id: {chat_id}): {e}. "
+                        "Disabling proactive messaging for this chat."
+                    )
+                    try:
+                        await collection.update_one(
+                            {id_field: chat_id},
+                            {"$set": {
+                                "proactive.disabled": True,
+                                "proactive.disabled_reason": err_str,
+                                "proactive.awaiting_reply": False,
+                                "proactive.consecutive_ignored": 999
+                            }}
+                        )
+                    except Exception as db_err:
+                        logger.error(f"Failed to update proactive disabled state for {chat_id}: {db_err}")
+                else:
+                    logger.error(f"Failed to generate/send proactive message to {chat_name}: {e}", exc_info=True)
                 return False
