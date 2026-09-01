@@ -929,9 +929,14 @@ class AIService:
             # After the tool loop completes, make one final call with response_schema
             # to guarantee clean structured output (no reasoning leaks).
             # This mirrors the pattern used in gatekeeper_service.py.
-            # Ensure the conversation does not end with a model turn.
-            while current_contents and current_contents[-1].role == "model":
-                current_contents.pop()
+            # Ensure the conversation does not end with a model turn (handle both dict and Content objects).
+            while current_contents:
+                last_turn = current_contents[-1]
+                last_role = last_turn.get("role") if isinstance(last_turn, dict) else getattr(last_turn, "role", "")
+                if last_role == "model":
+                    current_contents.pop()
+                else:
+                    break
 
             try:
                 final_response = self.key_manager.generate_content(
