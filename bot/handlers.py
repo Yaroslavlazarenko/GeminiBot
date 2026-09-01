@@ -33,6 +33,74 @@ from services.avatar_service import AvatarService
 
 logger = logging.getLogger(__name__)
 
+TELEGRAM_HTML_TAGS = {
+    "b", "strong", "i", "em", "u", "ins", "s", "strike", "del",
+    "tg-spoiler", "span", "a", "code", "pre", "blockquote"
+}
+
+def is_telegram_permission_error(exc: Exception) -> bool:
+    """Check if the exception indicates the bot lacks rights to send in this chat."""
+    err_str = str(exc).lower()
+    return any(kw in err_str for kw in [
+        "not enough rights", "forbidden", "blocked", "chat not found",
+        "user is deactivated", "bot was kicked", "have no rights",
+        "bot is not a member", "need administrator rights", "chat_write_forbidden"
+    ])
+
+def split_and_balance_html(text: str) -> list[str]:
+    """
+    Split text by double newlines into chunks and ensure HTML tags are properly
+    balanced across chunks, so Telegram parser never fails with unclosed/unexpected tags.
+    """
+    import re
+    # Clean up literal "\n"
+    text = text.replace("\\n", "\n")
+    # Convert HTML break and paragraph tags into newlines
+    text = re.sub(r'<\s*br\s*/?>', '\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<\s*hr\s*/?>', '\n\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<\s*/p\s*>', '\n\n', text, flags=re.IGNORECASE)
+    text = re.sub(r'<\s*p\s*>', '', text, flags=re.IGNORECASE)
+    # Normalize excessive newlines
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    raw_parts = [p.strip() for p in text.split('\n\n') if p.strip()]
+    if not raw_parts:
+        return []
+
+    tag_regex = re.compile(r'<\s*(/)?\s*([a-zA-Z0-9_-]+)(?:\s+([^>]*))?>')
+    balanced_parts = []
+    open_stack = []
+
+    for i, part in enumerate(raw_parts):
+        current_chunk = ''
+        if open_stack:
+            reopen = ''.join([ot for _, ot in open_stack])
+            current_chunk = reopen
+
+        current_chunk += part
+
+        for match in tag_regex.finditer(part):
+            is_closing, tag_name = match.group(1), match.group(2).lower()
+            full_match = match.group(0)
+            if tag_name not in TELEGRAM_HTML_TAGS:
+                continue
+            if is_closing:
+                for idx in range(len(open_stack) - 1, -1, -1):
+                    if open_stack[idx][0] == tag_name:
+                        open_stack.pop(idx)
+                        break
+            else:
+                if not full_match.endswith('/>'):
+                    open_stack.append((tag_name, full_match))
+
+        if open_stack and i < len(raw_parts) - 1:
+            closing = ''.join([f'</{tn}>' for tn, _ in reversed(open_stack)])
+            current_chunk += closing
+
+        balanced_parts.append(current_chunk)
+
+    return balanced_parts
+
 # Simple in-memory cache for sticker sets to prevent Telegram API rate limits
 sticker_cache = {}
 STICKER_CACHE_TTL = 3600 # 1 hour
@@ -342,21 +410,8 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
         )
 
         if response_text:
-            import re
             import html
-            # Clean up literal "\n" strings that the model sometimes outputs by mistake
-            response_text = response_text.replace("\\n", "\n")
-
-            # Convert HTML break and paragraph tags into newlines since Telegram HTML parser rejects them
-            response_text = re.sub(r'<\s*br\s*/?>', '\n', response_text, flags=re.IGNORECASE)
-            response_text = re.sub(r'<\s*hr\s*/?>', '\n\n', response_text, flags=re.IGNORECASE)
-            response_text = re.sub(r'<\s*/p\s*>', '\n\n', response_text, flags=re.IGNORECASE)
-            response_text = re.sub(r'<\s*p\s*>', '', response_text, flags=re.IGNORECASE)
-
-            # Normalize excessive newlines (3 or more) into exactly two (\n\n)
-            response_text = re.sub(r'\n{3,}', '\n\n', response_text)
-
-            parts = [p.strip() for p in response_text.split('\n\n') if p.strip()]
+            parts = split_and_balance_html(response_text)
 
             for i, part in enumerate(parts):
                 bot_message = None
@@ -374,6 +429,9 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
                                 reply_parameters=reply_params
                             )
                         except Exception as reply_err:
+                            if is_telegram_permission_error(reply_err):
+                                logger.error(f"Cannot send message to chat {last_message.chat.id}: {reply_err}")
+                                break
                             logger.warning(f"Failed to send with reply_to {requested_reply_id}, falling back to normal reply: {reply_err}")
                             requested_reply_id = None  # Don't retry with broken reply_id
                             if chat_context.is_group:
@@ -385,12 +443,7 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
                     else:
                         bot_message = await last_message.answer(part)
                 except Exception as e:
-                    err_str = str(e)
-                    # If the bot lacks permissions or is blocked in this chat, abort sending remaining chunks
-                    if any(kw in err_str.lower() for kw in [
-                        "not enough rights", "forbidden", "blocked", "chat not found",
-                        "user is deactivated", "bot was kicked", "have no rights"
-                    ]):
+                    if is_telegram_permission_error(e):
                         logger.error(f"Cannot send message to chat {last_message.chat.id}: {e}")
                         break
 
@@ -404,11 +457,7 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
                         else:
                             bot_message = await last_message.answer(safe_part)
                     except Exception as e2:
-                        err_str2 = str(e2)
-                        if any(kw in err_str2.lower() for kw in [
-                            "not enough rights", "forbidden", "blocked", "chat not found",
-                            "user is deactivated", "bot was kicked", "have no rights"
-                        ]):
+                        if is_telegram_permission_error(e2):
                             logger.error(f"Cannot send message to chat {last_message.chat.id}: {e2}")
                             break
                         logger.error(f"Failed to send even plain text fallback: {e2}")
@@ -593,7 +642,7 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
                 if message.video_note:
                     from services.sticker_service import StickerService
                     from core.key_manager import get_key_manager
-                    video_desc = await StickerService.analyze_video_note(message.bot, get_key_manager(), file_id)
+                    video_desc = await StickerService.analyze_video_note(message.bot, get_key_manager(), file_id, db=chat_context.db)
 
                 media = {"mime_type": mime_type, "data": media_bytes}
 

@@ -31,7 +31,7 @@ class GeminiKeyManager:
     def __init__(self, config: Config):
         self._lock = threading.Lock()
         self._keys: List[str] = config.get_all_api_keys()
-        self._base_url: Optional[str] = config.gemini_base_url
+        self._base_url: Optional[str] = self._normalize_base_url(config.gemini_base_url)
         self._current_index: int = 0
 
         if not self._keys:
@@ -43,6 +43,22 @@ class GeminiKeyManager:
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_base_url(url: Optional[str]) -> Optional[str]:
+        """
+        Normalize Gemini base URL.
+        The google-genai SDK automatically appends '/v1beta' (or '/v1alpha') to the base_url.
+        If a user specifies a URL ending in '/v1beta', '/v1alpha', or '/v1', strip it to prevent
+        double prefixes like '/v1beta/v1beta/models/...'.
+        """
+        if not url:
+            return None
+        url = url.strip().rstrip('/')
+        for suffix in ['/v1beta', '/v1alpha', '/v1']:
+            if url.endswith(suffix):
+                url = url[:-len(suffix)].rstrip('/')
+        return url or None
 
     def _build_client(self, key: str) -> genai.Client:
         http_opts = {"base_url": self._base_url} if self._base_url else None
@@ -73,18 +89,12 @@ class GeminiKeyManager:
     def _rotate(self) -> bool:
         """
         Advance to the next key. Returns True if a new key was selected,
-        False if we have already cycled through all keys.
+        False if only one key is available.
         """
         with self._lock:
-            next_index = (self._current_index + 1) % len(self._keys)
-            if next_index == 0 and len(self._keys) > 1:
-                # Wrapped around — tried all keys
-                logger.warning("GeminiKeyManager: exhausted all keys in pool.")
+            if len(self._keys) <= 1:
                 return False
-            if next_index == self._current_index:
-                # Only one key — nothing to rotate to
-                return False
-            self._current_index = next_index
+            self._current_index = (self._current_index + 1) % len(self._keys)
             new_key = self._keys[self._current_index]
             self._client = self._build_client(new_key)
             logger.info(
@@ -99,9 +109,10 @@ class GeminiKeyManager:
 
     def update_base_url(self, new_base_url: Optional[str]):
         """Rebuild the client when the base URL changes (called from _sync_settings)."""
+        normalized_url = self._normalize_base_url(new_base_url)
         with self._lock:
-            if self._base_url != new_base_url:
-                self._base_url = new_base_url
+            if self._base_url != normalized_url:
+                self._base_url = normalized_url
                 self._client = self._build_client(self._keys[self._current_index])
 
     def update_settings(self, api_key: str, api_keys_str: str, base_url: Optional[str]):
@@ -115,11 +126,13 @@ class GeminiKeyManager:
                 k = k.strip()
                 if k and k not in keys:
                     keys.append(k)
-        
+
         # Filter out empty keys
         keys = [k for k in keys if k]
         if not keys:
             return
+
+        normalized_url = self._normalize_base_url(base_url)
 
         with self._lock:
             changed = False
@@ -128,12 +141,12 @@ class GeminiKeyManager:
                 self._keys = keys
                 self._current_index = min(self._current_index, len(keys) - 1)
                 changed = True
-            
-            if self._base_url != base_url:
-                logger.info(f"GeminiKeyManager: updating base URL ({self._base_url} -> {base_url})")
-                self._base_url = base_url
+
+            if self._base_url != normalized_url:
+                logger.info(f"GeminiKeyManager: updating base URL ({self._base_url} -> {normalized_url})")
+                self._base_url = normalized_url
                 changed = True
-                
+
             if changed:
                 self._client = self._build_client(self._keys[self._current_index])
 

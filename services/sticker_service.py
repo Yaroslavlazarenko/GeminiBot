@@ -2,12 +2,13 @@ import asyncio
 import logging
 import io
 import time
-from typing import List
+from typing import List, Optional
 from aiogram import Bot
 from pydantic import BaseModel, Field
 from google.genai.types import GenerateContentConfig, Part
 from core.database import DatabaseManager
 from core.key_manager import GeminiKeyManager
+from core.config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -109,82 +110,95 @@ class StickerService:
                 file_id = sticker.thumbnail.file_id
             else:
                 desc = f"[{sticker.emoji}] Animated sticker (No description available)"
-                await db.stickers.insert_one({
-                    "_id": sticker.file_unique_id,
-                    "file_id": sticker.file_id,
-                    "pack_name": "user_discovered",
-                    "emoji": sticker.emoji,
-                    "description": desc
-                })
+                await db.stickers.update_one(
+                    {"_id": sticker.file_unique_id},
+                    {"$set": {
+                        "_id": sticker.file_unique_id,
+                        "file_id": sticker.file_id,
+                        "pack_name": "user_discovered",
+                        "emoji": sticker.emoji,
+                        "description": desc
+                    }},
+                    upsert=True
+                )
                 return desc
-                
+
         try:
             file = await bot.get_file(file_id)
             if file.file_size > 3.5 * 1024 * 1024:
                 return f"[{sticker.emoji}] Sticker (Too large to analyze)"
-                
+
             downloaded_bytes = io.BytesIO()
             await bot.download_file(file.file_path, destination=downloaded_bytes)
             img_data = downloaded_bytes.getvalue()
-            
+
             if sticker.is_video:
                 mime_type = "video/webm"
             else:
                 mime_type = "image/webp" if file.file_path.endswith('.webp') else "image/jpeg"
-            
+
             prompt_text = (
                 "Provide a brief 1-sentence visual description of this character/sticker (image or short video) and what emotion they are expressing. "
                 "Keep it concise. E.g., 'A white cat wearing sunglasses, looking cool.'"
             )
-            
+
             settings = await db.get_system_settings()
-            model_name = settings.get("gemini_api_model") or "gemini-3.5-flash"
-            
+            model_name = settings.get("gemini_api_model") or Config().gemini_api_model
+
             response = key_manager.generate_content(
                 model=model_name,
                 contents=[prompt_text, Part.from_bytes(data=img_data, mime_type=mime_type)],
                 config=GenerateContentConfig(temperature=0.2)
             )
-            
+
             desc = response.text.strip() if response.text else f"[{sticker.emoji}] Sticker"
-            
+
             # Save it permanently
-            await db.stickers.insert_one({
-                "_id": sticker.file_unique_id,
-                "file_id": sticker.file_id,
-                "pack_name": "user_discovered",
-                "emoji": sticker.emoji,
-                "description": desc
-            })
-            
+            await db.stickers.update_one(
+                {"_id": sticker.file_unique_id},
+                {"$set": {
+                    "_id": sticker.file_unique_id,
+                    "file_id": sticker.file_id,
+                    "pack_name": "user_discovered",
+                    "emoji": sticker.emoji,
+                    "description": desc
+                }},
+                upsert=True
+            )
+
             return desc
         except Exception as e:
             logger.error(f"Error analyzing user sticker {sticker.file_unique_id}: {e}")
             return f"[{sticker.emoji}] Sticker"
 
     @staticmethod
-    async def analyze_video_note(bot: Bot, key_manager: GeminiKeyManager, file_id: str) -> str:
+    async def analyze_video_note(bot: Bot, key_manager: GeminiKeyManager, file_id: str, db: Optional[DatabaseManager] = None) -> str:
         """Analyzes a video note to generate a visual description for history context."""
         try:
             file = await bot.get_file(file_id)
             if file.file_size > 4.5 * 1024 * 1024:
                 return "(Video note too large to analyze)"
-                
+
             downloaded_bytes = io.BytesIO()
             await bot.download_file(file.file_path, destination=downloaded_bytes)
             img_data = downloaded_bytes.getvalue()
-            
+
             prompt_text = (
                 "Provide a brief 1-sentence visual description of what you see in this round video message (video note). "
                 "Describe the person, their facial expression, surroundings, or what they are doing. Ignore audio."
             )
-            
+
+            model_name = Config().gemini_api_model
+            if db:
+                settings = await db.get_system_settings()
+                model_name = settings.get("gemini_api_model") or model_name
+
             response = key_manager.generate_content(
-                model="gemini-3.5-flash",
+                model=model_name,
                 contents=[prompt_text, Part.from_bytes(data=img_data, mime_type="video/mp4")],
                 config=GenerateContentConfig(temperature=0.2)
             )
-            
+
             return response.text.strip() if response.text else "(No visual description available)"
         except Exception as e:
             logger.error(f"Error analyzing video note {file_id}: {e}")
@@ -200,21 +214,21 @@ class StickerService:
         )
         contents = [prompt_text]
         valid_stickers = []
-        
+
         for idx, (sticker, file) in enumerate(batch):
             try:
                 downloaded_bytes = io.BytesIO()
                 await bot.download_file(file.file_path, destination=downloaded_bytes)
                 img_data = downloaded_bytes.getvalue()
-                
+
                 if sticker.is_video:
                     mime_type = "video/webm"
                 else:
                     mime_type = "image/webp" if file.file_path.endswith('.webp') else "image/jpeg"
-                
+
                 contents.append(f"Sticker Index: {idx}")
                 contents.append(Part.from_bytes(data=img_data, mime_type=mime_type))
-                
+
                 valid_stickers.append((idx, sticker))
             except Exception as e:
                 logger.error(f"Error downloading sticker {sticker.file_unique_id}: {e}")
@@ -224,8 +238,8 @@ class StickerService:
 
         try:
             settings = await db.get_system_settings()
-            model_name = settings.get("gemini_api_model") or "gemini-3.5-flash"
-            
+            model_name = settings.get("gemini_api_model") or Config().gemini_api_model
+
             response = key_manager.generate_content(
                 model=model_name,
                 contents=contents,
@@ -235,34 +249,42 @@ class StickerService:
                     response_schema=StickerBatchResult
                 )
             )
-            
+
             result: StickerBatchResult = response.parsed
             if not result:
                 import json
                 data = json.loads(response.text)
                 result = StickerBatchResult(**data)
-            
+
             desc_map = {item.index: item.description for item in result.stickers}
-            
+
             for idx, sticker in valid_stickers:
                 desc = desc_map.get(idx, f"[{sticker.emoji}] Unrecognized sticker")
-                
-                await db.stickers.insert_one({
-                    "_id": sticker.file_unique_id,
-                    "file_id": sticker.file_id,
-                    "pack_name": pack_name,
-                    "emoji": sticker.emoji,
-                    "description": desc
-                })
-                
+
+                await db.stickers.update_one(
+                    {"_id": sticker.file_unique_id},
+                    {"$set": {
+                        "_id": sticker.file_unique_id,
+                        "file_id": sticker.file_id,
+                        "pack_name": pack_name,
+                        "emoji": sticker.emoji,
+                        "description": desc
+                    }},
+                    upsert=True
+                )
+
         except Exception as e:
             logger.error(f"Error in Gemini Vision for stickers: {e}")
             # Fallback
             for idx, sticker in valid_stickers:
-                await db.stickers.insert_one({
-                    "_id": sticker.file_unique_id,
-                    "file_id": sticker.file_id,
-                    "pack_name": pack_name,
-                    "emoji": sticker.emoji,
-                    "description": f"[{sticker.emoji}] Sticker"
-                })
+                await db.stickers.update_one(
+                    {"_id": sticker.file_unique_id},
+                    {"$set": {
+                        "_id": sticker.file_unique_id,
+                        "file_id": sticker.file_id,
+                        "pack_name": pack_name,
+                        "emoji": sticker.emoji,
+                        "description": f"[{sticker.emoji}] Sticker"
+                    }},
+                    upsert=True
+                )
