@@ -292,6 +292,7 @@ class AIService:
             
             local_calls_to_return = []
             final_text = ""
+            last_turn_text = ""
 
             max_turns = 10
             turn = 0
@@ -318,23 +319,25 @@ class AIService:
                     )
                 )
 
-                # Store model's response part
-                if response.candidates and response.candidates[0].content:
-                    current_contents.append(response.candidates[0].content)
-
                 # Log response details for debugging
                 has_parsed = response.parsed is not None
                 has_text = bool(response.text)
                 has_fc = bool(response.function_calls)
                 logger.info(f"AI turn {turn}: parsed={has_parsed}, text={has_text}, function_calls={has_fc}")
 
-                # Mid-loop text is reasoning/intermediate output — not captured.
-                # The final schema-enforced call (Phase 2) will generate the actual response.
                 if response.text:
-                    logger.debug(f"AI turn {turn}: mid-loop text (not captured): {response.text[:200]!r}")
+                    last_turn_text = response.text
+                    logger.debug(f"AI turn {turn}: mid-loop text: {response.text[:200]!r}")
 
+                # If no tools were called, the tool loop is done.
+                # Crucial: do NOT append model turn to current_contents if exiting,
+                # because Phase 2 requires contents to end with a user turn.
                 if not response.function_calls:
                     break
+
+                # Store model's function_call response part before executing tools
+                if response.candidates and response.candidates[0].content:
+                    current_contents.append(response.candidates[0].content)
                     
                 response_parts = []
                 mcp_calls = []
@@ -926,6 +929,10 @@ class AIService:
             # After the tool loop completes, make one final call with response_schema
             # to guarantee clean structured output (no reasoning leaks).
             # This mirrors the pattern used in gatekeeper_service.py.
+            # Ensure the conversation does not end with a model turn.
+            while current_contents and current_contents[-1].role == "model":
+                current_contents.pop()
+
             try:
                 final_response = self.key_manager.generate_content(
                     model=self.current_api_model,
@@ -955,12 +962,13 @@ class AIService:
                         except (json.JSONDecodeError, Exception):
                             final_text = raw
                     else:
-                        final_text = ""
-                        logger.warning("AI final schema call returned empty response.")
+                        final_text = last_turn_text
+                        if not final_text:
+                            logger.warning("AI final schema call returned empty response.")
 
             except Exception as schema_exc:
                 logger.error(f"AI final schema call failed: {schema_exc}", exc_info=True)
-                # final_text remains "" — handlers already handle empty text alongside local_calls
+                final_text = last_turn_text
 
             return final_text, local_calls_to_return
             
