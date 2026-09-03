@@ -186,5 +186,23 @@ class ToolExecutorService:
                         logger.error(f"Failed to send voice message: {e}")
                 bot_msg_to_save = sent_msg
                 response_text = ""
+
+            elif call.name == ToolName.GENERATE_IMAGE.value:
+                image_bytes = args.get("_image_bytes")
+                prompt = args.get("prompt") or ""
+                sent_msg = None
+                if image_bytes:
+                    try:
+                        async with ChatActionSender.upload_photo(bot=last_message.bot, chat_id=last_message.chat.id):
+                            photo_file = BufferedInputFile(image_bytes, filename="image.jpg")
+                            caption = None
+                            if response_text and len(response_text) <= 1024:
+                                caption = response_text
+                                response_text = ""
+                            sent_msg = await last_message.answer_photo(photo=photo_file, caption=caption)
+                        db_response_text = f"🎨 [Сгенерировано изображение]: {prompt}"
+                    except Exception as e:
+                        logger.error(f"Failed to send generated photo: {e}")
+                bot_msg_to_save = sent_msg
                 
         return db_response_text, bot_msg_to_save, requested_reply_id, requested_reply_quote, response_text

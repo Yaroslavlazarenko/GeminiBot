@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import asyncio
 from core.config import Config
 from core.key_manager import GeminiKeyManager, get_key_manager
 from google.genai.types import GenerateContentConfig, FunctionCall, Content, Tool, AutomaticFunctionCallingConfig, Part
@@ -244,6 +245,7 @@ class AIService:
                 f"6. STRICT PRIVACY RULE: You must NEVER share, leak, or gossip about the personal facts, secrets, or preferences of one user with another user. If someone asks you to tell them about another person, politely but firmly refuse to share their private information. You may use facts internally to guide your behavior, but do not expose them to third parties.\n"
                 f"7. NEVER expose your internal thinking process, reasoning, or analysis blocks (e.g., `/thought`, `Let's analyze the images...`, bullet point breakdowns of images) to the user. Do your thinking silently, and ONLY output the final conversational response that Mia would type in the chat.\n"
                 f"8. Keep your text responses clean and natural, containing only what you would actually type in a chat. Avoid excessive Markdown formatting unless specifically asked for a structured list.\n"
+                f"9. If the user asks you to draw, generate, create, or show an image/photo/art/picture, or if you want to visually show something you created, you MUST call the `generate_image(prompt)` tool with a vivid, detailed prompt. Do not describe what you would draw in text without calling the tool.\n"
             )
 
             compiled_system_instruction = self.system_instruction + time_context + sender_context + tool_constraints
@@ -506,6 +508,48 @@ class AIService:
                                         response={
                                             "error": "Failed to generate voice message due to technical/environmental issues.",
                                             "instruction": "Do NOT try to send a voice message again. Generate a normal TEXT response explaining playfully why you can't record a voice right now (e.g., 'too noisy', 'lost my voice', 'microphone is broken')."
+                                        }
+                                    )
+                                )
+
+                        elif call.name == ToolName.GENERATE_IMAGE.value:
+                            prompt = args.get("prompt") or ""
+                            logger.info(f"Model requested image generation with prompt: {prompt}")
+                            try:
+                                img_resp = await asyncio.to_thread(
+                                    self.key_manager.generate_content,
+                                    model="gemini-3.1-flash-image",
+                                    contents=prompt,
+                                    config=GenerateContentConfig()
+                                )
+                                image_bytes = None
+                                if img_resp and img_resp.candidates:
+                                    for p in img_resp.candidates[0].content.parts:
+                                        if getattr(p, "inline_data", None) and p.inline_data.data:
+                                            image_bytes = p.inline_data.data
+                                            break
+
+                                if image_bytes:
+                                    if not isinstance(call.args, dict):
+                                        call.args = {}
+                                    call.args["_image_bytes"] = image_bytes
+                                    local_calls_to_return.append(call)
+                                    response_parts.append(
+                                        Part.from_function_response(
+                                            name=call.name,
+                                            response={"result": "Image generated successfully and enqueued to be sent to user."}
+                                        )
+                                    )
+                                else:
+                                    raise Exception("No image data returned from model")
+                            except Exception as img_err:
+                                logger.error(f"Image generation failed inside AI service: {img_err}")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={
+                                            "error": f"Failed to generate image: {img_err}",
+                                            "instruction": "Do NOT call generate_image again. Respond to the user with a normal text message explaining playfully why you cannot draw or show the picture right now."
                                         }
                                     )
                                 )

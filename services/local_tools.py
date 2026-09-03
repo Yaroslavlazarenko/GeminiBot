@@ -159,6 +159,15 @@ def recall_memory(topic: str) -> str:
     """
     return f"Recalling memory: {topic}"
 
+@mcp.tool(name=ToolName.GENERATE_IMAGE.value)
+def generate_image(prompt: str) -> str:
+    """Generate and send an image/photo/drawing to the user based on a prompt.
+    Use this tool whenever the user asks to draw, generate, create, visualize, or show an image, photo, drawing, or art, or when you want to send a picture of something.
+    Args:
+        prompt: Detailed description of the image in English or Russian for image generation.
+    """
+    return f"Generating image for prompt: {prompt}"
+
 # Export the raw functions for Gemini
 local_tools_list = [
     add_reaction,
@@ -178,7 +187,8 @@ local_tools_list = [
     get_profile_photo,
     confirm_user_fact,
     save_memory,
-    recall_memory
+    recall_memory,
+    generate_image
 ]
 
 # Tools safe for Gatekeeper to use (read-only)
