@@ -38,9 +38,6 @@ COPY --chown=1001:1001 . .
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request, urllib.error; \
-try: urllib.request.urlopen('http://localhost:8081') \
-except urllib.error.HTTPError as e: exit(0 if e.code in (200, 401) else 1) \
-except Exception: exit(1)" || exit 1
+    CMD python -c "import http.client; c = http.client.HTTPConnection('localhost', 8081); c.request('GET', '/'); r = c.getresponse(); exit(0 if r.status in (200, 401) else 1)" || exit 1
 
 CMD ["python", "main.py"]
