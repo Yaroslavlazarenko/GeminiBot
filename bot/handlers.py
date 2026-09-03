@@ -47,6 +47,40 @@ def is_telegram_permission_error(exc: Exception) -> bool:
         "bot is not a member", "need administrator rights", "chat_write_forbidden"
     ])
 
+_chat_permission_cache = {}
+
+async def can_bot_send_messages(bot, chat_id: int) -> bool:
+    """Check if the bot has permission to send messages in the specified chat (cached with TTL)."""
+    now = time.time()
+    if chat_id in _chat_permission_cache:
+        can_send, expires = _chat_permission_cache[chat_id]
+        if now < expires:
+            return can_send
+
+    try:
+        member = await bot.get_chat_member(chat_id=chat_id, user_id=bot.id)
+        if member.status in ("kicked", "left"):
+            can_send = False
+        elif member.status == "restricted":
+            can_send = bool(getattr(member, "can_send_messages", True))
+        elif member.status == "administrator":
+            can_send = getattr(member, "can_post_messages", True) is not False
+        else:
+            chat = await bot.get_chat(chat_id)
+            if chat.permissions and getattr(chat.permissions, "can_send_messages", None) is False:
+                can_send = False
+            else:
+                can_send = True
+    except Exception as e:
+        if is_telegram_permission_error(e):
+            can_send = False
+        else:
+            can_send = True
+
+    ttl = 60.0 if can_send else 180.0
+    _chat_permission_cache[chat_id] = (can_send, now + ttl)
+    return can_send
+
 def split_and_balance_html(text: str) -> list[str]:
     """
     Split text by double newlines into chunks and ensure HTML tags are properly
@@ -325,6 +359,20 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
     # and be processed after the current generation finishes (with the bot's response already in history).
     lock = _get_generation_lock(chat_id)
     async with lock:
+        # Check permissions first: if bot is muted/restricted in a group, do not generate responses
+        if chat_context.is_group:
+            if not await can_bot_send_messages(last_message.bot, chat_id):
+                logger.info(f"Bot is muted/restricted in chat {chat_id}, skipping generation.")
+                if combined_db_text:
+                    await chat_context.add_message(
+                        "user",
+                        combined_db_text,
+                        last_message.message_id,
+                        timestamp=msg_timestamp,
+                        reactions=None
+                    )
+                return
+
         # Gatekeeper check (BEFORE saving to history, so the message doesn't appear
         # both in history and as the "new message" in the prompt — that caused duplicates)
         if chat_context.is_group:
@@ -431,6 +479,7 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
                         except Exception as reply_err:
                             if is_telegram_permission_error(reply_err):
                                 logger.error(f"Cannot send message to chat {last_message.chat.id}: {reply_err}")
+                                _chat_permission_cache[last_message.chat.id] = (False, time.time() + 180.0)
                                 break
                             logger.warning(f"Failed to send with reply_to {requested_reply_id}, falling back to normal reply: {reply_err}")
                             requested_reply_id = None  # Don't retry with broken reply_id
@@ -445,6 +494,7 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
                 except Exception as e:
                     if is_telegram_permission_error(e):
                         logger.error(f"Cannot send message to chat {last_message.chat.id}: {e}")
+                        _chat_permission_cache[last_message.chat.id] = (False, time.time() + 180.0)
                         break
 
                     logger.warning(f"Failed to send message chunk due to formatting error, retrying safely: {e}")
@@ -459,6 +509,7 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
                     except Exception as e2:
                         if is_telegram_permission_error(e2):
                             logger.error(f"Cannot send message to chat {last_message.chat.id}: {e2}")
+                            _chat_permission_cache[last_message.chat.id] = (False, time.time() + 180.0)
                             break
                         logger.error(f"Failed to send even plain text fallback: {e2}")
 
@@ -642,7 +693,7 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
                 if message.video_note:
                     from services.sticker_service import StickerService
                     from core.key_manager import get_key_manager
-                    video_desc = await StickerService.analyze_video_note(message.bot, get_key_manager(), file_id, db=chat_context.db)
+                    video_desc = await StickerService.analyze_video_note(message.bot, get_key_manager(), file_id, db=chat_context._db)
 
                 media = {"mime_type": mime_type, "data": media_bytes}
 

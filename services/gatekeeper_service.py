@@ -191,12 +191,25 @@ class GatekeeperService:
             if not decision:
                 # Fallback if parsed is empty for some reason
                 import json
-                raw_text = response.text
+                import re
+                raw_text = (response.text or "").strip()
                 if not raw_text:
-                    logger.warning("Gatekeeper: response.text is None, defaulting to RESPOND")
+                    logger.warning("Gatekeeper: response.text is empty, defaulting to RESPOND")
                     return GatekeeperAction.RESPOND
-                data = json.loads(raw_text)
-                decision = GatekeeperDecision(**data)
+                
+                # Strip markdown code fences if model wrapped JSON in ```json ... ```
+                if raw_text.startswith("```"):
+                    raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
+                    raw_text = re.sub(r"\s*```$", "", raw_text).strip()
+
+                try:
+                    data = json.loads(raw_text)
+                    decision = GatekeeperDecision(**data)
+                except Exception as parse_err:
+                    logger.warning(f"Gatekeeper: JSON parsing fallback failed ({parse_err}) on raw text: {raw_text[:100]}")
+                    if "IGNORE" in raw_text.upper() and "RESPOND" not in raw_text.upper():
+                        return GatekeeperAction.IGNORE
+                    return GatekeeperAction.RESPOND
             
             logger.info(f"Gatekeeper decided: {decision.action.value} (Reason: {decision.reasoning})")
             return decision.action
