@@ -1069,6 +1069,12 @@ class AIService:
                 except Exception:
                     pass
 
+            # Clean up any leaked system metadata tags like [MsgID: 123] or [14:05]
+            import re
+            final_text = re.sub(r"\[MsgID:\s*\d+\]\s*", "", final_text)
+            final_text = re.sub(r"\[\d{1,2}:\d{2}\]\s*", "", final_text)
+            final_text = re.sub(r"^\[.*?\]:\s*", "", final_text).strip()
+
             return final_text, local_calls_to_return
             
         except Exception as e:
