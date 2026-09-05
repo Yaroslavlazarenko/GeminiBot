@@ -77,7 +77,7 @@ class GatekeeperService:
             if chat_context.is_group:
                 prompt += "ENVIRONMENT: GROUP CHAT (Multiple users).\n"
                 prompt += "STRICT RULES FOR GROUP CHATS:\n"
-                prompt += "1. ONLY output 'RESPOND' if the message is CLEARLY and EXPLICITLY addressed to Mia ('Миа', 'Мія', 'Mia', '@miamind_bot', direct reply to Mia's message, or direct question to her).\n"
+                prompt += "1. Output 'RESPOND' if the message is CLEARLY addressed to Mia ('Миа', 'Мія', 'Mia', '@miamind_bot', direct reply to Mia's message, direct question to her), OR if Mia literally just asked the user a question in her previous message and the user is answering/continuing that specific 1-on-1 dialogue with her.\n"
                 prompt += "2. NEVER INTRUDE: If a user is speaking to or addressing ANOTHER person (by name like 'Ярослав, ...', 'Саша, ...', or by mention like '@username'), you MUST output 'IGNORE'! Even if they mention Mia in the 3rd person (e.g. 'Ярослав, скажи ей...', 'переименуй её...'), output 'IGNORE' because the conversation is between those two users.\n"
                 prompt += "3. If users are chatting with each other, sharing memes, or making general group statements ('всем привет', 'кто в курсе...'), output 'IGNORE'.\n"
                 prompt += "4. When in doubt in a group chat, PREFER 'IGNORE' to keep Mia unobtrusive, natural, and respectful of the group conversation.\n\n"
