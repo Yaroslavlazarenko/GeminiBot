@@ -15,8 +15,8 @@ from services.mcp_manager import MCPConnectionManager
 logger = logging.getLogger(__name__)
 
 class AIResponse(BaseModel):
-    internal_monologue: str = Field(description="Your hidden scratchpad. Use this to think step-by-step, analyze images, draft responses, and evaluate your persona constraints. This will NEVER be seen by the user.")
-    message: str = Field(description="The final, polished conversational response that Mia will send to the user. This MUST follow all formatting and persona rules.")
+    internal_monologue: str = Field(description="Your hidden scratchpad. Use this to think step-by-step, evaluate your persona constraints, and ensure you speak like a real human friend.")
+    message: str = Field(description="The casual, authentic, human response that Mia (22yo girl) types in chat. NEVER sound like an assistant, corporate bot, or customer service.")
 
 class AIService:
     def __init__(self, config: Config):

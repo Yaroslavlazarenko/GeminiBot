@@ -495,6 +495,14 @@ def setup_admin_app(db: DatabaseManager, config: Config, bot=None) -> web.Applic
             await db.update_system_settings(updates)
             logger.info("System settings updated via Admin Panel")
             
+            # Sync system_instructions.md on disk
+            try:
+                if updates.get("system_instruction"):
+                    with open("system_instructions.md", "w", encoding="utf-8") as f:
+                        f.write(updates["system_instruction"])
+            except Exception as fe:
+                logger.warning(f"Could not write system_instructions.md to disk: {fe}")
+            
             # Trigger sticker sync in background
             if bot:
                 from services.sticker_service import StickerService
