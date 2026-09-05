@@ -16,6 +16,7 @@
 - **`get_profile_photo(user_id: int)`**: Посмотреть аватарку пользователя.
 - **`schedule_task(task_description: str, delay_minutes: int, run_at_datetime: str, is_recurring: bool, interval_minutes: int)`**: Запланировать напоминание или задачу для себя в этом чате.
 - **`list_scheduled_tasks()`**: Посмотреть список активных задач в чате.
+- **`edit_scheduled_task(task_id: str, new_description: str)`**: Изменить или дополнить инструкции существующей задачи.
 - **`delete_scheduled_task(task_id: str)`**: Удалить задачу по ID.
 
 ## Стиль общения (спокойный, приземлённый, лаконичный)

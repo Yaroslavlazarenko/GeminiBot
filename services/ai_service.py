@@ -1033,6 +1033,41 @@ class AIService:
                                     )
                                 )
 
+                        elif call.name == ToolName.EDIT_SCHEDULED_TASK.value:
+                            task_id = (args.get("task_id") or "").strip()
+                            new_description = args.get("new_description")
+                            new_interval = args.get("new_interval_minutes")
+                            if new_interval is not None:
+                                try:
+                                    new_interval = max(30, int(new_interval))
+                                except (ValueError, TypeError):
+                                    new_interval = None
+                            try:
+                                updated = await chat_context._db.edit_scheduled_task(
+                                    chat_id=chat_context.id,
+                                    task_id=task_id,
+                                    new_description=new_description,
+                                    new_interval_minutes=new_interval
+                                )
+                                if updated:
+                                    resp = {"result": f"Задача '{task_id}' успешно обновлена."}
+                                else:
+                                    resp = {"error": f"Задача с ID '{task_id}' не найдена среди активных задач в этом чате."}
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response=resp
+                                    )
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to edit scheduled task: {e}")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": str(e)}
+                                    )
+                                )
+
                         else:
                             local_calls_to_return.append(call)
                             # Add a successful local tool execution response to the Gemini context

@@ -635,6 +635,32 @@ class DatabaseManager:
         )
         return result.modified_count > 0
 
+    async def edit_scheduled_task(
+        self,
+        chat_id: int,
+        task_id: str,
+        new_description: Optional[str] = None,
+        new_next_run_at: Optional[datetime] = None,
+        new_interval_minutes: Optional[int] = None
+    ) -> bool:
+        """Update description, schedule time, or recurrence interval of an active task."""
+        update_fields: Dict[str, Any] = {}
+        if new_description:
+            update_fields["task_description"] = new_description
+        if new_next_run_at:
+            update_fields["next_run_at"] = new_next_run_at
+        if new_interval_minutes is not None:
+            update_fields["interval_minutes"] = new_interval_minutes
+
+        if not update_fields:
+            return False
+
+        result = await self.scheduled_tasks.update_one(
+            {"_id": task_id, "chat_id": chat_id, "status": "active"},
+            {"$set": update_fields}
+        )
+        return result.modified_count > 0
+
     async def get_due_scheduled_tasks(self, now: datetime) -> List[Dict[str, Any]]:
         """Find active tasks whose scheduled run time has arrived."""
         cursor = self.scheduled_tasks.find({

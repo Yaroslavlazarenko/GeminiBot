@@ -204,6 +204,20 @@ def delete_scheduled_task(task_id: str) -> str:
     """
     return f"Deleting scheduled task: {task_id}"
 
+@mcp.tool(name=ToolName.EDIT_SCHEDULED_TASK.value)
+def edit_scheduled_task(
+    task_id: str,
+    new_description: Optional[str] = None,
+    new_interval_minutes: Optional[int] = None
+) -> str:
+    """Modify an existing scheduled task or reminder (e.g. update instructions, add links/sources, or change recurrence interval).
+    Args:
+        task_id: The ID of the task to edit (e.g. 'task_1b7803'). If unknown, call list_scheduled_tasks first.
+        new_description: The updated instructions for what to do when the task runs.
+        new_interval_minutes: Optional updated repeat interval in minutes (minimum 30 minutes).
+    """
+    return f"Editing scheduled task: {task_id}"
+
 # Export the raw functions for Gemini
 local_tools_list = [
     add_reaction,
@@ -227,7 +241,8 @@ local_tools_list = [
     generate_image,
     schedule_task,
     list_scheduled_tasks,
-    delete_scheduled_task
+    delete_scheduled_task,
+    edit_scheduled_task
 ]
 
 # Tools safe for Gatekeeper to use (read-only)
