@@ -26,9 +26,10 @@ class ProactiveScheduler:
     via the admin panel take effect on the next wake-up.
     """
 
-    def __init__(self, db_manager, proactive_service):
+    def __init__(self, db_manager, proactive_service, bot=None):
         self._db = db_manager
         self._proactive = proactive_service
+        self._bot = bot or getattr(proactive_service, "_bot", None)
         self._tasks: list = []
         self._running = False
 
@@ -37,7 +38,8 @@ class ProactiveScheduler:
         self._running = True
         self._tasks.append(asyncio.create_task(self._research_loop()))
         self._tasks.append(asyncio.create_task(self._messaging_loop()))
-        logger.info("ProactiveScheduler started (research + messaging loops)")
+        self._tasks.append(asyncio.create_task(self._scheduled_tasks_loop()))
+        logger.info("ProactiveScheduler started (research + messaging + scheduled_tasks loops)")
 
     async def stop(self):
         """Cancel all background tasks gracefully."""
@@ -156,3 +158,145 @@ class ProactiveScheduler:
             except Exception as e:
                 logger.error(f"Proactive messaging loop error: {e}", exc_info=True)
                 await asyncio.sleep(300)
+
+    # --- Scheduled Tasks Engine ---
+
+    async def _scheduled_tasks_loop(self):
+        """Periodically checks and executes user-scheduled tasks."""
+        # Initial delay to ensure everything is connected and bot is polling
+        await asyncio.sleep(10)
+
+        while self._running:
+            try:
+                now_utc = datetime.now(timezone.utc)
+                due_tasks = await self._db.get_due_scheduled_tasks(now_utc)
+
+                for task in due_tasks:
+                    try:
+                        await self._execute_scheduled_task(task)
+                    except Exception as te:
+                        logger.error(f"Error executing scheduled task {task.get('_id')}: {te}", exc_info=True)
+
+                # Poll every 20 seconds for due tasks
+                await asyncio.sleep(20)
+
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"Scheduled tasks loop error: {e}", exc_info=True)
+                await asyncio.sleep(30)
+
+    async def _execute_scheduled_task(self, task: dict):
+        """Executes a single scheduled task by triggering Gemini and delivering the result to the chat."""
+        task_id = task.get("_id")
+        chat_id = task.get("chat_id")
+        if not chat_id or not task_id:
+            logger.warning(f"Skipping malformed scheduled task: {task}")
+            return
+        chat_id = int(chat_id)
+        task_desc = task.get("task_description", "")
+        is_recurring = bool(task.get("is_recurring", False))
+        interval_minutes = task.get("interval_minutes")
+
+        logger.info(f"Executing scheduled task {task_id} for chat {chat_id}: {task_desc}")
+
+        if not self._bot:
+            logger.error("Bot instance not available in ProactiveScheduler")
+            return
+
+        # Pre-flight check: verify bot can actually send messages in this chat
+        try:
+            from bot.handlers import can_bot_send_messages
+            if not await can_bot_send_messages(self._bot, chat_id):
+                logger.warning(f"Cannot send message to chat {chat_id}: bot lacks permissions. Skipping task {task_id}")
+                await self._db.update_scheduled_task_after_run(
+                    task_id=task_id,
+                    next_run_at=None,
+                    is_recurring=False,
+                    error="Bot lacks permissions to send messages to chat"
+                )
+                return
+        except Exception as pe:
+            logger.warning(f"Permission check failed for {chat_id}: {pe}")
+
+        # Resolve chat context
+        chat_context = await self._db.get_chat_context(chat_id)
+        if not chat_context:
+            logger.error(f"Could not resolve chat context for chat {chat_id}")
+            return
+
+        # Construct prompt for the model
+        prompt = (
+            f"[⏰ НАПОМИНАНИЕ / ЗАДАЧА ПО РАСПИСАНИЮ]\n"
+            f"ID задачи: {task_id}\n"
+            f"Инструкция/задача: {task_desc}\n\n"
+            f"Сейчас наступило время выполнить эту задачу. "
+            f"Обратись к участникам чата и выполни её естественно, дружелюбно и живо в своем характере (Миа). "
+            f"Не упоминай системные теги и технический ID вслух, просто скажи то, о чём просили, или выполни задачу."
+        )
+
+        from services.ai_service import get_ai_service
+        ai_service = get_ai_service()
+
+        try:
+            response_text, tool_calls = await ai_service.generate_response(
+                text=prompt,
+                chat_context=chat_context
+            )
+
+            sent_msg = None
+            if response_text:
+                import html
+                from bot.handlers import split_and_balance_html
+
+                parts = split_and_balance_html(response_text)
+                for part in parts:
+                    try:
+                        sent_msg = await self._bot.send_message(
+                            chat_id=chat_id,
+                            text=part,
+                            parse_mode="HTML"
+                        )
+                    except Exception:
+                        safe_part = html.escape(part)
+                        sent_msg = await self._bot.send_message(
+                            chat_id=chat_id,
+                            text=safe_part
+                        )
+
+            # Record bot's message into history
+            if sent_msg and response_text:
+                await chat_context.add_message(
+                    role="model",
+                    text=response_text,
+                    message_id=sent_msg.message_id,
+                    timestamp=datetime.now(ODESSA_TZ).strftime("%Y-%m-%d %H:%M")
+                )
+
+            # Schedule next run or mark completed
+            now_utc = datetime.now(timezone.utc)
+            if is_recurring and interval_minutes:
+                safe_interval = max(int(interval_minutes), 30)
+                next_run = now_utc + timedelta(minutes=safe_interval)
+                await self._db.update_scheduled_task_after_run(
+                    task_id=task_id,
+                    next_run_at=next_run,
+                    is_recurring=True
+                )
+                logger.info(f"Recurring task {task_id} completed run. Next run at: {next_run.isoformat()}")
+            else:
+                await self._db.update_scheduled_task_after_run(
+                    task_id=task_id,
+                    next_run_at=None,
+                    is_recurring=False
+                )
+                logger.info(f"One-time scheduled task {task_id} completed successfully.")
+
+        except Exception as e:
+            logger.error(f"Failed to execute scheduled task {task_id}: {e}", exc_info=True)
+            await self._db.update_scheduled_task_after_run(
+                task_id=task_id,
+                next_run_at=None,
+                is_recurring=False,
+                error=str(e)
+            )

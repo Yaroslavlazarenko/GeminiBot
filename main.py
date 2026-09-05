@@ -134,7 +134,8 @@ async def main():
         )
         scheduler = ProactiveScheduler(
             db_manager=db_manager,
-            proactive_service=proactive_service
+            proactive_service=proactive_service,
+            bot=bot
         )
         await scheduler.start()
 

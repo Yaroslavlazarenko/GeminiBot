@@ -168,6 +168,42 @@ def generate_image(prompt: str) -> str:
     """
     return f"Generating image for prompt: {prompt}"
 
+@mcp.tool(name=ToolName.SCHEDULE_TASK.value)
+def schedule_task(
+    task_description: str,
+    delay_minutes: Optional[int] = None,
+    run_at_datetime: Optional[str] = None,
+    is_recurring: bool = False,
+    interval_minutes: Optional[int] = None
+) -> str:
+    """Schedule a future task or reminder for yourself (Mia) to perform in this chat.
+    When the scheduled time arrives, you will wake up and send a response/action to the chat.
+    Use this when the user asks you to remind them of something, send a message in the future, or repeat an action periodically.
+    Args:
+        task_description: Detailed instruction of what to do/say when triggered (e.g., 'Напомни размяться и выпить воды', 'Пожелай доброго утра и расскажи анекдот').
+        delay_minutes: Optional. Run once after this many minutes from now (e.g., 15, 60, 120).
+        run_at_datetime: Optional. Specific time or date to run (e.g., '09:00', '2026-09-05 14:00', ISO format). Interpreted in local Odessa time (Europe/Kyiv).
+        is_recurring: Set to True for periodic/recurring tasks, False for one-time tasks.
+        interval_minutes: Required if is_recurring=True. Repeat interval in minutes. NOTE: Minimum allowed interval is 30 minutes to prevent spam. E.g., 60 (hourly), 1440 (daily).
+    """
+    return f"Scheduling task: {task_description}"
+
+@mcp.tool(name=ToolName.LIST_SCHEDULED_TASKS.value)
+def list_scheduled_tasks() -> str:
+    """View all currently active scheduled tasks and reminders in this chat.
+    Call this when the user asks what tasks, reminders, or schedules are set up.
+    """
+    return "Listing scheduled tasks..."
+
+@mcp.tool(name=ToolName.DELETE_SCHEDULED_TASK.value)
+def delete_scheduled_task(task_id: str) -> str:
+    """Cancel and delete an existing scheduled task or reminder in this chat by its ID.
+    If you do not know the task ID, call list_scheduled_tasks first.
+    Args:
+        task_id: The exact ID of the task to cancel (e.g. 'task_a1b2c3').
+    """
+    return f"Deleting scheduled task: {task_id}"
+
 # Export the raw functions for Gemini
 local_tools_list = [
     add_reaction,
@@ -188,7 +224,10 @@ local_tools_list = [
     confirm_user_fact,
     save_memory,
     recall_memory,
-    generate_image
+    generate_image,
+    schedule_task,
+    list_scheduled_tasks,
+    delete_scheduled_task
 ]
 
 # Tools safe for Gatekeeper to use (read-only)

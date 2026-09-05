@@ -119,6 +119,7 @@ class DatabaseManager:
         self.messages = self.db['messages']
         self.world_memory = self.db['world_memory']
         self.auto_memory = self.db['auto_memory']
+        self.scheduled_tasks = self.db['scheduled_tasks']
 
     async def _setup_indexes(self):
         """Create necessary indexes for performance."""
@@ -131,6 +132,8 @@ class DatabaseManager:
             await self.world_memory.create_index([("compressed", 1), ("created_at", -1)])
             await self.auto_memory.create_index([("chat_id", 1), ("updated_at", -1)])
             await self.auto_memory.create_index([("chat_id", 1), ("topic", 1)], unique=True)
+            await self.scheduled_tasks.create_index([("chat_id", 1), ("status", 1)])
+            await self.scheduled_tasks.create_index([("status", 1), ("next_run_at", 1)])
             logger.info("MongoDB indexes created successfully.")
         except Exception as e:
             logger.error(f"Error creating MongoDB indexes: {e}")
@@ -505,3 +508,173 @@ class DatabaseManager:
                 "proactive.consecutive_ignored": 0
             }}
         )
+
+    # --- Scheduled Tasks Management ---
+
+    MAX_SCHEDULED_TASKS_PER_CHAT = 5
+    MIN_RECURRING_INTERVAL_MINUTES = 30
+
+    async def create_scheduled_task(
+        self,
+        chat_id: int,
+        creator_user_id: int,
+        creator_name: str,
+        task_description: str,
+        delay_minutes: Optional[int] = None,
+        run_at_datetime: Optional[str] = None,
+        is_recurring: bool = False,
+        interval_minutes: Optional[int] = None,
+        is_group: bool = False
+    ) -> Dict[str, Any]:
+        """Create a scheduled task with chat limit and recurring interval enforcement."""
+        import secrets
+        from datetime import timezone, timedelta
+        from zoneinfo import ZoneInfo
+        ODESSA_TZ = ZoneInfo("Europe/Kyiv")
+
+        # 1. Limit per chat check
+        active_count = await self.scheduled_tasks.count_documents({
+            "chat_id": chat_id,
+            "status": "active"
+        })
+        if active_count >= self.MAX_SCHEDULED_TASKS_PER_CHAT:
+            return {
+                "error": f"Достигнут лимит активных задач для этого чата (максимум {self.MAX_SCHEDULED_TASKS_PER_CHAT}). "
+                         f"Удалите неактуальные задачи через delete_scheduled_task, чтобы создать новую."
+            }
+
+        # 2. Enforce minimum interval for recurring tasks
+        if is_recurring:
+            if not interval_minutes or interval_minutes < self.MIN_RECURRING_INTERVAL_MINUTES:
+                interval_minutes = max(int(interval_minutes or 60), self.MIN_RECURRING_INTERVAL_MINUTES)
+
+        # 3. Calculate initial execution time (next_run_at)
+        now_utc = datetime.now(timezone.utc)
+        next_run_at = None
+
+        if delay_minutes is not None and delay_minutes > 0:
+            next_run_at = now_utc + timedelta(minutes=delay_minutes)
+        elif run_at_datetime:
+            clean = run_at_datetime.strip()
+            # Handle "HH:MM"
+            if len(clean) <= 5 and ":" in clean:
+                try:
+                    parts = clean.split(":")
+                    h, m = int(parts[0]), int(parts[1])
+                    now_local = datetime.now(ODESSA_TZ)
+                    target = now_local.replace(hour=h, minute=m, second=0, microsecond=0)
+                    if target <= now_local:
+                        target += timedelta(days=1)
+                    next_run_at = target.astimezone(timezone.utc)
+                except Exception:
+                    pass
+            else:
+                try:
+                    clean_iso = clean.replace(" ", "T")
+                    dt = datetime.fromisoformat(clean_iso)
+                    if dt.tzinfo is None:
+                        dt = dt.replace(tzinfo=ODESSA_TZ)
+                    next_run_at = dt.astimezone(timezone.utc)
+                except Exception:
+                    pass
+
+        if not next_run_at:
+            # Fallback default: interval or 10 minutes
+            default_delay = interval_minutes if (is_recurring and interval_minutes) else 10
+            next_run_at = now_utc + timedelta(minutes=default_delay)
+
+        # Ensure future time
+        if next_run_at <= now_utc:
+            next_run_at = now_utc + timedelta(minutes=5)
+
+        task_id = f"task_{secrets.token_hex(3)}"
+        task_doc = {
+            "_id": task_id,
+            "chat_id": chat_id,
+            "is_group": is_group,
+            "creator_user_id": creator_user_id,
+            "creator_name": creator_name,
+            "task_description": task_description,
+            "is_recurring": is_recurring,
+            "interval_minutes": interval_minutes if is_recurring else None,
+            "next_run_at": next_run_at,
+            "last_run_at": None,
+            "created_at": datetime.now(timezone.utc),
+            "status": "active",
+            "execution_count": 0,
+            "last_error": None
+        }
+
+        await self.scheduled_tasks.insert_one(task_doc)
+        local_run_str = next_run_at.astimezone(ODESSA_TZ).strftime("%Y-%m-%d %H:%M")
+
+        return {
+            "result": f"Задача успешно создана и добавлена в расписание!",
+            "task_id": task_id,
+            "task_description": task_description,
+            "next_run_at": f"{local_run_str} (время Одессы)",
+            "is_recurring": is_recurring,
+            "interval_minutes": interval_minutes if is_recurring else None,
+            "active_tasks_in_chat": active_count + 1,
+            "max_tasks_allowed": self.MAX_SCHEDULED_TASKS_PER_CHAT
+        }
+
+    async def get_scheduled_tasks(self, chat_id: int, status: str = "active") -> List[Dict[str, Any]]:
+        """Retrieve scheduled tasks for a specific chat."""
+        cursor = self.scheduled_tasks.find({
+            "chat_id": chat_id,
+            "status": status
+        }).sort("next_run_at", 1)
+        return await cursor.to_list(None)
+
+    async def delete_scheduled_task(self, chat_id: int, task_id: str) -> bool:
+        """Cancel and delete a scheduled task by ID in the given chat."""
+        result = await self.scheduled_tasks.update_one(
+            {"_id": task_id, "chat_id": chat_id, "status": "active"},
+            {"$set": {"status": "cancelled", "cancelled_at": datetime.utcnow()}}
+        )
+        return result.modified_count > 0
+
+    async def get_due_scheduled_tasks(self, now: datetime) -> List[Dict[str, Any]]:
+        """Find active tasks whose scheduled run time has arrived."""
+        cursor = self.scheduled_tasks.find({
+            "status": "active",
+            "next_run_at": {"$lte": now}
+        }).sort("next_run_at", 1).limit(20)
+        return await cursor.to_list(None)
+
+    async def update_scheduled_task_after_run(
+        self,
+        task_id: str,
+        next_run_at: Optional[datetime],
+        is_recurring: bool,
+        error: Optional[str] = None
+    ):
+        """Update task state after an execution cycle."""
+        now = datetime.utcnow()
+        update_doc: Dict[str, Any] = {
+            "$inc": {"execution_count": 1},
+            "$set": {
+                "last_run_at": now,
+                "last_error": error
+            }
+        }
+        if is_recurring and next_run_at:
+            update_doc["$set"]["next_run_at"] = next_run_at
+        else:
+            update_doc["$set"]["status"] = "completed"
+
+        await self.scheduled_tasks.update_one({"_id": task_id}, update_doc)
+
+    async def get_chat_context(self, chat_id: int) -> Optional[ChatContext]:
+        """Resolve a unified ChatContext instance for either a group or a private user."""
+        if chat_id < 0:
+            doc = await self.groups.find_one({"telegram_chat_id": chat_id})
+            if not doc:
+                doc = await self.get_or_create_group(chat_id, "Group")
+            return ChatContext(self, chat_id, True, doc)
+        else:
+            doc = await self.users.find_one({"telegram_id": chat_id})
+            if not doc:
+                doc = await self.get_or_create_user(chat_id)
+            return ChatContext(self, chat_id, False, doc)

@@ -947,7 +947,97 @@ class AIService:
                                             response={"error": f"Failed to retrieve profile photo: {str(e)}"}
                                         )
                                     )
-                            
+
+                        elif call.name == ToolName.SCHEDULE_TASK.value:
+                            task_desc = args.get("task_description") or ""
+                            delay_mins = args.get("delay_minutes")
+                            run_at_str = args.get("run_at_datetime")
+                            is_rec = bool(args.get("is_recurring", False))
+                            interval_mins = args.get("interval_minutes")
+
+                            creator_uid = sender_info.get("user_id") if sender_info else 0
+                            creator_uname = sender_info.get("username") or sender_info.get("first_name") or "User" if sender_info else "User"
+
+                            try:
+                                res = await chat_context._db.create_scheduled_task(
+                                    chat_id=chat_context.id,
+                                    creator_user_id=creator_uid,
+                                    creator_name=creator_uname,
+                                    task_description=task_desc,
+                                    delay_minutes=delay_mins,
+                                    run_at_datetime=run_at_str,
+                                    is_recurring=is_rec,
+                                    interval_minutes=interval_mins,
+                                    is_group=chat_context.is_group
+                                )
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response=res
+                                    )
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to schedule task: {e}")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": str(e)}
+                                    )
+                                )
+
+                        elif call.name == ToolName.LIST_SCHEDULED_TASKS.value:
+                            try:
+                                tasks = await chat_context._db.get_scheduled_tasks(chat_context.id)
+                                formatted = []
+                                for t in tasks:
+                                    next_run = t.get("next_run_at")
+                                    next_run_str = next_run.strftime("%Y-%m-%d %H:%M UTC") if hasattr(next_run, "strftime") else str(next_run)
+                                    formatted.append({
+                                        "task_id": t["_id"],
+                                        "description": t.get("task_description", ""),
+                                        "next_run_at": next_run_str,
+                                        "is_recurring": t.get("is_recurring", False),
+                                        "interval_minutes": t.get("interval_minutes"),
+                                        "creator": t.get("creator_name", "User")
+                                    })
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"tasks": formatted, "count": len(formatted)}
+                                    )
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to list scheduled tasks: {e}")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": str(e)}
+                                    )
+                                )
+
+                        elif call.name == ToolName.DELETE_SCHEDULED_TASK.value:
+                            task_id = (args.get("task_id") or "").strip()
+                            try:
+                                deleted = await chat_context._db.delete_scheduled_task(chat_context.id, task_id)
+                                if deleted:
+                                    resp = {"result": f"Задача '{task_id}' успешно отменена и удалена."}
+                                else:
+                                    resp = {"error": f"Задача с ID '{task_id}' не найдена в этом чате или уже завершена."}
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response=resp
+                                    )
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to delete scheduled task: {e}")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": str(e)}
+                                    )
+                                )
+
                         else:
                             local_calls_to_return.append(call)
                             # Add a successful local tool execution response to the Gemini context
