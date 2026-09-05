@@ -11,7 +11,7 @@ class Config(BaseSettings):
     # gemini_api_key is always included automatically as the primary key.
     gemini_api_keys: str = ""
     gemini_api_model: str = "gemini-2.5-flash"
-    gemini_gatekeeper_model: str = "gemini-2.5-flash-lite"
+    gemini_gatekeeper_model: str = "tab_flash_lite_preview"
     gemini_base_url: str | None = None
 
     elevenlabs_api_key: str = ""
