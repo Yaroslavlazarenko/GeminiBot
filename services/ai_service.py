@@ -14,10 +14,6 @@ from services.mcp_manager import MCPConnectionManager
 
 logger = logging.getLogger(__name__)
 
-class AIResponse(BaseModel):
-    internal_monologue: str = Field(description="Your hidden scratchpad. Use this to think step-by-step, evaluate your persona constraints, and ensure you speak like a real human friend.")
-    message: str = Field(description="The casual, authentic, human response that Mia (22yo girl) types in chat. NEVER sound like an assistant, corporate bot, or customer service.")
-
 class AIService:
     def __init__(self, config: Config):
         self.config = config
@@ -332,9 +328,8 @@ class AIService:
                     logger.debug(f"AI turn {turn}: mid-loop text: {response.text[:200]!r}")
 
                 # If no tools were called, the tool loop is done.
-                # Crucial: do NOT append model turn to current_contents if exiting,
-                # because Phase 2 requires contents to end with a user turn.
                 if not response.function_calls:
+                    final_text = response.text or last_turn_text
                     break
 
                 # Store model's function_call response part before executing tools
@@ -1059,55 +1054,20 @@ class AIService:
                 # Feed responses back into Gemini's generation loop
                 current_contents.append(Content(role="user", parts=response_parts))
 
-            # --- Phase 2: Schema-enforced final generation ---
-            # After the tool loop completes, make one final call with response_schema
-            # to guarantee clean structured output (no reasoning leaks).
-            # This mirrors the pattern used in gatekeeper_service.py.
-            # Ensure the conversation does not end with a model turn (handle both dict and Content objects).
-            while current_contents:
-                last_turn = current_contents[-1]
-                last_role = last_turn.get("role") if isinstance(last_turn, dict) else getattr(last_turn, "role", "")
-                if last_role == "model":
-                    current_contents.pop()
-                else:
-                    break
+            final_text = final_text or last_turn_text or ""
 
-            try:
-                final_response = self.key_manager.generate_content(
-                    model=self.current_api_model,
-                    contents=current_contents,
-                    config=GenerateContentConfig(
-                        system_instruction=compiled_system_instruction,
-                        temperature=0.7,
-                        response_mime_type="application/json",
-                        response_schema=AIResponse,
-                    )
-                )
-
-                ai_response: AIResponse = final_response.parsed
-
-                if ai_response and ai_response.message:
-                    logger.info(
-                        f"AI structured response: monologue={ai_response.internal_monologue[:100]!r}"
-                    )
-                    final_text = ai_response.message
-                else:
-                    # Fallback: parsed was None, try json.loads on raw text
-                    raw = (final_response.text or "").strip()
-                    if raw:
-                        try:
-                            data = json.loads(raw)
-                            final_text = data.get("message", "") or raw
-                        except (json.JSONDecodeError, Exception):
-                            final_text = raw
-                    else:
-                        final_text = last_turn_text
-                        if not final_text:
-                            logger.warning("AI final schema call returned empty response.")
-
-            except Exception as schema_exc:
-                logger.error(f"AI final schema call failed: {schema_exc}", exc_info=True)
-                final_text = last_turn_text
+            # Clean up accidental markdown or json wrapping if present
+            if final_text.startswith("```"):
+                import re
+                final_text = re.sub(r"^```(?:json)?\s*", "", final_text)
+                final_text = re.sub(r"\s*```$", "", final_text).strip()
+            if final_text.startswith("{") and final_text.endswith("}"):
+                try:
+                    data = json.loads(final_text)
+                    if isinstance(data, dict):
+                        final_text = data.get("message") or data.get("response") or data.get("text") or final_text
+                except Exception:
+                    pass
 
             return final_text, local_calls_to_return
             
