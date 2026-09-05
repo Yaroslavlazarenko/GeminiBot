@@ -209,6 +209,11 @@ class GatekeeperService:
                     logger.warning(f"Gatekeeper: JSON parsing fallback failed ({parse_err}) on raw text: {raw_text[:100]}")
                     if "IGNORE" in raw_text.upper() and "RESPOND" not in raw_text.upper():
                         return GatekeeperAction.IGNORE
+                    if chat_context.is_group:
+                        bot_names = ["миа", "мие", "мию", "мией", "mia", "@miamind_bot"]
+                        if any(n in text.lower() for n in bot_names):
+                            return GatekeeperAction.RESPOND
+                        return GatekeeperAction.IGNORE
                     return GatekeeperAction.RESPOND
             
             logger.info(f"Gatekeeper decided: {decision.action.value} (Reason: {decision.reasoning})")
@@ -216,7 +221,11 @@ class GatekeeperService:
             
         except Exception as e:
             logger.error(f"Error in Gatekeeper: {e}", exc_info=True)
-            # Failsafe: When in doubt, always respond — ignoring on error makes the bot seem broken/unresponsive
+            if chat_context.is_group:
+                bot_names = ["миа", "мие", "мию", "мией", "mia", "@miamind_bot"]
+                if any(n in text.lower() for n in bot_names):
+                    return GatekeeperAction.RESPOND
+                return GatekeeperAction.IGNORE
             return GatekeeperAction.RESPOND
 
     async def summarize_history(self, history: List[Dict[str, Any]]) -> str:
