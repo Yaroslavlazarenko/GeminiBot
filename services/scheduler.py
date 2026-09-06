@@ -277,7 +277,17 @@ class ProactiveScheduler:
             now_utc = datetime.now(timezone.utc)
             if is_recurring and interval_minutes:
                 safe_interval = max(int(interval_minutes), 30)
-                next_run = now_utc + timedelta(minutes=safe_interval)
+                scheduled_run = task.get("next_run_at")
+                if scheduled_run:
+                    # Keep fixed anchor time to prevent schedule drift
+                    if scheduled_run.tzinfo is None:
+                        scheduled_run = scheduled_run.replace(tzinfo=timezone.utc)
+                    next_run = scheduled_run
+                    while next_run <= now_utc:
+                        next_run += timedelta(minutes=safe_interval)
+                else:
+                    next_run = now_utc + timedelta(minutes=safe_interval)
+
                 await self._db.update_scheduled_task_after_run(
                     task_id=task_id,
                     next_run_at=next_run,

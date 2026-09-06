@@ -25,6 +25,7 @@ class ToolName(str, Enum):
     SAVE_MEMORY = "save_memory"
     RECALL_MEMORY = "recall_memory"
     GENERATE_IMAGE = "generate_image"
+    SCHEDULE_TASK = "schedule_task"
     SCHEDULED_TASK = "schedule_task"
     LIST_SCHEDULED_TASKS = "list_scheduled_tasks"
     DELETE_SCHEDULED_TASK = "delete_scheduled_task"
