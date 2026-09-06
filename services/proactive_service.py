@@ -166,7 +166,8 @@ class ProactiveService:
             from services.ai_service import get_ai_service
             ai_service = get_ai_service()
 
-            # Ensure MCP is connected
+            # Ensure settings and MCP are synced with DB
+            await ai_service._sync_settings(self._db)
             await ai_service.mcp_manager.connect()
 
             if not ai_service.mcp_manager.adapters_map:
