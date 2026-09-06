@@ -177,12 +177,15 @@ class ProactiveService:
             IMAGE_SEARCH_KEYWORDS = ["image", "photo", "reverse_image", "vision", "picture"]
 
             search_tool_name = None
-            # 1. Prefer Exa / dedicated web search tools
+            # 1. Prefer Grok / Exa / dedicated web search tools
             for tool_name in ai_service.mcp_manager.adapters_map:
                 tn_lower = tool_name.lower()
                 if any(kw in tn_lower for kw in IMAGE_SEARCH_KEYWORDS):
                     continue
-                if "search" in tn_lower and "exa" in tn_lower:
+                if "grok" in tn_lower or "ask_grok" in tn_lower:
+                    search_tool_name = tool_name
+                    break
+                elif "search" in tn_lower and "exa" in tn_lower:
                     search_tool_name = tool_name
                     break
                 elif "web_search" in tn_lower:
@@ -205,9 +208,12 @@ class ProactiveService:
 
             # Create a mock FunctionCall to use the MCP adapter
             from google.genai.types import FunctionCall
+            search_args: Dict[str, Any] = {"query": query}
+            if "exa" in search_tool_name.lower():
+                search_args["numResults"] = 3
             search_call = FunctionCall(
                 name=search_tool_name,
-                args={"query": query, "numResults": 3}
+                args=search_args
             )
 
             adapter = ai_service.mcp_manager.adapters_map[search_tool_name]
