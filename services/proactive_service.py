@@ -209,9 +209,14 @@ class ProactiveService:
 
             # Create a mock FunctionCall to use the MCP adapter
             from google.genai.types import FunctionCall
-            search_args: Dict[str, Any] = {"query": query}
-            if "exa" in search_tool_name.lower():
+            search_args: Dict[str, Any] = {}
+            if "grok" in search_tool_name.lower():
+                search_args["message"] = query
+            elif "exa" in search_tool_name.lower():
+                search_args["query"] = query
                 search_args["numResults"] = 3
+            else:
+                search_args["query"] = query
             search_call = FunctionCall(
                 name=search_tool_name,
                 args=search_args
