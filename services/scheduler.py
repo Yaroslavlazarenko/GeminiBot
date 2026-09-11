@@ -219,19 +219,73 @@ class ProactiveScheduler:
         except Exception as pe:
             logger.warning(f"Permission check failed for {chat_id}: {pe}")
 
+        # Pre-flight check: if user recently told the bot to stop / cancel / shut up in this chat, cancel the task!
+        try:
+            recent_user_msgs = await self._db.get_recent_messages(chat_id, limit=3)
+            for um in reversed(recent_user_msgs):
+                if um.get("role") == "user":
+                    u_text = (um.get("text") or "").lower().strip()
+                    stop_triggers = ["стоп", "stop", "хватит", "отмени", "не пиши", "выключи спам", "выключи", "отмена", "заебал", "задолбал"]
+                    if any(st in u_text for st in stop_triggers):
+                        logger.warning(f"User in {chat_id} sent stop signal ('{u_text}'), cancelling scheduled task {task_id}")
+                        await self._db.update_scheduled_task_after_run(
+                            task_id=task_id,
+                            next_run_at=None,
+                            is_recurring=False,
+                            error=f"Cancelled automatically due to user stop signal: '{u_text}'"
+                        )
+                        return
+        except Exception as se:
+            logger.warning(f"Failed to check user stop signal: {se}")
+
         # Resolve chat context
         chat_context = await self._db.get_chat_context(chat_id)
         if not chat_context:
             logger.error(f"Could not resolve chat context for chat {chat_id}")
             return
 
+        from datetime import datetime, timezone, timedelta
+        odessa_tz = timezone(timedelta(hours=3))
+        now_local = datetime.now(odessa_tz)
+        today_date_str = now_local.strftime("%d.%m.%Y (%A)")
+
+        # Check previous messages for deduplication
+        last_task_output = ""
+        try:
+            prev_msgs = await self._db.get_recent_messages(chat_id, limit=25)
+            for m in reversed(prev_msgs):
+                if m.get("role") == "model" and any(w in m.get("text", "").lower() for w in ["сводка", "дайджест", "новост", "погод", "праздник", "вечерняя"]):
+                    last_task_output = m.get("text", "")
+                    break
+        except Exception as ee:
+            logger.warning(f"Could not fetch previous task output for deduplication: {ee}")
+
+        dedup_section = ""
+        if last_task_output:
+            dedup_section = (
+                f"\n\n[⚠️ ВАЖНО — ПРЕДЫДУЩАЯ СВОДКА, КОТОРУЮ ТЫ УЖЕ ПРИСЫЛАЛА РАНЕЕ]:\n"
+                f"{last_task_output[:1500]}\n\n"
+                f"СТРОЖАЙШЕЕ ПРАВИЛО ПРОТИВ ДУБЛЕЙ:\n"
+                f"НЕ ПОВТОРЯЙ события, новости или происшествия, которые уже были в твоей предыдущей сводке выше! "
+                f"Через ask_grok найди СВЕЖИЕ, НОВЫЕ события и факты за сегодняшний день, о которых чат ещё не слышал.\n"
+            )
+
         # Construct prompt for the model
         prompt = (
             f"[⏰ НАПОМИНАНИЕ / ЗАДАЧА ПО РАСПИСАНИЮ]\n"
             f"ID задачи: {task_id}\n"
             f"Инструкция/задача: {task_desc}\n\n"
+            f"📅 ТОЧНАЯ ДАТА СЕГОДНЯ: {today_date_str}\n\n"
             f"Сейчас наступило время выполнить эту задачу.\n"
-            f"ОБЯЗАТЕЛЬНОЕ ПРАВИЛО: Если задача требует фактических данных (прогноз погоды, мировые новости, текущие события, праздники), перед ответом ОБЯЗАТЕЛЬНО используй инструмент веб-поиска (ask_grok), чтобы взять настоящие данные на сегодня, а не придумывать цифры и события из головы.\n"
+            f"ОБЯЗАТЕЛЬНОЕ ПРАВИЛО: Если задача требует фактических данных (прогноз погоды, мировые новости, текущие события, праздники), перед ответом ОБЯЗАТЕЛЬНО используй инструмент веб-поиска (ask_grok), чтобы взять настоящие свежие данные на СЕГОДНЯ, а не придумывать цифры и события из головы.\n"
+            f"СТРОЖАЙШАЯ ПРОВЕРКА ДАТЫ:\n"
+            f"1. В запросе к ask_grok ОБЯЗАТЕЛЬНО указывай дату: 'новости за {today_date_str}' или 'события за последние 24 часа'.\n"
+            f"2. Бери ТОЛЬКО свежие новости, опубликованные СЕГОДНЯ ({today_date_str}). Старые новости за вчера или прошлые дни КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНЫ к публикации!"
+            f"{dedup_section}\n"
+            f"ТРЕБОВАНИЯ К ФОРМАТИРОВАНИЮ (СТРОГО TELEGRAM HTML):\n"
+            f"- Используй теги Telegram HTML: <b>жирный заголовок</b>, <i>курсив</i>.\n"
+            f"- Ссылки на первоисточники делай СТРОГО через тег: <a href=\"URL\">Название источника</a> (никогда не пиши [текст](url) в Markdown!).\n"
+            f"- Пункты оформляй красиво через эмодзи или маркеры •.\n\n"
             f"Обратись к участникам чата и выполни задачу естественно, дружелюбно и живо в своем характере (Миа). "
             f"Не упоминай системные теги и технический ID вслух, просто выполни задачу."
         )

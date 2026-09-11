@@ -159,15 +159,6 @@ def recall_memory(topic: str) -> str:
     """
     return f"Recalling memory: {topic}"
 
-@mcp.tool(name=ToolName.GENERATE_IMAGE.value)
-def generate_image(prompt: str) -> str:
-    """Generate and send an image/photo/drawing to the user based on a prompt.
-    Use this tool whenever the user asks to draw, generate, create, visualize, or show an image, photo, drawing, or art, or when you want to send a picture of something.
-    Args:
-        prompt: Detailed description of the image in English or Russian for image generation.
-    """
-    return f"Generating image for prompt: {prompt}"
-
 @mcp.tool(name=ToolName.SCHEDULE_TASK.value)
 def schedule_task(
     task_description: str,
@@ -238,7 +229,6 @@ local_tools_list = [
     confirm_user_fact,
     save_memory,
     recall_memory,
-    generate_image,
     schedule_task,
     list_scheduled_tasks,
     delete_scheduled_task,
