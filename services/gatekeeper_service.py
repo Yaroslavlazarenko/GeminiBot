@@ -210,13 +210,19 @@ class GatekeeperService:
                     raw_text = re.sub(r"^```(?:json)?\s*", "", raw_text)
                     raw_text = re.sub(r"\s*```$", "", raw_text).strip()
 
+                upper_text = raw_text.upper()
+                if "RESPOND" in upper_text and "IGNORE" not in upper_text:
+                    logger.info("Gatekeeper decided: RESPOND (from raw text)")
+                    return GatekeeperAction.RESPOND
+                if "IGNORE" in upper_text and "RESPOND" not in upper_text:
+                    logger.info("Gatekeeper decided: IGNORE (from raw text)")
+                    return GatekeeperAction.IGNORE
+
                 try:
                     data = json.loads(raw_text)
                     decision = GatekeeperDecision(**data)
                 except Exception as parse_err:
                     logger.warning(f"Gatekeeper: JSON parsing fallback failed ({parse_err}) on raw text: {raw_text[:100]}")
-                    if "IGNORE" in raw_text.upper() and "RESPOND" not in raw_text.upper():
-                        return GatekeeperAction.IGNORE
                     if chat_context.is_group:
                         bot_names = ["мия", "мие", "мию", "мией", "миею", "міє", "мія", "мію", "мією", "миа", "mia", "@miamind_bot"]
                         if any(n in text.lower() for n in bot_names):
