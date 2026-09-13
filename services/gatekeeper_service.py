@@ -3,7 +3,7 @@ from core.config import Config
 from core.key_manager import get_key_manager
 from google.genai.types import GenerateContentConfig, Content, Part, AutomaticFunctionCallingConfig
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from core.enums import GatekeeperAction, ToolName
 from core.database import ChatContext
 from services.local_tools import gatekeeper_tools_list
@@ -92,6 +92,8 @@ class GatekeeperService:
             
             turn = 0
             max_turns = 3
+            had_function_calls = False
+            response = None
             
             while turn < max_turns:
                 turn += 1
@@ -106,11 +108,12 @@ class GatekeeperService:
                     )
                 )
                 
-                if response.candidates and response.candidates[0].content:
-                    current_contents.append(response.candidates[0].content)
-                
                 if not response.function_calls:
                     break
+
+                had_function_calls = True
+                if response.candidates and response.candidates[0].content:
+                    current_contents.append(response.candidates[0].content)
                     
                 response_parts = []
                 for call in response.function_calls:
@@ -177,26 +180,27 @@ class GatekeeperService:
                         )
                 current_contents.append(Content(role="user", parts=response_parts))
                 
-            # Final generation round enforcing the JSON schema after tools are done
-            response = self.key_manager.generate_content(
-                model=self.current_gatekeeper_model,
-                contents=current_contents,
-                config=GenerateContentConfig(
-                    system_instruction=self.system_instruction,
-                    temperature=0.1,
-                    response_mime_type="application/json",
-                    response_schema=GatekeeperDecision
+            # Final generation round enforcing JSON schema ONLY if tools were called
+            if had_function_calls:
+                response = self.key_manager.generate_content(
+                    model=self.current_gatekeeper_model,
+                    contents=current_contents,
+                    config=GenerateContentConfig(
+                        system_instruction=self.system_instruction,
+                        temperature=0.1,
+                        response_mime_type="application/json",
+                        response_schema=GatekeeperDecision
+                    )
                 )
-            )
             
             # The SDK automatically parses the response into the Pydantic object
-            decision: GatekeeperDecision = response.parsed
+            decision: Optional[GatekeeperDecision] = getattr(response, "parsed", None) if response else None
             
             if not decision:
                 # Fallback if parsed is empty for some reason
                 import json
                 import re
-                raw_text = (response.text or "").strip()
+                raw_text = (getattr(response, "text", "") or "").strip()
                 if not raw_text:
                     logger.warning("Gatekeeper: response.text is empty, defaulting to RESPOND")
                     return GatekeeperAction.RESPOND
@@ -214,7 +218,7 @@ class GatekeeperService:
                     if "IGNORE" in raw_text.upper() and "RESPOND" not in raw_text.upper():
                         return GatekeeperAction.IGNORE
                     if chat_context.is_group:
-                        bot_names = ["миа", "мие", "мию", "мией", "mia", "@miamind_bot"]
+                        bot_names = ["мия", "мие", "мию", "мией", "миею", "міє", "мія", "мію", "мією", "миа", "mia", "@miamind_bot"]
                         if any(n in text.lower() for n in bot_names):
                             return GatekeeperAction.RESPOND
                         return GatekeeperAction.IGNORE
@@ -226,7 +230,7 @@ class GatekeeperService:
         except Exception as e:
             logger.error(f"Error in Gatekeeper: {e}", exc_info=True)
             if chat_context.is_group:
-                bot_names = ["миа", "мие", "мию", "мией", "mia", "@miamind_bot"]
+                bot_names = ["мия", "мие", "мию", "мией", "миею", "міє", "мія", "мію", "мією", "миа", "mia", "@miamind_bot"]
                 if any(n in text.lower() for n in bot_names):
                     return GatekeeperAction.RESPOND
                 return GatekeeperAction.IGNORE
