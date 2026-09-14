@@ -720,10 +720,17 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
     
     if not media:
         if file_size > 4.5 * 1024 * 1024:
-             # Pass the failure to the LLM so it can contextually apologize
-             text = "[SYSTEM: The user attempted to send a media file, but it was over the 4.5MB limit. Please inform the user playfully that the file is too large for you to process.]"
-             db_text = f"*(User attempted to send a {media_type_name} but it was too large)*"
-             await _enqueue_bot_turn(message, chat_context, text=text, media=None, db_text=db_text)
+             # In private chats, notify the user. In group chats, ONLY notify if the bot was explicitly addressed!
+             should_notify = not chat_context.is_group or (
+                 message.caption and any(n in message.caption.lower() for n in ["миа", "мия", "mia", "@miamind_bot"])
+             ) or (message.reply_to_message and message.reply_to_message.from_user and message.reply_to_message.from_user.id == message.bot.id)
+
+             if should_notify:
+                 text = "[SYSTEM: The user attempted to send a media file, but it was over the 4.5MB limit. Please inform the user playfully that the file is too large for you to process.]"
+                 db_text = f"*(User attempted to send a {media_type_name} but it was too large)*"
+                 await _enqueue_bot_turn(message, chat_context, text=text, media=None, db_text=db_text)
+             else:
+                 logger.info(f"Group media {media_type_name} too large ({file_size} bytes) without bot mention. Silently skipping.")
         return
         
     # How we store this interaction in the DB (text only, to save space!)

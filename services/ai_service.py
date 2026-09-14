@@ -309,16 +309,22 @@ class AIService:
             final_text = ""
             last_turn_text = ""
 
-            max_turns = 10
+            max_turns = 3
             turn = 0
+            mcp_calls_count = 0
 
             while turn < max_turns:
                 turn += 1
 
                 # On the last turn, disable tools to force a text response
-                # This prevents infinite tool-call loops that produce no output
                 is_last_turn = turn == max_turns
-                turn_tools = None if is_last_turn else (all_tools if all_tools else None)
+
+                # If remote MCP (e.g. Grok search) was already called, disable MCP tools
+                # so Gemini generates the answer immediately without chaining multiple slow searches
+                if mcp_calls_count >= 1:
+                    turn_tools = [t for t in (all_tools or []) if getattr(t, "__name__", "") in local_tool_names] if (all_tools and not is_last_turn) else None
+                else:
+                    turn_tools = None if is_last_turn else (all_tools if all_tools else None)
 
                 if is_last_turn:
                     logger.warning(f"AI reached max turns ({max_turns}). Forcing text-only generation on final turn.")
@@ -1057,7 +1063,8 @@ class AIService:
                         
                 if mcp_calls:
                     # Execute remote MCP tools and feed back to model
-                    logger.info(f"Orchestrating {len(mcp_calls)} remote MCP tool calls...")
+                    mcp_calls_count += len(mcp_calls)
+                    logger.info(f"Orchestrating {len(mcp_calls)} remote MCP tool calls (total so far: {mcp_calls_count})...")
                     mcp_parts = await self.mcp_manager.process_function_calls(mcp_calls)
                     response_parts.extend(mcp_parts)
                     
