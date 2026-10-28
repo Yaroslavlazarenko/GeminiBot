@@ -40,7 +40,8 @@ def _is_connection_error(exc: Exception) -> bool:
     connection_keywords = [
         "closedresourceerror", "remoteprotocolerror", "peer closed connection",
         "incomplete chunked read", "connection reset", "broken pipe",
-        "closed connection", "stream closed", "end of stream", "transport error"
+        "closed connection", "connection closed", "connection error", "stream closed",
+        "end of stream", "transport error", "connection was closed"
     ]
     return any(kw in exc_str for kw in connection_keywords)
 
@@ -81,7 +82,7 @@ class MCPServerAdapter:
             uri = args.get("uri")
             if not uri:
                 raise ValueError("Missing 'uri' argument")
-            res = await asyncio.wait_for(self.session.read_resource(uri), timeout=120.0)
+            res = await asyncio.wait_for(self.session.read_resource(uri), timeout=25.0)
             texts = []
             for content in res.contents:
                 if hasattr(content, "text") and content.text:
@@ -94,8 +95,12 @@ class MCPServerAdapter:
         else:
             mcp_name = self.tool_mappings.get(gemini_name, gemini_name)
             logger.info(f"Executing remote MCP tool: {mcp_name} on {self.name} with args {args}")
-            result = await asyncio.wait_for(self.session.call_tool(mcp_name, args), timeout=120.0)
+            result = await asyncio.wait_for(self.session.call_tool(mcp_name, args), timeout=90.0)
             final_val = self._extract_result_content(result)
+            if getattr(result, "isError", False):
+                err_str = str(final_val).lower()
+                if any(kw in err_str for kw in ("connection closed", "closed resource", "stream closed", "broken pipe", "transport error", "peer closed")):
+                    raise ConnectionError(f"MCP transport closed: {final_val}")
             response_key = "error" if getattr(result, "isError", False) else "result"
 
         part = types.Part.from_function_response(
@@ -160,6 +165,7 @@ class MCPConnectionManager:
                 await self._do_connect()
 
     async def _do_connect(self):
+        logger.info(f"MCP _do_connect started with config: {self.config_json}")
         try:
             connections = json.loads(self.config_json)
         except Exception as e:
@@ -188,7 +194,7 @@ class MCPConnectionManager:
 
                 tools_response = await asyncio.wait_for(session.list_tools(), timeout=20.0)
 
-                capabilities = session.get_server_capabilities()
+                capabilities = getattr(session, "server_capabilities", getattr(session, "_server_capabilities", None))
                 has_resources = bool(capabilities and getattr(capabilities, "resources", None))
 
                 # Count tool names to detect collisions across all servers
