@@ -49,12 +49,64 @@ def search_stickers(emotion: str, query: str = "") -> str:
     return f"Searching stickers for {emotion} {query}"
 
 @mcp.tool(name=ToolName.SEND_VOICE.value)
-def send_voice(text_to_speak: str) -> str:
-    """Send a voice message instead of a text message. Use this when you want to feel more intimate or when conveying a lot of emotion.
+def send_voice(text_to_speak: str, language: str = "auto", voice: Optional[str] = "Fola") -> str:
+    """Send a voice message instead of a text message. Use this when you want to feel more intimate, lively, conveying genuine emotion, singing a phrase, whispering, or when the user asks you to send a voice.
+
+    IMPORTANT PROMPTING GUIDELINES FOR VOICE:
+    1. Tone and Delivery Instructions: You can specify emotion, tone, pacing, or whispering at the very beginning of the text or in square/angle brackets, e.g.:
+       "[Speak in a cheerful, playful, and flirty tone] Привет, я так рада тебя слышать!"
+       "[Whispering softly] Слушай, только никому не говори..."
+    2. Actions & Expressive Sounds: You can include sound/action descriptions directly inside angle brackets < ... > within the text, and the neural voice model will act them out naturally, e.g.:
+       "<laughs softly> Ой, ну ты и шутник! <sighs> Я уж думала, ты забыл обо мне."
+       "<giggles> Ну ладно-ладно, уговорил!"
+
     Args:
-        text_to_speak: The text that will be converted to a voice message.
+        text_to_speak: The text that will be converted to a voice message (with tone cues and <actions>).
+        language: Language hint ('auto', 'uk', 'ru', 'en', 'de').
+        voice: Voice name for speech synthesis. Defaults to 'Fola' (expressive, natural female voice). Other available voices: 'Aoede', 'Kore', 'Zephyr', 'Puck', 'Charon', 'Fenrir'.
     """
     return f"Sending voice message"
+
+@mcp.tool(name=ToolName.SEARCH_MUSIC.value)
+def search_music(query: str, limit: int = 5) -> str:
+    """Search for music tracks across major platforms (SoundCloud, MP3 databases) to inspect available tracks, artists, versions (original vs remix), and durations before sending.
+    Call this FIRST when asked for a song so you can see exact matching versions and their track IDs.
+    Args:
+        query: The song title and/or artist name to search for (e.g. 'Rammstein Du Hast', 'Nirvana Smells Like Teen Spirit').
+        limit: Maximum results to return (default 5).
+    """
+    return f"Searching music for: {query}"
+
+@mcp.tool(name=ToolName.SEND_MUSIC.value)
+def send_music(track_id: Optional[str] = None, query: Optional[str] = None, caption: Optional[str] = None) -> str:
+    """Send a music track to the Telegram chat as a playable audio file (mp3) with player, title, and artist.
+    Args:
+        track_id: The exact track ID obtained from search_music (e.g. 'sc_422025744' or 'bob_27897'). Strongly recommended!
+        query: Fallback query if calling without prior search (e.g. 'Rammstein Du Hast').
+        caption: Optional short comment or caption from Mia to accompany the track.
+    """
+    return f"Sending music: {track_id or query}"
+
+@mcp.tool(name=ToolName.GENERATE_IMAGE.value)
+def generate_image(
+    prompt: str, 
+    aspect_ratio: str = "auto", 
+    use_group_avatar: bool = False,
+    reference_message_ids: Optional[List[int]] = None, 
+    reference_avatar_users: Optional[List[str]] = None,
+    caption: Optional[str] = None
+) -> str:
+    """Generate high-quality AI artwork, photo, or illustration using Google Imagen 3 (gemini-3.1-flash-image).
+    Use this when the user asks to draw, generate, or create an image, photo, art, or avatar.
+    Args:
+        prompt: Detailed description of the image to generate (scene, objects, style, mood, lighting). For modifications, describe what to change and what to preserve from the reference.
+        aspect_ratio: Image format: '1:1' (square, avatar), '9:16' (vertical phone wallpaper, stories), '16:9' (wide landscape, desktop wallpaper), '4:3', or 'auto'.
+        use_group_avatar: Set to TRUE if the user asks to use, edit, improve, or restyle the GROUP/CHAT AVATAR (e.g. 'возьми аву группы', 'сделай нашу аву группы круче', 'сделай день на аве группы'). You have full access to the group's photo!
+        reference_message_ids: Optional list of past message IDs containing photos in the chat to use as visual reference (e.g. [79230]). The system downloads and feeds the exact image files to the model.
+        reference_avatar_users: Optional list of usernames, names, or IDs whose profile avatars should be used as reference (e.g. ['me', '@aleii', 'Мишаня']). You can pass MULTIPLE users to generate them together in one photo!
+        caption: Optional short comment or caption from Mia to accompany the generated image.
+    """
+    return f"Generating image for prompt: {prompt}"
 
 @mcp.tool(name=ToolName.SEARCH_HISTORY.value)
 def search_history(query: str, limit: int = 10) -> str:
@@ -66,13 +118,15 @@ def search_history(query: str, limit: int = 10) -> str:
     return f"Searching history for {query}"
 
 @mcp.tool(name=ToolName.GET_HISTORY_BY_DATE.value)
-def get_history_by_date(days_ago: int = 0, limit: int = 20) -> str:
-    """Retrieve messages from the permanent chat history from a certain number of days ago.
+def get_history_by_date(date: str = "", from_start: bool = False, days_ago: Optional[int] = None, limit: int = 20) -> str:
+    """Retrieve messages from chat history for a specific calendar date (e.g. '2026-05-24'), or from the very beginning of the chat (from_start=True), or by days_ago (0 for today, 1 for yesterday).
     Args:
-        days_ago: 0 for today, 1 for yesterday, 7 for a week ago, etc.
-        limit: The maximum number of messages to return (default 20).
+        date: Specific date in YYYY-MM-DD format (e.g. '2026-05-24'). Use this when you know or see the date in chat archive stats.
+        from_start: If True, fetches the very first messages from the beginning of this chat history.
+        days_ago: Number of days ago (0 for today, 1 for yesterday, etc.). Used if date is not specified.
+        limit: The maximum number of messages to return (default 20, max 100).
     """
-    return f"Getting history from {days_ago} days ago"
+    return f"Getting history: date={date}, from_start={from_start}, days_ago={days_ago}, limit={limit}"
 
 @mcp.tool(name=ToolName.IGNORE_MESSAGE.value)
 def ignore_message(reason: str) -> str:
@@ -217,6 +271,9 @@ local_tools_list = [
     send_specific_sticker,
     search_stickers,
     send_voice,
+    search_music,
+    send_music,
+    generate_image,
     search_history,
     get_history_by_date,
     ignore_message,

@@ -16,6 +16,8 @@ class TTSService:
     VOICE_EN = "en-US-JennyNeural"
     VOICE_DE = "de-DE-KatjaNeural"
 
+    DEFAULT_GEMINI_VOICE = "Fola"
+
     def __init__(self, config: Optional[Config] = None):
         self.config = config or Config()
         self.base_url = (self.config.gemini_base_url or "http://172.17.0.1:8080").rstrip("/")
@@ -86,17 +88,17 @@ class TTSService:
             "x-api-key": self.api_key
         }
 
+        chosen_voice = voice or self.DEFAULT_GEMINI_VOICE
         body: dict = {
-            "contents": [{"parts": [{"text": text}]}]
-        }
-        if voice:
-            body["speechConfig"] = {
+            "contents": [{"parts": [{"text": text}]}],
+            "speechConfig": {
                 "voiceConfig": {
                     "prebuiltVoiceConfig": {
-                        "voiceName": voice
+                        "voiceName": chosen_voice
                     }
                 }
             }
+        }
 
         async with httpx.AsyncClient(timeout=35.0) as client:
             resp = await client.post(url, json=body, headers=headers)
