@@ -49,7 +49,7 @@ def search_stickers(emotion: str, query: str = "") -> str:
     return f"Searching stickers for {emotion} {query}"
 
 @mcp.tool(name=ToolName.SEND_VOICE.value)
-def send_voice(text_to_speak: str, language: str = "auto", voice: Optional[str] = "Fola") -> str:
+def send_voice(text_to_speak: str, language: str = "auto", voice: Optional[str] = "female") -> str:
     """Send a voice message instead of a text message. Use this when you want to feel more intimate, lively, conveying genuine emotion, singing a phrase, whispering, or when the user asks you to send a voice.
 
     IMPORTANT PROMPTING GUIDELINES FOR VOICE:
@@ -63,7 +63,7 @@ def send_voice(text_to_speak: str, language: str = "auto", voice: Optional[str] 
     Args:
         text_to_speak: The text that will be converted to a voice message (with tone cues and <actions>).
         language: Language hint ('auto', 'uk', 'ru', 'en', 'de').
-        voice: Voice name for speech synthesis. Defaults to 'Fola' (expressive, natural female voice). Other available voices: 'Aoede', 'Kore', 'Zephyr', 'Puck', 'Charon', 'Fenrir'.
+        voice: Voice gender or name for speech synthesis. Defaults to 'female' (alias for expressive natural voice Fola). Use 'male' (alias for Puck) for male speech. Concrete voices also supported: 'Aoede', 'Kore', 'Zephyr', 'Charon', 'Fenrir'.
     """
     return f"Sending voice message"
 

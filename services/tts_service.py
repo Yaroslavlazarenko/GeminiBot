@@ -16,7 +16,7 @@ class TTSService:
     VOICE_EN = "en-US-JennyNeural"
     VOICE_DE = "de-DE-KatjaNeural"
 
-    DEFAULT_GEMINI_VOICE = "Fola"
+    DEFAULT_GEMINI_VOICE = "female"
 
     def __init__(self, config: Optional[Config] = None):
         self.config = config or Config()
