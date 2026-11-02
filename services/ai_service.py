@@ -308,6 +308,7 @@ class AIService:
             local_calls_to_return = []
             final_text = ""
             last_turn_text = ""
+            response_model = None
 
             max_turns = 3
             turn = 0
@@ -349,6 +350,9 @@ class AIService:
                 if response.text:
                     last_turn_text = response.text
                     logger.debug(f"AI turn {turn}: mid-loop text: {response.text[:200]!r}")
+
+                # Capture actual model version from response if returned by gateway/upstream
+                response_model = getattr(response, "model_version", None) or getattr(response, "model", None)
 
                 # If no tools were called, the tool loop is done.
                 if not response.function_calls:

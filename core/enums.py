@@ -29,3 +29,6 @@ class ToolName(str, Enum):
     LIST_SCHEDULED_TASKS = "list_scheduled_tasks"
     DELETE_SCHEDULED_TASK = "delete_scheduled_task"
     EDIT_SCHEDULED_TASK = "edit_scheduled_task"
+    SEARCH_MUSIC = "search_music"
+    SEND_MUSIC = "send_music"
+    GENERATE_IMAGE = "generate_image"

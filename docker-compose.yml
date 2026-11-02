@@ -19,6 +19,9 @@ services:
     depends_on:
       - mongodb
     volumes:
+      - ./core:/app/core
+      - ./services:/app/services
+      - ./bot:/app/bot
       - gemini_shared_media:/tmp/gemini_media
     restart: unless-stopped
 

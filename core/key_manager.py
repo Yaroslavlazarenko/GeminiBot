@@ -9,14 +9,17 @@ from core.config import Config
 logger = logging.getLogger(__name__)
 
 # HTTP status codes that should trigger key rotation
-ROTATE_ON_STATUS = {429, 500, 503}
-ROTATE_ON_KEYWORDS = ["quota", "rate limit", "resource exhausted", "overloaded", "unavailable"]
+ROTATE_ON_STATUS = {401, 403, 429, 500, 502, 503}
+ROTATE_ON_KEYWORDS = [
+    "quota", "rate limit", "resource exhausted", "overloaded", "unavailable",
+    "permission_denied", "consumer_suspended", "unauthorized"
+]
 
 # Transient server errors that should be retried with backoff (even with a single key)
 RETRY_ON_STATUS = {500, 502, 503}
 RETRY_ON_KEYWORDS = ["internal server error", "bad gateway", "unavailable", "snapshot regeneration"]
-MAX_RETRIES_SINGLE_KEY = 3
-RETRY_BACKOFF_SECONDS = [1.0, 3.0, 5.0]
+MAX_RETRIES_SINGLE_KEY = 2
+RETRY_BACKOFF_SECONDS = [0.5, 1.0]
 
 
 class GeminiKeyManager:
