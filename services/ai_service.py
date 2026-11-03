@@ -229,6 +229,17 @@ class AIService:
                     logger.error(f"Failed to fetch user facts: {e}")
                     facts_str = "Error loading facts."
 
+                private_msgs_context = ""
+                if chat_context.is_group and user_id != "Unknown":
+                    try:
+                        priv_count = await chat_context._db.messages.count_documents({"chat_id": int(user_id)})
+                        if priv_count > 0:
+                            private_msgs_context = f"Private 1-on-1 messages with you: {priv_count} messages in private chat history.\n"
+                        else:
+                            private_msgs_context = "Private 1-on-1 messages with you: 0 (you have never talked in private chat yet).\n"
+                    except Exception as e:
+                        logger.debug(f"Failed to count private messages for user {user_id}: {e}")
+
                 sender_context = (
                     f"\n--- INTERLOCUTOR INFO ---\n"
                     f"User ID: {user_id}\n"
@@ -236,6 +247,7 @@ class AIService:
                     f"Username: {username_str}\n"
                     f"Telegram Language Setting: {lang}\n"
                     f"Visual description of their current Avatar (as seen by you, Mia): \"{avatar_desc}\"\n"
+                    f"{private_msgs_context}"
                     f"Known permanent facts about this user:\n{facts_str}\n"
                 )
 
