@@ -25,10 +25,12 @@ def reply_to_message(message_id: int, quote: str = "") -> str:
 
 @mcp.tool(name=ToolName.EDIT_MESSAGE.value)
 def edit_message(message_id: int, new_text: str) -> str:
-    """Edit one of your own past messages in Telegram. Use this when you made a typo, wrote incorrect information, changed your mind, or want to update/refine what you said earlier.
+    """Отредактировать своё собственное ранее отправленное сообщение в Telegram.
+    Используй ЭТОТ ИНСТРУМЕНТ ИСКЛЮЧИТЕЛЬНО для исправления опечаток, ошибок в словах, неверных цифр, сломанного форматирования или случайных оговорок в тексте сообщения.
+    СТРОГО ЗАПРЕЩЕНО использовать редактирование для манипуляций, подмены контекста, стирания прошлых слов в спорах или изменения исходного смысла сказанного. Все изменения логируются в истории!
     Args:
-        message_id: The Telegram message ID of your OWN message to edit (from [MsgID: ...]).
-        new_text: The complete updated text to replace the previous message content with.
+        message_id: ID твоего собственного сообщения в Telegram, которое нужно исправить (из метки [MsgID: ...]).
+        new_text: Исправленный полный текст сообщения.
     """
     return f"Editing message {message_id} to: {new_text}"
 
