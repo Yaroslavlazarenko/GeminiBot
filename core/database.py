@@ -417,16 +417,19 @@ class DatabaseManager:
             logger.error(f"Failed to confirm fact for user {telegram_id}: {e}")
 
     async def append_user_history(self, telegram_id: int, message: Dict[str, Any], max_history: int = 200):
+        update_op: Dict[str, Any] = {
+            "$push": {
+                "history": {
+                    "$each": [message],
+                    "$slice": -max_history
+                }
+            },
+            "$inc": {"private_message_count": 1}
+        }
+
         await self.users.update_one(
             {"telegram_id": telegram_id},
-            {
-                "$push": {
-                    "history": {
-                        "$each": [message],
-                        "$slice": -max_history
-                    }
-                }
-            }
+            update_op
         )
         
     async def clear_user_history(self, telegram_id: int):

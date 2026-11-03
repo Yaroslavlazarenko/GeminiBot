@@ -232,13 +232,20 @@ class AIService:
                 private_msgs_context = ""
                 if chat_context.is_group and user_id != "Unknown":
                     try:
-                        priv_count = await chat_context._db.messages.count_documents({"chat_id": int(user_id)})
-                        if priv_count > 0:
-                            private_msgs_context = f"Private 1-on-1 messages with you: {priv_count} messages in private chat history.\n"
-                        else:
-                            private_msgs_context = "Private 1-on-1 messages with you: 0 (you have never talked in private chat yet).\n"
+                        user_doc = await chat_context._db.users.find_one({"telegram_id": int(user_id)})
+                        if user_doc:
+                            priv_count = user_doc.get("private_message_count")
+                            if priv_count is None:
+                                # Fallback migration if field doesn't exist yet
+                                priv_count = await chat_context._db.messages.count_documents({"chat_id": int(user_id)})
+                                await chat_context._db.users.update_one({"telegram_id": int(user_id)}, {"$set": {"private_message_count": priv_count}})
+                            
+                            if priv_count > 0:
+                                private_msgs_context = f"Private 1-on-1 messages with you: {priv_count} messages in private chat history.\n"
+                            else:
+                                private_msgs_context = "Private 1-on-1 messages with you: 0 (you have never talked in private chat yet).\n"
                     except Exception as e:
-                        logger.debug(f"Failed to count private messages for user {user_id}: {e}")
+                        logger.debug(f"Failed to load private message count for user {user_id}: {e}")
 
                 sender_context = (
                     f"\n--- INTERLOCUTOR INFO ---\n"
