@@ -74,6 +74,23 @@ class ToolExecutorService:
             elif call.name == ToolName.REPLY_TO_MESSAGE.value:
                 requested_reply_id = int(args.get("message_id", 0)) if args.get("message_id") else None
                 requested_reply_quote = args.get("quote") or ""
+
+            elif call.name == ToolName.EDIT_MESSAGE.value:
+                target_msg_id = int(args.get("message_id", 0)) if args.get("message_id") else None
+                new_text = args.get("new_text") or ""
+                if target_msg_id and new_text:
+                    try:
+                        # 1. Edit the message in Telegram via Bot API
+                        await last_message.bot.edit_message_text(
+                            chat_id=last_message.chat.id,
+                            message_id=target_msg_id,
+                            text=new_text
+                        )
+                        # 2. Update message in DB & in-memory context tracking what changed
+                        old_text = await chat_context.edit_bot_message(target_msg_id, new_text)
+                        logger.info(f"Successfully edited bot message {target_msg_id} in chat {last_message.chat.id}. Old: {repr(old_text[:60]) if old_text else 'unknown'} -> New: {repr(new_text[:60])}")
+                    except Exception as edit_err:
+                        logger.error(f"Failed to edit message {target_msg_id} in Telegram: {edit_err}")
                 
             elif call.name == ToolName.SEND_SPECIFIC_STICKER.value:
                 sticker_id = args.get("sticker_id") or ""

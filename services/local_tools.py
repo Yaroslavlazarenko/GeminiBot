@@ -23,6 +23,15 @@ def reply_to_message(message_id: int, quote: str = "") -> str:
     """
     return f"Replying to {message_id} with quote: {quote}"
 
+@mcp.tool(name=ToolName.EDIT_MESSAGE.value)
+def edit_message(message_id: int, new_text: str) -> str:
+    """Edit one of your own past messages in Telegram. Use this when you made a typo, wrote incorrect information, changed your mind, or want to update/refine what you said earlier.
+    Args:
+        message_id: The Telegram message ID of your OWN message to edit (from [MsgID: ...]).
+        new_text: The complete updated text to replace the previous message content with.
+    """
+    return f"Editing message {message_id} to: {new_text}"
+
 @mcp.tool(name=ToolName.SEND_STICKER.value)
 def send_sticker(emotion: str) -> str:
     """[DEPRECATED] Send a random sticker based on emotion. Prefer send_specific_sticker if you know the exact sticker you want.
@@ -267,6 +276,7 @@ def edit_scheduled_task(
 local_tools_list = [
     add_reaction,
     reply_to_message,
+    edit_message,
     send_sticker,
     send_specific_sticker,
     search_stickers,

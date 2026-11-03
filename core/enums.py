@@ -32,3 +32,4 @@ class ToolName(str, Enum):
     SEARCH_MUSIC = "search_music"
     SEND_MUSIC = "send_music"
     GENERATE_IMAGE = "generate_image"
+    EDIT_MESSAGE = "edit_message"

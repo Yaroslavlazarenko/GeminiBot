@@ -76,6 +76,14 @@ class AIService:
                 if valid_reactions:
                     meta_parts.append(f"[реакции: {' '.join(valid_reactions)}]")
 
+            # Include edit history so Mia and users see what was changed
+            edit_history = msg.get("edit_history")
+            if edit_history and isinstance(edit_history, list):
+                last_edit = edit_history[-1]
+                old_t = last_edit.get("old_text", "")
+                if old_t and old_t != text:
+                    meta_parts.append(f"[изменено с: \"{old_t}\"]")
+
             if meta_parts:
                 text = " ".join(meta_parts) + " " + text
 

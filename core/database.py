@@ -68,6 +68,85 @@ class ChatContext:
                 msg.pop("pending", None)
                 break
 
+    async def edit_bot_message(self, message_id: int, new_text: str) -> Optional[str]:
+        """
+        Edits an existing bot message in history, marking old text and new text.
+        Returns the old text if found and edited, or None.
+        """
+        old_text = None
+        # 1. Update in-memory history
+        for msg in self.history:
+            if msg.get("message_id") == message_id:
+                old_text = msg.get("text", "")
+                msg["text"] = new_text
+                # Track edit history in metadata
+                edits = msg.setdefault("edit_history", [])
+                edits.append({
+                    "old_text": old_text,
+                    "new_text": new_text,
+                    "edited_at": datetime.utcnow()
+                })
+                break
+
+        if old_text is None:
+            # Check permanent messages collection if not in short memory
+            perm = await self._db.messages.find_one({"chat_id": self.id, "message_id": message_id})
+            if perm:
+                old_text = perm.get("text", "")
+
+        # 2. Update DB recent history array
+        try:
+            if self.is_group:
+                await self._db.groups.update_one(
+                    {"telegram_chat_id": self.id, "history.message_id": message_id},
+                    {
+                        "$set": {"history.$.text": new_text},
+                        "$push": {
+                            "history.$.edit_history": {
+                                "old_text": old_text or "",
+                                "new_text": new_text,
+                                "edited_at": datetime.utcnow()
+                            }
+                        }
+                    }
+                )
+            else:
+                await self._db.users.update_one(
+                    {"telegram_id": self.id, "history.message_id": message_id},
+                    {
+                        "$set": {"history.$.text": new_text},
+                        "$push": {
+                            "history.$.edit_history": {
+                                "old_text": old_text or "",
+                                "new_text": new_text,
+                                "edited_at": datetime.utcnow()
+                            }
+                        }
+                    }
+                )
+        except Exception as e:
+            pass
+
+        # 3. Update permanent messages log
+        try:
+            await self._db.messages.update_one(
+                {"chat_id": self.id, "message_id": message_id},
+                {
+                    "$set": {"text": new_text, "edited_at": datetime.utcnow()},
+                    "$push": {
+                        "edit_history": {
+                            "old_text": old_text or "",
+                            "new_text": new_text,
+                            "edited_at": datetime.utcnow()
+                        }
+                    }
+                }
+            )
+        except Exception as e:
+            pass
+
+        return old_text
+
     async def update_settings(self, settings: Dict[str, Any]):
         """Update settings for the current context."""
         if self.is_group:
