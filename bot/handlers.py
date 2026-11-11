@@ -1,5 +1,6 @@
 import logging
 import asyncio
+from typing import Optional
 import httpx
 from aiogram import Router, filters, F
 from aiogram.types import Message, BufferedInputFile, MessageReactionUpdated, ReplyParameters
@@ -28,7 +29,7 @@ def _format_odessa_time(dt: datetime) -> str:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(ODESSA_TZ).strftime("%H:%M")
+    return dt.astimezone(ODESSA_TZ).strftime("%Y-%m-%d %H:%M")
 from services.avatar_service import AvatarService
 
 logger = logging.getLogger(__name__)
@@ -743,6 +744,20 @@ async def handle_media_message(message: Message, chat_context: ChatContext):
         db_text += f"\nCaption/Audio: {text}"
         
     await _enqueue_bot_turn(message, chat_context, text=text, media=media, db_text=db_text)
+
+@router.edited_message(F.text)
+async def handle_edited_message(message: Message, chat_context: Optional[ChatContext] = None):
+    """Handle edited user messages, updating context so Mia sees the edit time and prior text."""
+    if not chat_context:
+        return
+    edit_date = message.edit_date or message.date
+    edited_at_str = _format_odessa_time(edit_date)
+    sender_name = message.from_user.first_name if message.from_user else "User"
+    prefix = f"[{sender_name}]: " if chat_context.is_group else ""
+    full_new_text = f"{prefix}{message.text}"
+    
+    old_text = await chat_context.update_user_message_text(message.message_id, full_new_text, edited_at_str)
+    logger.info(f"Handled edited message {message.message_id} in chat {chat_context.id} at {edited_at_str}. Old text: '{old_text}' -> New: '{full_new_text}'")
 
 @router.message_reaction()
 async def handle_message_reaction(event: MessageReactionUpdated, chat_context: ChatContext):

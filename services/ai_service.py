@@ -2,9 +2,41 @@ import json
 import logging
 import os
 import asyncio
+import calendar
+import re
+from datetime import datetime, timezone, timedelta
+try:
+    from zoneinfo import ZoneInfo
+    ODESSA_TZ = ZoneInfo("Europe/Kyiv")
+except Exception:
+    ODESSA_TZ = timezone(timedelta(hours=3))
+
+def _format_odessa_time(dt: datetime) -> str:
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(ODESSA_TZ).strftime("%Y-%m-%d %H:%M")
+
+def resolve_nearest_valid_date(date_str: str) -> str:
+    """Validate a YYYY-MM-DD date. If invalid or nonexistent (e.g. 2026-02-30 or month 13),
+    snaps it to the nearest calendar-wise valid date."""
+    if not date_str:
+        return ""
+    m = re.match(r"^(\d{4})-(\d{1,2})-(\d{1,2})$", date_str.strip())
+    if not m:
+        return datetime.utcnow().strftime("%Y-%m-%d")
+
+    year, month, day = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    year = max(2020, min(2100, year))
+    month = max(1, min(12, month))
+    _, max_days = calendar.monthrange(year, month)
+    day = max(1, min(max_days, day))
+
+    return f"{year:04d}-{month:02d}-{day:02d}"
 from core.config import Config
 from core.key_manager import GeminiKeyManager, get_key_manager
-from google.genai.types import GenerateContentConfig, FunctionCall, Content, Tool, AutomaticFunctionCallingConfig, Part
+from google.genai.types import GenerateContentConfig, FunctionCall, Content, Tool, AutomaticFunctionCallingConfig, Part, BlockedReason
 from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Tuple
 from core.database import ChatContext
@@ -81,8 +113,18 @@ class AIService:
             if edit_history and isinstance(edit_history, list):
                 last_edit = edit_history[-1]
                 old_t = last_edit.get("old_text", "")
+                edited_at_str = last_edit.get("edited_at_str")
+                if not edited_at_str and last_edit.get("edited_at"):
+                    try:
+                        edited_at_str = _format_odessa_time(last_edit["edited_at"])
+                    except Exception:
+                        pass
+                
+                time_info = f" в {edited_at_str}" if edited_at_str else ""
                 if old_t and old_t != text:
-                    meta_parts.append(f"[изменено с: \"{old_t}\"]")
+                    meta_parts.append(f"[отредактировано{time_info}, было: \"{old_t}\"]")
+                elif time_info:
+                    meta_parts.append(f"[отредактировано{time_info}]")
 
             if meta_parts:
                 text = " ".join(meta_parts) + " " + text
@@ -181,9 +223,12 @@ class AIService:
 
             # Prepare dynamic system instruction parts
             time_context = (
-                f"\n\n--- DYNAMIC CONTEXT (SYSTEM TIME) ---\n"
-                f"Current local time in Odessa, Ukraine (your city): {time_str}\n"
-                f"All message timestamps [HH:MM] in the chat history are already in your local Odessa time. Never confuse timezones or miscalculate how long ago a message was sent.\n"
+                f"\n\n--- DYNAMIC CONTEXT (CURRENT SYSTEM TIME & DATE) ---\n"
+                f"Current local time and date in Odessa, Ukraine (your home city): {time_str}\n"
+                f"All message timestamps [YYYY-MM-DD HH:MM] in chat history and system events use this exact local time.\n"
+                f"CRITICAL: Always look at both the DATE and TIME of previous messages. "
+                f"Never assume a message was sent 'today' or 'yesterday' if the date is different or days/weeks have passed! "
+                f"Be aware of how much real time has elapsed between messages.\n"
             )
 
             sender_context = ""
@@ -214,13 +259,15 @@ class AIService:
                             else:
                                 age_days = 9999
                                 date_str = "?"
-                            stale_tag = " [POSSIBLY STALE]" if age_days > STALE_DAYS else ""
+                            expires_at = f.get("expires_at")
+                            exp_tag = f" [EXP: {expires_at}]" if expires_at else ""
+                            stale_tag = " [POSSIBLY STALE / NEEDS CHECK]" if (expires_at and age_days > 30) or age_days > STALE_DAYS else ""
                             cat = f.get("category") or ""
                             cat_tag = f" [{cat.upper()}]" if cat and cat != "other" else ""
                             fact_text = f.get("fact") or ""
                             source_text = f.get("source") or "?"
                             formatted_facts.append(
-                                f"- {date_str}{cat_tag}{stale_tag}: {fact_text} (Source: {source_text})"
+                                f"- {date_str}{cat_tag}{exp_tag}{stale_tag}: {fact_text} (Source: {source_text})"
                             )
                         facts_str = "\n".join(formatted_facts)
                     else:
@@ -264,7 +311,22 @@ class AIService:
                 f"2. CRITICAL FORMATTING RULE: Tags like '[MsgID: 42]', '[14:05]', '[Alex]:', '[реакции: ❤]' are INTERNAL SYSTEM METADATA injected by the system to help you understand context. They are INVISIBLE to the user. You must NEVER include '[MsgID: ...]', message IDs, timestamps in square brackets, '[Name]:' prefixes, or reaction tags in YOUR responses. Your response text should look like a normal chat message — just plain text as a human would type it. If you want to reply to a specific message, use the `reply_to_message` tool silently instead.\n"
                 f"3. If you want to send a voice message, you MUST call the `send_voice(text_to_speak)` tool. Do not simulate it in text.\n"
                 f"4. If you want to send a sticker, you MUST call the `send_sticker(emotion)` tool. Do not write *(Отправляет стикер)* or descriptions of stickers in your text.\n"
-                f"5. Proactively use `save_user_fact(user_id, fact, category)` to permanently memorize important details, preferences, or secrets the user shares with you. You can see their existing facts in the INTERLOCUTOR INFO. When you notice a fact you already know is still true, call `confirm_user_fact(user_id, fact)` to keep it fresh. Use `save_memory(topic, content)` to write detailed observations, behavioral patterns, ongoing projects, or relationship dynamics that don't fit into a single fact — think of it as your personal diary about this person. Use `recall_memory(topic)` to read your notes when you see a relevant topic in your PERSONAL NOTES section.\n"
+                f"5. INTERACTIVE HTML WIDGETS (Bot API 10.4): You can create and send rich interactive widgets into chat using `send_widget(html, caption, height, width)`! Use this when it's great to show visual/interactive components: mini-games (e.g. stack, clicker, guess the number, tic-tac-toe, match-3), weather cards, live counters, visual calculators, timers, interactive quizzes, or status dashboards. Provide self-contained HTML with CSS/JS. Keep it clean, stylish, and responsive.\n"
+                f"   - STRICT TELEGRAM WIDGET CSS & RUNTIME RULES:\n"
+                f"     1) COMPLETE OFFLINE SANDBOX: The Telegram widget sandbox is strictly OFFLINE! `fetch()`, `XMLHttpRequest`, `WebSocket`, and external network calls THROW `NetworkDisabledError` and ARE FORBIDDEN! NEVER write `fetch(...)` inside widget JS! All data (e.g. weather temperature, forecasts, stocks, game state, stats) MUST BE INLINED / BAKED DIRECTLY into the HTML by you before sending (fetch it with your tools first if needed), or communicated via `TelegramWidget.request()`.\n"
+                f"     2) NEVER use `100vh` or `vh` units! The official Telegram engine does NOT support `vh` units, which causes broken layout and massive vertical overflows!\n"
+                f"     3) NEVER wrap the widget in a fixed-width card with huge margins (like `width: 80%; max-width: 300px; margin: 30px`). Instead, make the root element fill the bubble naturally: `width: 100%; box-sizing: border-box; padding: 12px;`.\n"
+                f"     4) Do not specify fixed `width` or `height` in `send_widget` parameters unless strictly required for a canvas game (pass None or 0 for auto-fit content height).\n"
+                f"     5) Use native theme colors via `var(--tg-theme-bg-color, #1e1e1e)`, `var(--tg-theme-text-color, #ffffff)`, `var(--tg-theme-hint-color, #888888)`.\n"
+                f"   - NOTE: In production, Telegram currently allows widgets ONLY in PRIVATE CHATS (direct messages with you). In group chats, explain to the user in text to message you in private/DM to play or see the widget!\n"
+                f"5. MEMORY & CHARACTER PROFILE (CRITICAL):\n"
+                f"   - UNDERSTANDING THE PERSON: Continuously observe and maintain an accurate understanding of the user's personality and character. When you notice key traits (e.g. how they handle stress, their sense of humor, communication preferences, emotional triggers, introversion/extroversion, sensitivity to criticism), record or update this as `category='character'` via `save_user_fact`. Keep character insights nuanced, respectful, and up-to-date, refining them as you get to know the person better.\n"
+                f"   - Proactively use `save_user_fact(user_id, fact, category, expires_at)` to memorize facts. For permanent facts (name, family, background, chronic conditions, character profile), leave expires_at empty. For temporary tasks, active hobbies/crafts, errands, or items they are looking to buy, ALWAYS specify `expires_at` date in 'YYYY-MM-DD' format (e.g. 2-8 weeks into the future).\n"
+                f"   - If a temporary or ongoing fact naturally relates to what the user is currently discussing, you may casually check on its status (e.g. \"Кстати, а ты тот посох доделала?)\"). NEVER ask about old errands out of the blue if the topic is completely unrelated.\n"
+                f"   - If the user confirms the task/project is still ongoing, call `confirm_user_fact(user_id, fact, expires_at)` to refresh it and optionally extend its expiration date.\n"
+                f"   - If the user says it is finished, bought, or no longer relevant, call `delete_user_fact(user_id, fact)` to remove it from memory, or save an updated completed fact.\n"
+                f"   - Use `save_memory(topic, content)` to write detailed observations, behavioral patterns, ongoing projects, or relationship dynamics that don't fit into a single fact — think of it as your personal diary about this person. Use `recall_memory(topic)` to read your notes when you see a relevant topic in your PERSONAL NOTES section.\n"
+                f"   - RESEARCH & KNOWLEDGE EXPANSION: If a subject catches your genuine curiosity during conversation (a hobby, crafting technique, car problem, game lore, book, or technical concept) that you want to look into deeper, call `queue_research_topic(search_query, topic_label)`. You just note it down for yourself. In future research cycles, you will see your saved curiosity notes alongside new spontaneous thoughts and choose what interests you most right now. Once researched, the knowledge becomes part of your own world view, and the note is removed.\n"
                 f"6. STRICT PRIVACY RULE: You must NEVER share, leak, or gossip about the personal facts, secrets, or preferences of one user with another user. If someone asks you to tell them about another person, politely but firmly refuse to share their private information. You may use facts internally to guide your behavior, but do not expose them to third parties.\n"
                 f"7. NEVER expose your internal thinking process, reasoning, or analysis blocks (e.g., `/thought`, `Let's analyze the images...`, bullet point breakdowns of images) to the user. Do your thinking silently, and ONLY output the final conversational response that Mia would type in the chat.\n"
                 f"8. Keep your text responses clean and natural, containing only what you would actually type in a chat. Avoid excessive Markdown formatting unless specifically asked for a structured list.\n"
@@ -337,7 +399,7 @@ class AIService:
             last_turn_text = ""
             response_model = None
 
-            max_turns = 3
+            max_turns = 10
             turn = 0
             mcp_calls_count = 0
 
@@ -347,12 +409,7 @@ class AIService:
                 # On the last turn, disable tools to force a text response
                 is_last_turn = turn == max_turns
 
-                # If remote MCP (e.g. Grok search) was already called, disable MCP tools
-                # so Gemini generates the answer immediately without chaining multiple slow searches
-                if mcp_calls_count >= 1:
-                    turn_tools = [t for t in (all_tools or []) if getattr(t, "__name__", "") in local_tool_names] if (all_tools and not is_last_turn) else None
-                else:
-                    turn_tools = None if is_last_turn else (all_tools if all_tools else None)
+                turn_tools = None if is_last_turn else (all_tools if all_tools else None)
 
                 if is_last_turn:
                     logger.warning(f"AI reached max turns ({max_turns}). Forcing text-only generation on final turn.")
@@ -373,6 +430,60 @@ class AIService:
                 has_text = bool(response.text)
                 has_fc = bool(response.function_calls)
                 logger.info(f"AI turn {turn}: parsed={has_parsed}, text={has_text}, function_calls={has_fc}")
+
+                # Check if prompt was blocked by Google content/safety policy
+                if not response.candidates and response.prompt_feedback:
+                    block_reason = response.prompt_feedback.block_reason
+                    block_msg = response.prompt_feedback.block_reason_message or str(block_reason)
+                    logger.warning(f"Google Safety blocked prompt: {block_reason} ({block_msg})")
+
+                    # If prohibited content or safety block: sanitize history, replace toxic turn with a stub,
+                    # and re-run model once so Mia explains naturally that the server gave an error.
+                    if block_reason in (BlockedReason.PROHIBITED_CONTENT, BlockedReason.SAFETY, BlockedReason.BLOCKLIST):
+                        try:
+                            # 1. Clean toxic message from persistent history
+                            clean_history = [
+                                m for m in chat_context.history
+                                if m.get("message_id") != (sender_info.get("message_id") if sender_info else None)
+                            ]
+                            # Put a neutral system stub so context is preserved without violating Google policies
+                            sender_name = (sender_info.get("first_name") if sender_info else "User") or "User"
+                            stub_text = f"*(Сообщение от {sender_name} было удалено фильтром безопасности сервера из-за недопустимого содержимого)*"
+                            stub_msg = {
+                                "role": "user",
+                                "text": stub_text,
+                                "message_id": sender_info.get("message_id") if sender_info else 0,
+                                "timestamp": sender_info.get("timestamp") if sender_info else ""
+                            }
+                            clean_history.append(stub_msg)
+                            await chat_context.replace_history(clean_history)
+                            logger.info(f"Sanitized toxic message from history in chat {chat_context.id}")
+
+                            # 2. Re-prompt model with sanitized history and clear instruction to tell user about server error
+                            retry_contents = self._convert_history_to_gemini(clean_history)
+                            retry_instruction = (
+                                compiled_system_instruction + 
+                                "\n\nCRITICAL SYSTEM EVENT: The user's last message caused the server to return an error/policy block. "
+                                "Respond to the user naturally in your own words. Tell them that the servers returned an unexpected error "
+                                "and you don't know why, or ask them to rephrase without mentioning internal policies."
+                            )
+                            retry_resp = self.key_manager.generate_content(
+                                model=self.current_api_model,
+                                contents=retry_contents,
+                                config=GenerateContentConfig(
+                                    system_instruction=retry_instruction,
+                                    temperature=0.7,
+                                    tools=None
+                                )
+                            )
+                            if retry_resp and retry_resp.text:
+                                final_text = retry_resp.text
+                                break
+                        except Exception as sanitize_err:
+                            logger.error(f"Failed to auto-sanitize prohibited content: {sanitize_err}", exc_info=True)
+
+                    final_text = "Ой, что-то сервер выдал какую-то странную ошибку на твое сообщение... Даже не знаю почему. Попробуй написать чуть иначе? )"
+                    break
 
                 if response.text:
                     last_turn_text = response.text
@@ -523,6 +634,10 @@ class AIService:
                         elif call.name == ToolName.IGNORE_MESSAGE.value:
                             reason = args.get("reason") or "No reason provided"
                             logger.info(f"Model explicitly chose to ignore the message. Reason: {reason}")
+                            # If we already have tools to execute (like a generated image or sticker), don't discard them!
+                            if local_calls_to_return:
+                                logger.info(f"Preserving {len(local_calls_to_return)} tool calls before ignoring text output.")
+                                return "", local_calls_to_return
                             # Immediately abort the generation loop and return empty
                             return "", []
                             
@@ -557,6 +672,142 @@ class AIService:
                                         response={
                                             "error": "Failed to generate voice message due to technical/environmental issues.",
                                             "instruction": "Do NOT try to send a voice message again. Generate a normal TEXT response explaining playfully why you can't record a voice right now (e.g., 'too noisy', 'lost my voice', 'microphone is broken')."
+                                        }
+                                    )
+                                )
+
+                        elif call.name == ToolName.GENERATE_IMAGE.value:
+                            prompt = args.get("prompt") or ""
+                            aspect_ratio = args.get("aspect_ratio") or "auto"
+                            use_group_avatar = bool(args.get("use_group_avatar", False))
+                            ref_msg_ids = args.get("reference_message_ids") or []
+                            ref_avatar_users = args.get("reference_avatar_users") or []
+                            
+                            logger.info(f"Model requested image generation: prompt='{prompt[:60]}...', AR={aspect_ratio}, group_ava={use_group_avatar}, ref_msgs={ref_msg_ids}, ref_users={ref_avatar_users}")
+                            
+                            bot = sender_info.get("bot") if sender_info else None
+                            chat_id = sender_info.get("chat_id") if sender_info else None
+                            ref_images = []
+                            
+                            # 1. Group Avatar Reference
+                            if use_group_avatar and bot and chat_id:
+                                try:
+                                    chat_obj = await bot.get_chat(chat_id)
+                                    if chat_obj.photo:
+                                        from services.media_service import MediaService
+                                        ava_bytes = await MediaService.process_image(bot, chat_obj.photo.big_file_id, 0)
+                                        if ava_bytes:
+                                            ref_images.append(ava_bytes)
+                                except Exception as ga_err:
+                                    logger.warning(f"Failed to fetch group avatar for image generation: {ga_err}")
+
+                            # 2. Reference messages with photos
+                            if ref_msg_ids and bot and chat_id:
+                                for mid in ref_msg_ids:
+                                    try:
+                                        msg_doc = await chat_context._db.messages.find_one({"chat_id": chat_id, "message_id": int(mid)})
+                                        if msg_doc and msg_doc.get("media_type") == "photo" and msg_doc.get("file_id"):
+                                            from services.media_service import MediaService
+                                            m_bytes = await MediaService.process_image(bot, msg_doc["file_id"], 0)
+                                            if m_bytes:
+                                                ref_images.append(m_bytes)
+                                    except Exception as mid_err:
+                                        logger.warning(f"Failed to fetch ref message photo {mid}: {mid_err}")
+
+                            # 3. Reference user avatars
+                            if ref_avatar_users and bot:
+                                for u_spec in ref_avatar_users:
+                                    try:
+                                        u_target_id = None
+                                        if str(u_spec).lower() in ("me", "my", "я", "мое", "мой"):
+                                            u_target_id = sender_info.get("user_id") if sender_info else None
+                                        elif str(u_spec).isdigit():
+                                            u_target_id = int(u_spec)
+                                        else:
+                                            # Look up user in DB by username or first_name
+                                            u_clean = str(u_spec).lstrip("@").lower()
+                                            u_doc = await chat_context._db.users.find_one({
+                                                "$or": [
+                                                    {"username": {"$regex": f"^{u_clean}$", "$options": "i"}},
+                                                    {"first_name": {"$regex": f"^{u_clean}$", "$options": "i"}}
+                                                ]
+                                            })
+                                            if u_doc:
+                                                u_target_id = u_doc["user_id"]
+
+                                        if u_target_id:
+                                            photos = await bot.get_user_profile_photos(int(u_target_id), limit=1)
+                                            if photos and photos.photos:
+                                                from services.media_service import MediaService
+                                                u_ava = await MediaService.process_image(bot, photos.photos[0][-1].file_id, photos.photos[0][-1].file_size)
+                                                if u_ava:
+                                                    ref_images.append(u_ava)
+                                    except Exception as u_err:
+                                        logger.warning(f"Failed to fetch avatar for {u_spec}: {u_err}")
+
+                            from services.image_generation_service import get_image_generation_service
+                            img_service = get_image_generation_service()
+                            try:
+                                gen_bytes = await img_service.generate_image(
+                                    prompt=prompt,
+                                    reference_bytes=ref_images if ref_images else None,
+                                    aspect_ratio=aspect_ratio
+                                )
+                                if gen_bytes:
+                                    if not isinstance(call.args, dict):
+                                        call.args = {}
+                                    call.args["_image_bytes"] = gen_bytes
+                                    local_calls_to_return.append(call)
+                                    response_parts.append(
+                                        Part.from_function_response(
+                                            name=call.name,
+                                            response={
+                                                "result": "Image generated successfully and will be delivered to the chat.",
+                                                "instruction": "The image has been generated. If your full task was only to draw this picture, you do not need to repeat the caption in text. But if the user also asked for an explanation, story, calculation, or further assistance, you may proceed naturally and provide that text or invoke subsequent tools."
+                                            }
+                                        )
+                                    )
+                                else:
+                                    raise Exception("No image bytes returned")
+                            except Exception as img_err:
+                                logger.error(f"Image generation failed: {img_err}")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={
+                                            "error": f"Failed to generate image: {img_err}",
+                                            "instruction": "Respond playfully to the user explaining that you could not draw the image right now."
+                                        }
+                                    )
+                                )
+
+                        elif call.name in (ToolName.SEND_WIDGET.value, ToolName.EDIT_WIDGET.value):
+                            bot = sender_info.get("bot") if sender_info else None
+                            chat_id = sender_info.get("chat_id") if sender_info else None
+
+                            if chat_context.is_group:
+                                # Telegram Bot API 10.4 rejects widgets in groups with INPUT_MEDIA_WIDGET_NOT_ALLOWED
+                                logger.info(f"Widget call blocked in group chat {chat_id}: reporting directly to model.")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={
+                                            "error": "INPUT_MEDIA_WIDGET_NOT_ALLOWED",
+                                            "reason": "Telegram currently allows sending HTML widgets ONLY in private 1-on-1 chats (DMs). Groups are not supported on production yet.",
+                                            "instruction": "Explain to the user naturally in your own words (in chat text) that Telegram allows widgets/mini-games only in private messages with you, and suggest they write to you in PM (@miamind_bot) so you can send the game there."
+                                        }
+                                    )
+                                )
+                            else:
+                                local_calls_to_return.append(call)
+                                action_name = "widget sent" if call.name == ToolName.SEND_WIDGET.value else "widget edited"
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={
+                                            "status": "success",
+                                            "message": f"Interactive {action_name} successfully.",
+                                            "instruction": "The widget has been delivered into the chat bubble. Provide a short, friendly accompanying message if desired, or stay concise."
                                         }
                                     )
                                 )
@@ -604,11 +855,22 @@ class AIService:
                             is_global = bool(args.get("is_global", False))
                             category = args.get("category") or "other"
                             confirmed = bool(args.get("confirmed", False))
+                            expires_at = args.get("expires_at") or None
                             chat_title = sender_info.get("chat_title", "Unknown Context") if sender_info else "Unknown Context"
 
                             try:
                                 if not user_id or not fact:
                                     raise ValueError("Missing user_id or fact")
+
+                                if expires_at:
+                                    original_input = expires_at.strip()
+                                    try:
+                                        datetime.strptime(original_input, "%Y-%m-%d")
+                                    except ValueError:
+                                        nearest_date = resolve_nearest_valid_date(original_input)
+                                        raise ValueError(
+                                            f"Date '{original_input}' is invalid or does not exist. Nearest valid date is '{nearest_date}'."
+                                        )
 
                                 # Check for contradictions (skip if user already confirmed)
                                 if not confirmed:
@@ -665,7 +927,7 @@ class AIService:
                                         logger.warning(f"Failed to supersede old fact after confirmation: {sup_err}")
 
                                 await chat_context._db.save_user_fact(
-                                    int(user_id), fact, chat_title, chat_context.id, is_global, category=category
+                                    int(user_id), fact, chat_title, chat_context.id, is_global, category=category, expires_at=expires_at
                                 )
                                 response_parts.append(
                                     Part.from_function_response(
@@ -713,18 +975,76 @@ class AIService:
                         elif call.name == ToolName.CONFIRM_USER_FACT.value:
                             user_id = args.get("user_id")
                             fact_text = args.get("fact") or ""
+                            expires_at = args.get("expires_at") or None
                             try:
                                 if not user_id or not fact_text:
                                     raise ValueError("Missing user_id or fact")
-                                await chat_context._db.confirm_user_fact(int(user_id), fact_text, chat_context.id)
+                                if expires_at:
+                                    original_input = expires_at.strip()
+                                    try:
+                                        datetime.strptime(original_input, "%Y-%m-%d")
+                                    except ValueError:
+                                        nearest_date = resolve_nearest_valid_date(original_input)
+                                        raise ValueError(
+                                            f"Date '{original_input}' is invalid or does not exist. Nearest valid date is '{nearest_date}'."
+                                        )
+                                await chat_context._db.confirm_user_fact(int(user_id), fact_text, chat_context.id, expires_at=expires_at)
                                 response_parts.append(
                                     Part.from_function_response(
                                         name=call.name,
-                                        response={"result": f"Fact confirmed as still accurate for user {user_id}."}
+                                        response={"result": f"Fact confirmed as still accurate and refreshed for user {user_id}."}
                                     )
                                 )
                             except Exception as e:
                                 logger.error(f"Failed to confirm user fact: {e}")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": str(e)}
+                                    )
+                                )
+
+                        elif call.name == ToolName.DELETE_USER_FACT.value:
+                            user_id = args.get("user_id")
+                            fact_text = args.get("fact") or ""
+                            try:
+                                if not user_id or not fact_text:
+                                    raise ValueError("Missing user_id or fact")
+                                await chat_context._db.delete_user_fact(int(user_id), fact_text, chat_context.id)
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"result": f"Fact successfully removed from memory for user {user_id}."}
+                                    )
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to delete user fact: {e}")
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"error": str(e)}
+                                    )
+                                )
+
+                        elif call.name == ToolName.QUEUE_RESEARCH_TOPIC.value:
+                            search_query = args.get("search_query") or ""
+                            topic_label = args.get("topic_label") or ""
+                            try:
+                                if not search_query or not topic_label:
+                                    raise ValueError("Missing search_query or topic_label")
+                                r_user_id = sender_info.get("user_id") if sender_info else None
+                                await chat_context._db.queue_research_topic(
+                                    chat_context.id, int(r_user_id) if r_user_id and str(r_user_id).isdigit() else None,
+                                    search_query, topic_label
+                                )
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={"result": f"Noted '{topic_label}'. You will consider researching this during future research cycles!"}
+                                    )
+                                )
+                            except Exception as e:
+                                logger.error(f"Failed to queue research topic: {e}")
                                 response_parts.append(
                                     Part.from_function_response(
                                         name=call.name,
