@@ -1257,14 +1257,20 @@ class AIService:
                                         if not avatar_bytes:
                                             raise Exception("Failed to download or process the profile photo.")
                                             
+                                        import base64
+                                        b64_img = base64.b64encode(avatar_bytes).decode("utf-8")
+                                        data_url = f"data:image/jpeg;base64,{b64_img}"
+                                        
                                         response_parts.append(
                                             Part.from_function_response(
                                                 name=call.name,
-                                                response={"result": f"Success. The profile photo of the requested user (ID: {target_id}) is attached to this context turn."}
+                                                response={
+                                                    "status": "success",
+                                                    "user_id": target_id,
+                                                    "image_data_url": data_url,
+                                                    "instruction": f"The profile photo of user/bot {target_id} is loaded directly above. Analyze and describe it naturally."
+                                                }
                                             )
-                                        )
-                                        response_parts.append(
-                                            Part.from_bytes(data=avatar_bytes, mime_type="image/jpeg")
                                         )
                                 except Exception as e:
                                     logger.error(f"Failed to retrieve profile photo: {e}")
@@ -1442,12 +1448,6 @@ class AIService:
             final_text = re.sub(r"\[MsgID:\s*\d+\]\s*", "", final_text)
             final_text = re.sub(r"\[\d{1,2}:\d{2}\]\s*", "", final_text)
             final_text = re.sub(r"^\[.*?\]:\s*", "", final_text).strip()
-
-            # Clean up raw internal multimodal filenames/artifacts (e.g. 'a_0.jpg', 'input_file_0.png')
-            # occasionally leaked by Gemini vision/tool tokens
-            if re.match(r"^(?:a|image|file|input_file)_\d+\.(?:jpg|jpeg|png|webp)$", final_text.strip(), re.I):
-                logger.warning(f"Detected raw multimodal filename leakage in model response: {final_text.strip()!r}. Suppressing.")
-                final_text = ""
 
             return final_text, local_calls_to_return
             
