@@ -294,8 +294,12 @@ class AIService:
                     except Exception as e:
                         logger.debug(f"Failed to load private message count for user {user_id}: {e}")
 
+                bot_avatar_desc = sender_info.get("bot_avatar_description") or "У тебя установлена темная гранжевая аватарка с зеркальным селфи."
+                bot_avatar_context = f"YOUR CURRENT TELEGRAM AVATAR (what you, Mia, have set as your profile picture right now):\n\"{bot_avatar_desc}\"\nIf the user asks about your photo, avatar, or looks, you already know this is your exact current photo!\n\n"
+
                 sender_context = (
-                    f"\n--- INTERLOCUTOR INFO ---\n"
+                    f"\n--- INTERLOCUTOR & YOUR PROFILE INFO ---\n"
+                    f"{bot_avatar_context}"
                     f"User ID: {user_id}\n"
                     f"Name: {full_name}\n"
                     f"Username: {username_str}\n"

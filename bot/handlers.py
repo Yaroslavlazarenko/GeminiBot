@@ -403,7 +403,13 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
                 last_name=last_message.from_user.last_name
             )
 
-            # Get avatar description
+            # Get bot's own avatar description
+            bot_avatar_desc = await AvatarService.get_bot_avatar_description(
+                bot=last_message.bot,
+                db_manager=chat_context._db
+            )
+
+            # Get user avatar description
             avatar_desc = await AvatarService.get_and_describe_avatar(
                 bot=last_message.bot,
                 user_id=last_message.from_user.id,
@@ -418,6 +424,7 @@ async def _enqueue_bot_turn(message: Message, chat_context: ChatContext, text: s
                 "username": last_message.from_user.username,
                 "language_code": last_message.from_user.language_code,
                 "avatar_description": avatar_desc,
+                "bot_avatar_description": bot_avatar_desc,
                 "bot": last_message.bot,
                 "chat_id": last_message.chat.id,
                 "chat_title": chat_title,
