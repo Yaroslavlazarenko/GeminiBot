@@ -557,6 +557,74 @@ class AIService:
                                     response={"matches": results}
                                 )
                             )
+                        elif call.name == ToolName.SEARCH_MUSIC.value:
+                            query = args.get("query") or ""
+                            try:
+                                limit = int(float(args.get("limit", 5)))
+                            except (ValueError, TypeError):
+                                limit = 5
+                            from services.music_service import get_music_service
+                            music_service = get_music_service()
+                            tracks = await music_service.search_music(query, limit=limit)
+                            if tracks:
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={
+                                            "status": "success",
+                                            "query": query,
+                                            "tracks": tracks,
+                                            "instruction": "Tracks found! Pick the best track_id and call send_music(track_id=..., caption=...) to send it to the chat, or explain your pick."
+                                        }
+                                    )
+                                )
+                            else:
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={
+                                            "status": "not_found",
+                                            "query": query,
+                                            "message": f"No tracks found on SoundCloud for '{query}'."
+                                        }
+                                    )
+                                )
+
+                        elif call.name == ToolName.SEND_MUSIC.value:
+                            track_id = args.get("track_id")
+                            query = args.get("query")
+                            from services.music_service import get_music_service
+                            music_service = get_music_service()
+                            mp3_path, title, uploader = await music_service.download_track(track_id=track_id, query=query)
+                            if mp3_path:
+                                if not isinstance(call.args, dict):
+                                    call.args = {}
+                                call.args["_audio_file"] = mp3_path
+                                call.args["_title"] = title
+                                call.args["_performer"] = uploader
+                                local_calls_to_return.append(call)
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={
+                                            "status": "success",
+                                            "title": title,
+                                            "performer": uploader,
+                                            "instruction": "The audio track has been downloaded and scheduled for delivery into Telegram chat."
+                                        }
+                                    )
+                                )
+                            else:
+                                response_parts.append(
+                                    Part.from_function_response(
+                                        name=call.name,
+                                        response={
+                                            "status": "error",
+                                            "message": f"Could not download audio track for '{track_id or query}'. It might be DRM-protected or unavailable."
+                                        }
+                                    )
+                                )
+
                         elif call.name == ToolName.SEARCH_HISTORY.value:
                             query = args.get("query") or ""
                             try:
