@@ -1443,6 +1443,12 @@ class AIService:
             final_text = re.sub(r"\[\d{1,2}:\d{2}\]\s*", "", final_text)
             final_text = re.sub(r"^\[.*?\]:\s*", "", final_text).strip()
 
+            # Clean up raw internal multimodal filenames/artifacts (e.g. 'a_0.jpg', 'input_file_0.png')
+            # occasionally leaked by Gemini vision/tool tokens
+            if re.match(r"^(?:a|image|file|input_file)_\d+\.(?:jpg|jpeg|png|webp)$", final_text.strip(), re.I):
+                logger.warning(f"Detected raw multimodal filename leakage in model response: {final_text.strip()!r}. Suppressing.")
+                final_text = ""
+
             return final_text, local_calls_to_return
             
         except Exception as e:
