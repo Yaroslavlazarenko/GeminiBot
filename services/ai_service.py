@@ -506,6 +506,7 @@ class AIService:
                     current_contents.append(response.candidates[0].content)
                     
                 response_parts = []
+                tool_media_parts = []
                 mcp_calls = []
                 local_tool_names = [t.__name__ for t in local_tools_list] if local_tools_list else []
 
@@ -1145,14 +1146,14 @@ class AIService:
                                     }
                                     mime_type = mime_map.get(ext, 'image/jpeg')
                                     
-                                    # We provide a function response indicating success, AND append the raw media part
+                                    # We provide a clean function response indicating success, and stage media for visual turn
                                     response_parts.append(
                                         Part.from_function_response(
                                             name=call.name,
-                                            response={"result": "Success. The requested raw media file is attached to this context turn."}
+                                            response={"result": f"Success. The raw media file {file_id} is loaded and presented for visual inspection."}
                                         )
                                     )
-                                    response_parts.append(
+                                    tool_media_parts.append(
                                         Part.from_bytes(data=media_data, mime_type=mime_type)
                                     )
                                 except Exception as e:
@@ -1261,20 +1262,18 @@ class AIService:
                                         if not avatar_bytes:
                                             raise Exception("Failed to download or process the profile photo.")
                                             
-                                        import base64
-                                        b64_img = base64.b64encode(avatar_bytes).decode("utf-8")
-                                        data_url = f"data:image/jpeg;base64,{b64_img}"
-                                        
                                         response_parts.append(
                                             Part.from_function_response(
                                                 name=call.name,
                                                 response={
                                                     "status": "success",
                                                     "user_id": target_id,
-                                                    "image_data_url": data_url,
-                                                    "instruction": f"The profile photo of user/bot {target_id} is loaded directly above. Analyze and describe it naturally."
+                                                    "result": f"Profile photo of user/bot {target_id} loaded successfully."
                                                 }
                                             )
+                                        )
+                                        tool_media_parts.append(
+                                            Part.from_bytes(data=avatar_bytes, mime_type="image/jpeg")
                                         )
                                 except Exception as e:
                                     logger.error(f"Failed to retrieve profile photo: {e}")
@@ -1431,6 +1430,9 @@ class AIService:
                     
                 # Feed responses back into Gemini's generation loop
                 current_contents.append(Content(role="user", parts=response_parts))
+                if tool_media_parts:
+                    tool_media_parts.append(Part.from_text(text="[Запрошенные изображения/медиа загружены выше. Внимательно изучи их визуально и ответь на вопрос собеседника.]"))
+                    current_contents.append(Content(role="user", parts=tool_media_parts))
 
             final_text = final_text or last_turn_text or ""
 
