@@ -10,7 +10,7 @@ class Config(BaseSettings):
     # Example: GEMINI_API_KEYS=key1,key2,key3
     # gemini_api_key is always included automatically as the primary key.
     gemini_api_keys: str = ""
-    gemini_api_model: str = "gemini-3.7-flash"
+    gemini_api_model: str = "gemini-smartest"
     gemini_gatekeeper_model: str = "gemini-3-flash"
     gemini_base_url: str | None = None
 

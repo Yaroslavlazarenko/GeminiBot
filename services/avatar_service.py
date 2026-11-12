@@ -64,15 +64,11 @@ class AvatarService:
             desc = resp.text.strip() if resp and resp.text else "Реалистичное зеркальное селфи девушки в гранж/альт стиле с темными волосами."
             AvatarService._bot_avatar_cache[file_unique_id] = desc
 
-            await db_manager.system_settings.update_one(
-                {},
-                {"$set": {
-                    "bot_avatar_file_unique_id": file_unique_id,
-                    "bot_avatar_description": desc,
-                    "bot_avatar_updated_at": datetime.utcnow()
-                }},
-                upsert=True
-            )
+            await db_manager.update_system_settings({
+                "bot_avatar_file_unique_id": file_unique_id,
+                "bot_avatar_description": desc,
+                "bot_avatar_updated_at": datetime.utcnow()
+            })
             logger.info(f"Generated new bot avatar description: {desc[:60]}...")
             return desc
         except Exception as e:
