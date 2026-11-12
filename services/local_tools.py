@@ -121,7 +121,8 @@ def generate_image(
 
 @mcp.tool(name=ToolName.SEARCH_HISTORY.value)
 def search_history(query: str, limit: int = 10) -> str:
-    """Search the full permanent chat history for specific keywords or phrases. Use this if the user asks if you remember something specific.
+    """Search the full permanent chat history for specific keywords or phrases.
+    Returns matching messages with their Telegram Message ID [MsgID: ...] and timestamp [YYYY-MM-DD HH:MM].
     Args:
         query: The keyword or phrase to search for.
         limit: The maximum number of messages to return (default 10).
@@ -131,6 +132,7 @@ def search_history(query: str, limit: int = 10) -> str:
 @mcp.tool(name=ToolName.GET_HISTORY_BY_DATE.value)
 def get_history_by_date(date: str = "", from_start: bool = False, days_ago: Optional[int] = None, limit: int = 20) -> str:
     """Retrieve messages from chat history for a specific calendar date (e.g. '2026-05-24'), or from the very beginning of the chat (from_start=True), or by days_ago (0 for today, 1 for yesterday).
+    Returns messages with their Telegram Message ID [MsgID: ...] and timestamp [YYYY-MM-DD HH:MM].
     Args:
         date: Specific date in YYYY-MM-DD format (e.g. '2026-05-24'). Use this when you know or see the date in chat archive stats.
         from_start: If True, fetches the very first messages from the beginning of this chat history.
@@ -154,16 +156,26 @@ def get_group_info() -> str:
     return f"Getting group info..."
 
 @mcp.tool(name=ToolName.SAVE_USER_FACT.value)
-def save_user_fact(user_id: int, fact: str, is_global: bool = False, category: str = "other", confirmed: bool = False) -> str:
-    """Save an important fact about a user permanently into your memory. If the new fact contradicts an existing one, you will be asked to clarify with the user first before saving.
+def save_user_fact(user_id: int, fact: str, is_global: bool = False, category: str = "other", confirmed: bool = False, expires_at: str = "") -> str:
+    """Save an important fact about a user into your memory.
     Args:
         user_id: The exact Telegram ID of the user. You can find this in the [INTERLOCUTOR INFO] section.
         fact: A concise, clear sentence describing what you learned about the user.
         is_global: Set to True ONLY IF this is a completely harmless, public fact (e.g. 'likes pizza') that is safe to bring up in public group chats. Set to False if this is a personal secret, private context, or sensitive info.
-        category: The category of this fact. Valid values: 'preference' (likes/dislikes, tastes), 'personal' (age, name, appearance, health), 'work' (job, studies, projects), 'relationship' (family, friends, romantic), 'other' (anything else).
+        category: The category of this fact. Valid values: 'character' (personality traits, communication style, temperament, humor, sensitivities, emotional habits), 'preference' (likes/dislikes, tastes), 'personal' (age, name, appearance, health), 'work' (job, studies, projects), 'relationship' (family, friends, romantic), 'other' (anything else).
         confirmed: Set to True ONLY when you are re-saving a fact after the user has confirmed it resolves a previously detected contradiction. This skips the contradiction check.
+        expires_at: Optional expiration date in YYYY-MM-DD format for temporary facts (e.g. '2026-12-01' for ongoing tasks, current errands, looking for a product). Omit or leave empty for permanent durable facts (name, age, family, personality, chronic health).
     """
     return f"Saving fact for user {user_id}"
+
+@mcp.tool(name=ToolName.DELETE_USER_FACT.value)
+def delete_user_fact(user_id: int, fact: str) -> str:
+    """Remove a fact about a user when it is completed, no longer relevant, or proven false.
+    Args:
+        user_id: The exact Telegram ID of the user.
+        fact: The exact text of the fact to remove from memory.
+    """
+    return f"Deleting fact for user {user_id}"
 
 @mcp.tool(name=ToolName.GET_USER_FACTS.value)
 def get_user_facts(user_id: int) -> str:
@@ -199,11 +211,12 @@ def get_profile_photo(user_id: Optional[int] = None) -> str:
     return f"Fetching profile photo for user {user_id if user_id else 'Mia'}..."
 
 @mcp.tool(name=ToolName.CONFIRM_USER_FACT.value)
-def confirm_user_fact(user_id: int, fact: str) -> str:
-    """Confirm that a previously known fact about a user is still accurate. Call this when you observe evidence that something you already know about this user remains true — e.g., they mention the same preference, job, or detail again.
+def confirm_user_fact(user_id: int, fact: str, expires_at: str = "") -> str:
+    """Confirm that a previously known fact about a user is still accurate and fresh. Optionally extend its expiration date.
     Args:
         user_id: The exact Telegram ID of the user.
         fact: The exact text of the existing fact to confirm (as shown in your INTERLOCUTOR INFO).
+        expires_at: Optional new expiration date (YYYY-MM-DD) if you want to extend or set the expiration of this fact.
     """
     return f"Confirming fact for user {user_id}"
 
@@ -223,6 +236,19 @@ def recall_memory(topic: str) -> str:
         topic: The topic label of the note to recall (as shown in your PERSONAL NOTES). Partial matches are supported.
     """
     return f"Recalling memory: {topic}"
+
+@mcp.tool(name=ToolName.QUEUE_RESEARCH_TOPIC.value)
+def queue_research_topic(search_query: str, topic_label: str) -> str:
+    """Note down a topic or specific question you want to look up on the web later.
+    Call this when a subject catches your curiosity during conversation — a hobby, a craft technique,
+    a car issue, game lore, science, book, or technical concept that you want to research deeper.
+    In future research cycles, you will consider these saved curiosity topics alongside new spontaneous ideas.
+    Once researched, the findings are saved to your knowledge, and this note is automatically removed.
+    Args:
+        search_query: The specific web search query you want to run (e.g., 'skoda fabia 2008 suspension knock causes', 'papermache cosplay props strengthening techniques').
+        topic_label: Short name of the topic (e.g., 'Skoda Fabia suspension issues', 'Papermache strengthening').
+    """
+    return f"Queued research topic: {topic_label}"
 
 @mcp.tool(name=ToolName.SCHEDULE_TASK.value)
 def schedule_task(
@@ -274,6 +300,39 @@ def edit_scheduled_task(
     """
     return f"Editing scheduled task: {task_id}"
 
+@mcp.tool(name=ToolName.SEND_WIDGET.value)
+def send_widget(html: str, caption: str = "", height: Optional[int] = None, width: Optional[int] = None) -> str:
+    """Send a rich, interactive HTML/JS widget in Telegram (Bot API 10.4 Widgets).
+    Use this to display live dynamic widgets in chat: mini-games, weather forecasts, interactive cards, status trackers, timers, visual calculators, quizzes, or interactive dashboards.
+    The widget is an inline HTML document that renders natively inside the Telegram message bubble.
+
+    Args:
+        html: Self-contained HTML code with inline <style> and <script>. Max 32KB raw HTML (must compress under 4KB zlib).
+              CRITICAL TELEGRAM WIDGET CSS & RUNTIME RULES:
+              1. COMPLETE OFFLINE SANDBOX: The widget JavaScript engine is completely OFFLINE! Any call to `fetch()`, `XMLHttpRequest`, or `WebSocket` will crash with `NetworkDisabledError`. You must NEVER write `fetch()` inside the widget JS. Instead, find the data (e.g. weather, temperature, stocks) yourself via your tools first, and BAKE / INLINE the actual values directly into the HTML markup before sending!
+              2. NEVER use `height: 100vh` or `vh` units! The Telegram documentation states height-relative units (vh) are completely unsupported in the widget engine.
+              3. Do NOT hardcode fixed pixel outer boxes with margins (e.g. `margin: 15px; width: 350px`). The widget bubble itself is the canvas. Use `width: 100%; box-sizing: border-box;`.
+              4. Use `padding: 12px 14px;` or rely on native styles. Use `var(--tg-theme-bg-color, #1e1e1e)` and `var(--tg-theme-text-color, #ffffff)`.
+              5. Leave `height` and `width` as None (0) for automatic natural content height (50-600px), unless a specific fixed canvas is needed.
+        caption: Optional text caption shown alongside the widget.
+        height: Optional fixed height in logical pixels (range 50-600). Prefer None (auto).
+        width: Optional fixed width in logical pixels. Prefer None (auto bubble width).
+    
+    IMPORTANT AVAILABILITY RULE:
+    In production Telegram, widgets can ONLY be sent to PRIVATE chats (DMs). In group chats, Telegram Bot API rejects widgets with INPUT_MEDIA_WIDGET_NOT_ALLOWED.
+    If you are in a group chat, do NOT call send_widget; instead, invite the user in text to open a private chat with you to play/view the widget!
+    """
+    return f"Sending widget with caption: {caption}"
+
+@mcp.tool(name=ToolName.EDIT_WIDGET.value)
+def edit_widget(message_id: int, chat_data: str) -> str:
+    """Update dynamic state data of a previously sent Telegram widget without re-sending the whole message.
+    Args:
+        message_id: Telegram message ID of the widget message to update.
+        chat_data: New state data string (0-1024 bytes) that the widget reads via TelegramWidget.chatData.
+    """
+    return f"Editing widget {message_id} data"
+
 # Export the raw functions for Gemini
 local_tools_list = [
     add_reaction,
@@ -286,11 +345,14 @@ local_tools_list = [
     search_music,
     send_music,
     generate_image,
+    send_widget,
+    edit_widget,
     search_history,
     get_history_by_date,
     ignore_message,
     get_group_info,
     save_user_fact,
+    delete_user_fact,
     get_user_facts,
     analyze_past_media,
     download_media_to_disk,
@@ -301,7 +363,8 @@ local_tools_list = [
     schedule_task,
     list_scheduled_tasks,
     delete_scheduled_task,
-    edit_scheduled_task
+    edit_scheduled_task,
+    queue_research_topic
 ]
 
 # Tools safe for Gatekeeper to use (read-only)

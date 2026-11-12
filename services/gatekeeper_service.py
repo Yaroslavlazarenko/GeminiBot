@@ -127,8 +127,9 @@ class GatekeeperService:
                                 {"score": {"$meta": "textScore"}}
                             ).sort([("score", {"$meta": "textScore"})]).limit(limit)
                             async for msg in cursor:
-                                date_str = msg["date"].strftime("%Y-%m-%d %H:%M") if "date" in msg else "Unknown"
-                                results.append(f"[{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
+                                date_str = msg["date"].strftime("%Y-%m-%d %H:%M") if "date" in msg and msg.get("date") else "Unknown"
+                                msg_id = msg.get("message_id", "?")
+                                results.append(f"[MsgID: {msg_id}] [{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
                         response_parts.append(
                             Part.from_function_response(
                                 name=call.name,
@@ -163,7 +164,8 @@ class GatekeeperService:
                                 date_str = d.astimezone(odessa_tz).strftime("%Y-%m-%d %H:%M")
                             else:
                                 date_str = "Unknown"
-                            results.append(f"[{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
+                            msg_id = msg.get("message_id", "?")
+                            results.append(f"[MsgID: {msg_id}] [{date_str}] {msg.get('role', 'unknown').upper()}: {msg.get('text', '')}")
                         results.reverse()
                         response_parts.append(
                             Part.from_function_response(

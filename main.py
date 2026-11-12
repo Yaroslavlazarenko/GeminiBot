@@ -95,10 +95,12 @@ async def main():
         # Register middlewares (Dedup MUST come first to drop duplicates before any processing)
         dedup = DeduplicationMiddleware(ttl_seconds=120)
         dp.message.middleware(dedup)
+        dp.edited_message.middleware(dedup)
         dp.callback_query.middleware(dedup)
         dp.message_reaction.middleware(dedup)
-        
+
         dp.message.middleware(DatabaseMiddleware(db_manager))
+        dp.edited_message.middleware(DatabaseMiddleware(db_manager))
         dp.callback_query.middleware(DatabaseMiddleware(db_manager))
         dp.message_reaction.middleware(DatabaseMiddleware(db_manager))
         

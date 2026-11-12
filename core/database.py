@@ -695,7 +695,7 @@ class DatabaseManager:
         result = []
         for e in entries:
             content = e.get("content", "").replace("\n", " ").strip()
-            preview = (content[:150] + "...") if len(content) > 150 else content
+            preview = (content[:500] + "...") if len(content) > 500 else content
             result.append({
                 "topic": e.get("topic", ""),
                 "preview": preview,

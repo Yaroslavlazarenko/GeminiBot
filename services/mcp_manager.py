@@ -95,7 +95,7 @@ class MCPServerAdapter:
         else:
             mcp_name = self.tool_mappings.get(gemini_name, gemini_name)
             logger.info(f"Executing remote MCP tool: {mcp_name} on {self.name} with args {args}")
-            result = await asyncio.wait_for(self.session.call_tool(mcp_name, args), timeout=90.0)
+            result = await asyncio.wait_for(self.session.call_tool(mcp_name, args), timeout=180.0)
             final_val = self._extract_result_content(result)
             if getattr(result, "isError", False):
                 err_str = str(final_val).lower()

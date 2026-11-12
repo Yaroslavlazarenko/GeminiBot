@@ -1,7 +1,7 @@
 import logging
 import random
 from datetime import datetime, timezone, timedelta
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 
 from google.genai.types import GenerateContentConfig, Content, Part, Tool, AutomaticFunctionCallingConfig
 from pydantic import BaseModel, Field
@@ -67,11 +67,14 @@ class ProactiveService:
             system_instruction = await self._get_system_instruction()
             model = await self._get_model()
 
-            # Step 1: Pick a topic
-            decision = await self._pick_research_topic(
+            # Step 1: Pick a topic (choosing between saved curiosity notes and spontaneous thoughts)
+            queued_topics = await self._db.get_all_queued_research_topics()
+            decision, chosen_queued_id = await self._pick_research_topic(
                 system_instruction, model, recent_topics,
-                cfg.get("research_topics_seed", "")
+                cfg.get("research_topics_seed", ""),
+                queued_topics=queued_topics
             )
+
             if not decision:
                 logger.warning("Proactive research: failed to pick a topic")
                 return False
@@ -103,6 +106,11 @@ class ProactiveService:
                 entry_type="research"
             )
 
+            # If this came from her queued curiosity notes, remove it from the table now!
+            if chosen_queued_id:
+                await self._db.delete_queued_research_topic(chosen_queued_id)
+                logger.info(f"Proactive research: removed completed topic {chosen_queued_id} from queue.")
+
             logger.info(f"Proactive research complete: '{decision.topic_label}' ({len(digest)} chars)")
             return True
 
@@ -111,8 +119,9 @@ class ProactiveService:
             return False
 
     async def _pick_research_topic(self, system_instruction: str, model: str,
-                                     recent_topics: List[str], seed_topics: str) -> Optional[ResearchDecision]:
-        """Ask Mia to pick an interesting topic to research."""
+                                     recent_topics: List[str], seed_topics: str,
+                                     queued_topics: List[Dict[str, Any]] = None) -> Tuple[Optional[ResearchDecision], Optional[Any]]:
+        """Ask Mia to pick an interesting topic to research, choosing from her saved curiosity notes or thinking of something new."""
         try:
             from zoneinfo import ZoneInfo
             odessa_tz = ZoneInfo("Europe/Kyiv")
@@ -123,18 +132,32 @@ class ProactiveService:
 
         recent_str = ", ".join(recent_topics) if recent_topics else "Nothing yet — this is your first research!"
 
+        saved_topics_section = ""
+        queued_map = {}
+        if queued_topics:
+            lines = []
+            for i, q in enumerate(queued_topics):
+                idx = i + 1
+                queued_map[idx] = q
+                lines.append(f"{idx}. Topic: \"{q.get('topic_label')}\" (Query: \"{q.get('search_query')}\")")
+            saved_topics_section = (
+                "\n\n--- YOUR SAVED CURIOSITY TOPICS (things you previously decided you wanted to look into) ---\n"
+                + "\n".join(lines) + "\n"
+                "You can pick one of these saved topics to research, OR you can explore a completely new spontaneous topic if you prefer."
+            )
+
         prompt = (
             f"Current time: {time_str}\n\n"
-            f"You recently researched these topics (do NOT repeat them):\n{recent_str}\n\n"
+            f"You recently researched these topics (do NOT repeat them):\n{recent_str}\n"
+            f"{saved_topics_section}\n\n"
         )
         if seed_topics:
             prompt += f"Your general interests: {seed_topics}\n\n"
 
         prompt += (
             "Pick ONE topic you'd genuinely like to research right now. "
-            "It should be something current, interesting, or useful. "
-            "Think about what's happening in the world, what you're curious about, "
-            "or what might be useful to know for conversations with people.\n\n"
+            "You can choose one from your saved curiosity topics above, OR pick a completely new spontaneous topic. "
+            "Think about what you are most curious about right now.\n\n"
             "Return a search query and a short topic label."
         )
 
@@ -149,16 +172,33 @@ class ProactiveService:
                     response_schema=ResearchDecision
                 )
             )
+            decision = None
             if response.parsed:
-                return response.parsed
-            # Fallback: try to parse text manually
-            if response.text:
+                decision = response.parsed
+            elif response.text:
                 import json
                 data = json.loads(response.text)
-                return ResearchDecision(**data)
+                decision = ResearchDecision(**data)
+
+            if not decision:
+                return None, None
+
+            # Check if Mia picked one of the queued topics
+            chosen_id = None
+            if queued_topics:
+                for q in queued_topics:
+                    q_label = (q.get("topic_label") or "").lower().strip()
+                    d_label = (decision.topic_label or "").lower().strip()
+                    q_query = (q.get("search_query") or "").lower().strip()
+                    d_query = (decision.search_query or "").lower().strip()
+                    if q_label in d_label or d_label in q_label or q_query in d_query or d_query in q_query:
+                        chosen_id = q.get("_id")
+                        break
+
+            return decision, chosen_id
         except Exception as e:
-            logger.error(f"Failed to pick research topic: {e}")
-        return None
+            logger.error(f"Failed to pick research topic: {e}", exc_info=True)
+            return None, None
 
     async def _execute_exa_search(self, query: str) -> Optional[str]:
         """Execute a search via MCP search tools (Exa / web search)."""
@@ -341,9 +381,11 @@ class ProactiveService:
     async def _get_eligible_chats(self, is_group: bool, cfg: dict) -> List[Dict[str, Any]]:
         """Get all chats that pass the basic eligibility filter."""
         min_silence_hours = cfg.get("messaging_min_silence_hours", 12)
+        max_silence_days = cfg.get("messaging_max_silence_days", 14)
         max_ignored = cfg.get("messaging_max_consecutive_ignored", 2)
 
         cutoff = datetime.utcnow() - timedelta(hours=min_silence_hours)
+        too_old_cutoff = datetime.utcnow() - timedelta(days=max_silence_days)
 
         if is_group:
             collection = self._db.groups
@@ -357,7 +399,7 @@ class ProactiveService:
         # 2. Not globally disabled or proactively disabled
         # 3. Not already awaiting a reply
         # 4. Haven't exceeded max consecutive ignored
-        # 5. Last user activity was long enough ago (silence period)
+        # 5. Last user activity was long enough ago (silence period) but not completely stale/dead
         chats = await collection.find({
             "history": {"$exists": True, "$ne": []},
             "is_active": {"$ne": False},
@@ -365,11 +407,10 @@ class ProactiveService:
             "proactive.disabled": {"$ne": True},
             "proactive.awaiting_reply": {"$ne": True},
             "proactive.consecutive_ignored": {"$not": {"$gte": max_ignored}},
-            "$or": [
-                {"proactive.last_user_message_at": {"$exists": False}},
-                {"proactive.last_user_message_at": None},
-                {"proactive.last_user_message_at": {"$lte": cutoff}}
-            ]
+            "proactive.last_user_message_at": {
+                "$gte": too_old_cutoff,
+                "$lte": cutoff
+            }
         }).to_list(None)
 
         # Apply probability filter
@@ -406,9 +447,18 @@ class ProactiveService:
         for msg in history:
             role = msg.get("role", "unknown")
             text = msg.get("text", "")
-            ts = msg.get("timestamp", "")
-            if text:
-                history_text += f"[{ts}] {role}: {text}\n"
+            ts = msg.get("timestamp") or ""
+            history_text += f"[{ts}] {role}: {text}\n" if ts else f"{role}: {text}\n"
+
+        # Calculate time since last interaction
+        last_user_time = chat_doc.get("proactive", {}).get("last_user_message_at")
+        silence_note = ""
+        if last_user_time:
+            hours_ago = (datetime.utcnow() - last_user_time).total_seconds() / 3600.0
+            if hours_ago >= 24:
+                silence_note = f"Time since last user interaction: {hours_ago / 24:.1f} days ago."
+            else:
+                silence_note = f"Time since last user interaction: {hours_ago:.1f} hours ago."
 
         # Get user facts for private chats
         facts_text = ""
@@ -440,6 +490,9 @@ class ProactiveService:
         if facts_text:
             prompt += f"Known facts about this person:\n{facts_text}\n\n"
 
+        if silence_note:
+            prompt += f"Context: {silence_note}\n\n"
+
         prompt += f"Recent conversation history:\n{history_text}\n\n"
 
         if world_memory_text:
@@ -450,15 +503,13 @@ class ProactiveService:
 
         prompt += (
             "Based on the conversation history and your world knowledge, decide whether to write something.\n"
-            "Reasons to write:\n"
-            "- You found something interesting that's relevant to what you were discussing\n"
-            "- You want to ask about something, follow up on a topic, or share a thought\n"
-            "- You genuinely want to continue the conversation naturally\n"
-            "- You remembered something or learned something new that connects to this chat\n\n"
+            "Rules for writing:\n"
+            "- If the conversation was recent (1-2 days ago): you can casually follow up on topics or thoughts you were discussing.\n"
+            "- If it has been a week or more (5-14 days): the user likely forgot old small-talk details or may have cleared chat. DO NOT reference old random jokes or awkward remarks! Instead, restart the conversation naturally (e.g. ask how they've been doing lately, share an interesting thought/discovery, or just say a friendly hi).\n"
+            "- Make it feel natural and unforced. Never interrogate or act like an alarm clock.\n\n"
             "Reasons NOT to write:\n"
-            "- The conversation ended naturally and there's nothing to add\n"
-            "- It would feel forced or spammy\n"
-            "- You have nothing genuinely interesting or relevant to say\n\n"
+            "- The conversation ended naturally and there's nothing genuine to say\n"
+            "- It would feel forced, awkward, or spammy\n\n"
         )
 
         if is_group:
