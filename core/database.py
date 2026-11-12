@@ -68,6 +68,71 @@ class ChatContext:
                 msg.pop("pending", None)
                 break
 
+    async def update_user_message_text(self, message_id: int, new_text: str, edited_at_str: str) -> Optional[str]:
+        """
+        Updates an existing user message in history when edited.
+        Records edit history (old_text, new_text, edited_at_str).
+        Returns the previous text if found.
+        """
+        old_text = None
+        for msg in self.history:
+            if msg.get("message_id") == message_id:
+                old_text = msg.get("text", "")
+                msg["text"] = new_text
+                edits = msg.setdefault("edit_history", [])
+                edits.append({
+                    "old_text": old_text,
+                    "new_text": new_text,
+                    "edited_at_str": edited_at_str,
+                    "edited_at": datetime.utcnow()
+                })
+                break
+
+        if old_text is None:
+            perm = await self._db.messages.find_one({"chat_id": self.id, "message_id": message_id})
+            if perm:
+                old_text = perm.get("text", "")
+
+        try:
+            collection = self._db.groups if self.is_group else self._db.users
+            query_field = "telegram_chat_id" if self.is_group else "telegram_id"
+            await collection.update_one(
+                {query_field: self.id, "history.message_id": message_id},
+                {
+                    "$set": {"history.$.text": new_text},
+                    "$push": {
+                        "history.$.edit_history": {
+                            "old_text": old_text or "",
+                            "new_text": new_text,
+                            "edited_at_str": edited_at_str,
+                            "edited_at": datetime.utcnow()
+                        }
+                    }
+                }
+            )
+        except Exception as e:
+            pass
+
+        try:
+            await self._db.messages.update_one(
+                {"chat_id": self.id, "message_id": message_id},
+                {
+                    "$set": {"text": new_text, "edited_at": datetime.utcnow(), "edited_at_str": edited_at_str},
+                    "$push": {
+                        "edit_history": {
+                            "old_text": old_text or "",
+                            "new_text": new_text,
+                            "edited_at_str": edited_at_str,
+                            "edited_at": datetime.utcnow()
+                        }
+                    }
+                }
+            )
+        except Exception as e:
+            pass
+
+        return old_text
+
     async def edit_bot_message(self, message_id: int, new_text: str) -> Optional[str]:
         """
         Edits an existing bot message in history, marking old text and new text.
@@ -338,8 +403,9 @@ class DatabaseManager:
             {"$set": {f"settings.{k}": v for k, v in settings.items()}}
         )
 
-    async def save_user_fact(self, telegram_id: int, fact: str, source: str, chat_id: int, is_global: bool = False, category: str = "other", confidence: float = 1.0):
-        """Save a persistent fact about a user. Scoped by chat_id to prevent leaking private info to groups."""
+    async def save_user_fact(self, telegram_id: int, fact: str, source: str, chat_id: int, is_global: bool = False, category: str = "other", confidence: float = 1.0, expires_at: Optional[str] = None):
+        """Save a persistent fact about a user. Scoped by chat_id to prevent leaking private info to groups.
+        If expires_at (ISO date string YYYY-MM-DD) is specified, the fact is temporary and expires after that date."""
         await self.users.update_one(
             {"telegram_id": telegram_id},
             {"$push": {
@@ -352,6 +418,7 @@ class DatabaseManager:
                     "confidence": confidence,
                     "date": datetime.utcnow(),
                     "last_confirmed": datetime.utcnow(),
+                    "expires_at": expires_at,
                     "superseded_by": None
                 }
             }}
@@ -359,27 +426,56 @@ class DatabaseManager:
 
     async def get_user_facts(self, telegram_id: int, current_chat_id: int) -> List[Dict[str, Any]]:
         """Retrieve facts about a user that are either global or explicitly scoped to the current chat.
-        Filters out superseded facts and sorts by last_confirmed descending."""
+        Filters out superseded facts and expired temporary facts, sorting by last_confirmed descending."""
         user = await self.users.find_one({"telegram_id": telegram_id})
         if not user:
             return []
 
         all_facts = user.get("facts", [])
-        # Filter facts: Only return if it was learned in this exact chat, OR if it's explicitly marked as harmless/global
-        # Also filter out superseded facts
+        now_utc = datetime.utcnow()
+        today_str = now_utc.strftime("%Y-%m-%d")
         filtered = []
         for f in all_facts:
             if f.get("superseded_by") is not None:
                 continue
-            if f.get("chat_id") == current_chat_id or f.get("is_global", False):
-                filtered.append(f)
+            if f.get("chat_id") != current_chat_id and not f.get("is_global", False):
+                continue
 
-        # Sort by last_confirmed descending (fallback to date for old facts)
+            # Check if temporary fact has expired by date
+            expires_at = f.get("expires_at")
+            if expires_at and isinstance(expires_at, str):
+                if expires_at < today_str:
+                    continue  # Expired temporary fact
+
+            # Fallback backward-compatibility for lifespan_days if any
+            lifespan = f.get("lifespan_days")
+            if lifespan is not None and lifespan > 0:
+                last_time = f.get("last_confirmed") or f.get("date")
+                if last_time:
+                    delta_days = (now_utc - last_time.replace(tzinfo=None)).total_seconds() / 86400.0
+                    if delta_days > lifespan:
+                        continue
+
+            filtered.append(f)
+
         def sort_key(f):
             return f.get("last_confirmed") or f.get("date") or datetime.min
         filtered.sort(key=sort_key, reverse=True)
 
         return filtered
+
+    async def delete_user_fact(self, telegram_id: int, fact_text: str, chat_id: int):
+        """Remove or mark a fact as deleted when it is no longer true or relevant."""
+        try:
+            await self.users.update_one(
+                {"telegram_id": telegram_id},
+                {"$pull": {
+                    "facts": {"fact": fact_text}
+                }}
+            )
+            logger.info(f"Deleted user fact for {telegram_id}: '{fact_text[:50]}...'")
+        except Exception as e:
+            logger.error(f"Failed to delete user fact for {telegram_id}: {e}")
 
     async def supersede_user_fact(self, telegram_id: int, old_fact_text: str, new_fact_text: str, chat_id: int):
         """Mark an existing fact as superseded by a new contradicting fact.
@@ -399,14 +495,18 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Failed to supersede fact for user {telegram_id}: {e}")
 
-    async def confirm_user_fact(self, telegram_id: int, fact_text: str, chat_id: int):
-        """Update last_confirmed timestamp for an existing fact."""
+    async def confirm_user_fact(self, telegram_id: int, fact_text: str, chat_id: int, expires_at: Optional[str] = None):
+        """Update last_confirmed timestamp for an existing fact, and optionally update its expiration date."""
         try:
+            update_fields: Dict[str, Any] = {
+                "facts.$[elem].last_confirmed": datetime.utcnow()
+            }
+            if expires_at is not None:
+                update_fields["facts.$[elem].expires_at"] = expires_at
+
             await self.users.update_one(
                 {"telegram_id": telegram_id},
-                {"$set": {
-                    "facts.$[elem].last_confirmed": datetime.utcnow()
-                }},
+                {"$set": update_fields},
                 array_filters=[{
                     "elem.fact": fact_text,
                     "elem.superseded_by": None
@@ -499,6 +599,27 @@ class DatabaseManager:
             {"$set": {"history.$.reactions": reactions}}
         )
 
+    async def queue_research_topic(self, chat_id: int, user_id: Optional[int], search_query: str, topic_label: str):
+        """Add a research topic request to the research queue (storing chat/user metadata purely for DB tracking)."""
+        doc = {
+            "chat_id": chat_id,
+            "user_id": user_id,
+            "search_query": search_query.strip(),
+            "topic_label": topic_label.strip(),
+            "created_at": datetime.utcnow()
+        }
+        await self.db['research_queue'].insert_one(doc)
+        logger.info(f"Queued research topic: '{topic_label}' query: '{search_query}' (chat: {chat_id})")
+
+    async def get_all_queued_research_topics(self) -> List[Dict[str, Any]]:
+        """Retrieve all currently queued research topics."""
+        return await self.db['research_queue'].find().sort("created_at", 1).to_list(50)
+
+    async def delete_queued_research_topic(self, topic_id) -> bool:
+        """Remove a queued topic after it has been researched."""
+        result = await self.db['research_queue'].delete_one({"_id": topic_id})
+        return result.deleted_count > 0
+
     # --- Auto Memory (Mia's personal notes per chat) ---
 
     async def save_auto_memory(self, chat_id: int, user_id: int, topic: str, content: str, max_entries: int = 30):
@@ -565,12 +686,22 @@ class DatabaseManager:
         return None
 
     async def get_auto_memory_topics(self, chat_id: int, limit: int = 20) -> List[Dict[str, Any]]:
-        """Return topic labels for injection into the system prompt."""
+        """Return topic labels and concise content previews for injection into the system prompt."""
         entries = await self.auto_memory.find(
             {"chat_id": chat_id},
-            {"topic": 1, "updated_at": 1, "_id": 0}
+            {"topic": 1, "content": 1, "updated_at": 1, "_id": 0}
         ).sort("updated_at", -1).limit(limit).to_list(None)
-        return entries
+        
+        result = []
+        for e in entries:
+            content = e.get("content", "").replace("\n", " ").strip()
+            preview = (content[:150] + "...") if len(content) > 150 else content
+            result.append({
+                "topic": e.get("topic", ""),
+                "preview": preview,
+                "updated_at": e.get("updated_at")
+            })
+        return result
 
     # --- Proactive Messaging State ---
 

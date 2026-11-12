@@ -324,7 +324,7 @@ class AIService:
                 f"     5) Use native theme colors via `var(--tg-theme-bg-color, #1e1e1e)`, `var(--tg-theme-text-color, #ffffff)`, `var(--tg-theme-hint-color, #888888)`.\n"
                 f"   - NOTE: In production, Telegram currently allows widgets ONLY in PRIVATE CHATS (direct messages with you). In group chats, explain to the user in text to message you in private/DM to play or see the widget!\n"
                 f"5. MEMORY & CHARACTER PROFILE (CRITICAL):\n"
-                f"   - UNDERSTANDING THE PERSON: Continuously observe and maintain an accurate understanding of the user's personality and character. When you notice key traits (e.g. how they handle stress, their sense of humor, communication preferences, emotional triggers, introversion/extroversion, sensitivity to criticism), record or update this as `category='character'` via `save_user_fact`. Keep character insights nuanced, respectful, and up-to-date, refining them as you get to know the person better.\n"
+                f"   - UNDERSTANDING THE PERSON: Continuously observe and maintain an accurate understanding of the user's personality and character. When you notice key traits (e.g. how they handle stress, their sense of humor, communication preferences, emotional triggers, introversion/extroversion, sensitivity to criticism), record or update this as `category='character'` via `save_user_fact`. Keep character insights concise, clear, and durable so they remain directly visible in your permanent facts! (Do NOT bury important personality traits solely in save_memory notes).\n"
                 f"   - Proactively use `save_user_fact(user_id, fact, category, expires_at)` to memorize facts. For permanent facts (name, family, background, chronic conditions, character profile), leave expires_at empty. For temporary tasks, active hobbies/crafts, errands, or items they are looking to buy, ALWAYS specify `expires_at` date in 'YYYY-MM-DD' format (e.g. 2-8 weeks into the future).\n"
                 f"   - If a temporary or ongoing fact naturally relates to what the user is currently discussing, you may casually check on its status (e.g. \"Кстати, а ты тот посох доделала?)\"). NEVER ask about old errands out of the blue if the topic is completely unrelated.\n"
                 f"   - If the user confirms the task/project is still ongoing, call `confirm_user_fact(user_id, fact, expires_at)` to refresh it and optionally extend its expiration date.\n"
@@ -361,12 +361,20 @@ class AIService:
             try:
                 topics = await chat_context._db.get_auto_memory_topics(chat_context.id)
                 if topics:
-                    topics_text = "\n".join([f"- {t['topic']}" for t in topics])
+                    topics_lines = []
+                    for t in topics:
+                        top_name = t.get("topic", "")
+                        preview = t.get("preview", "")
+                        if preview:
+                            topics_lines.append(f"- **{top_name}**: {preview}")
+                        else:
+                            topics_lines.append(f"- **{top_name}**")
+                    topics_text = "\n".join(topics_lines)
                     compiled_system_instruction += (
-                        "\n\n--- YOUR PERSONAL NOTES (topics you wrote about this chat) ---\n"
-                        "These are topics you previously noted about this person/chat. To read the full content of a note, "
-                        "call `recall_memory(topic)`. To save a new observation or update an existing one, call "
-                        "`save_memory(topic, content)`.\n"
+                        "\n\n--- YOUR PERSONAL NOTES & PSYCHOLOGICAL OBSERVATIONS (auto_memory) ---\n"
+                        "These are your personal notes and observations about this person/chat. You already see the summary of each note below! "
+                        "If you need full details or historical context on a specific topic, call `recall_memory(topic)`. "
+                        "To record a new detailed observation, behavioral pattern, or psychological insight, call `save_memory(topic, content)`.\n"
                         + topics_text
                         + "\n---\n"
                     )
